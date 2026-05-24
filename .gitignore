@@ -1,0 +1,16 @@
+node_modules
+dist
+src-tauri/target
+
+# Claude Code — settings locales (permisos del harness, no compartir)
+.claude/
+
+# Tauri — schemas auto-generados por `cargo build`
+src-tauri/gen/
+
+# Logs
+*.log
+
+# Variables de entorno
+.env
+.env.*
