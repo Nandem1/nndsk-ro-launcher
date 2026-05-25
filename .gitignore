@@ -1,6 +1,7 @@
 node_modules
 dist
 src-tauri/target
+/target
 
 # Claude Code — settings locales (permisos del harness, no compartir)
 .claude/

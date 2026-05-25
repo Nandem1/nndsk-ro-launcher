@@ -1,10 +1,10 @@
 use std::path::{Path, PathBuf};
 
+use ro_tools_core::dgvoodoo::{validate_conf, REQUIRED_FILES, TEMPLATE_FILES};
+
 use crate::models::server::ServerConfig;
 use crate::models::server_tools::{DgVoodooStatus, ServerToolsStatus, ToolInfo};
 use crate::utils::{file_label, find_file_case_insensitive, find_matching_exe, normalize_token};
-
-use super::dgvoodoo::{self, REQUIRED_FILES, TEMPLATE_FILES};
 
 pub fn scan_game_dir(
     game_dir: &str,
@@ -127,7 +127,7 @@ pub fn detect_dgvoodoo(dir: &Path, can_auto_install: bool) -> DgVoodooStatus {
     }
     if let Some(conf_path) = &conf.path {
         if let Ok(content) = std::fs::read_to_string(conf_path) {
-            dgvoodoo::validate_conf(&content, &mut issues);
+            validate_conf(&content, &mut issues);
         }
     }
 
@@ -171,6 +171,7 @@ fn tool_missing() -> ToolInfo {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tools::server_tools::dgvoodoo;
 
     #[test]
     fn scan_osro_sample_folder() {
@@ -181,6 +182,7 @@ mod tests {
             patcher_path: None,
             wine_prefix: None,
             runner: None,
+            autopot: Default::default(),
         };
 
         let game_dir = crate::utils::required_game_dir(&server.executable_path).unwrap();

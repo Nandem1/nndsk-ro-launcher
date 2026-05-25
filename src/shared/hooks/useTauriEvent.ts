@@ -9,12 +9,18 @@ export function useTauriEvent<T>(
 ) {
   useEffect(() => {
     let unlisten: UnlistenFn | undefined
+    let cancelled = false
 
     listen<T>(event, (e) => handler(e.payload)).then((fn) => {
+      if (cancelled) {
+        fn()
+        return
+      }
       unlisten = fn
     })
 
     return () => {
+      cancelled = true
       unlisten?.()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- deps controladas por el caller

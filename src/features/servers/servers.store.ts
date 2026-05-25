@@ -14,6 +14,7 @@ interface ServersState {
   selectServer: (id: string) => void
   addServer: (server: ServerConfig) => Promise<void>
   removeServer: (id: string) => Promise<void>
+  updateServer: (id: string, patch: Partial<ServerConfig>) => Promise<void>
   clearError: () => void
   getSelected: () => ServerConfig | null
 }
@@ -62,6 +63,15 @@ export const useServersStore = create<ServersState>((set, get) => ({
       servers: updated,
       selectedId: nextSelectedId(selectedId, id, updated),
     })
+  },
+
+  updateServer: async (id, patch) => {
+    const updated = get().servers.map((s) => (s.id === id ? { ...s, ...patch } : s))
+    const ok = await persistWithError(
+      (error) => set({ error }),
+      () => api.saveServers(updated),
+    )
+    if (ok) set({ servers: updated })
   },
 
   clearError: () => set({ error: null }),

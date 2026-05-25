@@ -1,6 +1,8 @@
 import { invoke } from '@tauri-apps/api/core'
 import type {
   AppSettings,
+  AutopotConfig,
+  AutopotStatusEvent,
   DependencyStatus,
   InstallDgVoodooResult,
   RunnerInfo,
@@ -46,4 +48,14 @@ export const api = {
 
   launchServerTool: (server: ServerConfig, tool: ToolKind) =>
     invoke<void>('launch_server_tool', { server, tool }),
+
+  startAutopot: (server: ServerConfig) =>
+    invoke<void>('start_autopot', { server }),
+
+  stopAutopot: () => invoke<void>('stop_autopot'),
+
+  updateAutopotConfig: (config: AutopotConfig) =>
+    invoke<void>('update_autopot_config', { config }),
+
+  getAutopotStatus: () => invoke<AutopotStatusEvent>('get_autopot_status'),
 } as const

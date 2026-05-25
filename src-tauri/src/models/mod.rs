@@ -1,3 +1,4 @@
+pub mod autopot;
 pub mod dependency;
 pub mod runner;
 pub mod server;

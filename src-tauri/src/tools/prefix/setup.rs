@@ -1,4 +1,5 @@
 use std::path::Path;
+
 use tauri::AppHandle;
 use tokio::process::Command;
 
@@ -11,7 +12,6 @@ use crate::utils::{
     WINETRICKS_BIN,
 };
 
-#[tauri::command]
 pub async fn setup_prefix(app: AppHandle) -> Result<(), String> {
     let prefix = prefix_path();
     let resolved = resolve_effective_runner(None).await?;
@@ -48,7 +48,6 @@ pub async fn setup_prefix(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-#[tauri::command]
 pub async fn reset_prefix(app: AppHandle) -> Result<(), String> {
     let prefix = prefix_path();
 

@@ -1,3 +1,4 @@
+use ro_tools_core::AutopotConfig;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -9,4 +10,6 @@ pub struct ServerConfig {
     pub patcher_path: Option<String>,
     pub wine_prefix: Option<String>,
     pub runner: Option<String>,
+    #[serde(default)]
+    pub autopot: AutopotConfig,
 }

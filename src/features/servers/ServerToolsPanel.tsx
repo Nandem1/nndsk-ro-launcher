@@ -55,16 +55,18 @@ export function ServerToolsPanel() {
       {error && <p className="text-xs text-red-400 mb-2">{error}</p>}
 
       {!loading && status && (
-        <ToolsList
-          status={status}
-          dgvoodooNeedsInstall={!!dgvoodooNeedsInstall}
-          opening={opening}
-          installingDgVoodoo={installingDgVoodoo}
-          uninstallingDgVoodoo={uninstallingDgVoodoo}
-          onOpen={handleOpen}
-          onInstallDgVoodoo={handleInstallDgVoodoo}
-          onUninstallDgVoodoo={handleUninstallDgVoodoo}
-        />
+        <div className="max-h-[220px] overflow-y-auto -mx-1 px-1">
+          <ToolsList
+            status={status}
+            dgvoodooNeedsInstall={!!dgvoodooNeedsInstall}
+            opening={opening}
+            installingDgVoodoo={installingDgVoodoo}
+            uninstallingDgVoodoo={uninstallingDgVoodoo}
+            onOpen={handleOpen}
+            onInstallDgVoodoo={handleInstallDgVoodoo}
+            onUninstallDgVoodoo={handleUninstallDgVoodoo}
+          />
+        </div>
       )}
 
       {loading && !status && (

@@ -2,17 +2,19 @@ import { create } from 'zustand'
 import { api } from '../../shared/api'
 import { runSafely } from '../../shared/async'
 import { audioFromDeps } from '../../shared/audio'
-import type { AudioStatus, RunnerInfo } from '../../shared/types'
+import { autopotInputFromDeps } from '../../shared/autopotInput'
+import type { AudioStatus, AutopotInputStatus, RunnerInfo } from '../../shared/types'
 import { resolveRunnerAfterLoad } from './settings.logic'
 
 interface SettingsState {
   runners: RunnerInfo[]
   selectedRunner: string
   audioStatus: AudioStatus | null
+  autopotInputStatus: AutopotInputStatus | null
   init: () => Promise<void>
   loadSettings: () => Promise<void>
   loadRunners: () => Promise<void>
-  loadAudioStatus: (runner: string) => Promise<void>
+  loadDepsStatus: (runner: string) => Promise<void>
   setRunner: (path: string) => Promise<void>
 }
 
@@ -20,6 +22,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   runners: [],
   selectedRunner: '',
   audioStatus: null,
+  autopotInputStatus: null,
 
   init: async () => {
     await get().loadSettings()
@@ -46,12 +49,15 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     }
 
     set({ selectedRunner: resolution.path })
-    await get().loadAudioStatus(resolution.path)
+    await get().loadDepsStatus(resolution.path)
   },
 
-  loadAudioStatus: async (runner: string) => {
+  loadDepsStatus: async (runner: string) => {
     const result = await runSafely(() => api.checkDependencies(runner))
-    set({ audioStatus: result.ok ? audioFromDeps(result.value) : null })
+    set({
+      audioStatus: result.ok ? audioFromDeps(result.value) : null,
+      autopotInputStatus: result.ok ? autopotInputFromDeps(result.value) : null,
+    })
   },
 
   setRunner: async (path) => {
@@ -62,6 +68,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       return
     }
     set({ selectedRunner: path })
-    await get().loadAudioStatus(path)
+    await get().loadDepsStatus(path)
   },
 }))

@@ -1,3 +1,7 @@
+//! Infraestructura del launcher (Wine, paths, eventos Tauri).
+//!
+//! Dominio de tools (AutoPot, input) vive en [`crate::tools`] + crates `ro-tools-*`.
+
 pub mod audio;
 mod events;
 mod fs;

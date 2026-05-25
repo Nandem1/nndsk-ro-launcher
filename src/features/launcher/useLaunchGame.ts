@@ -13,7 +13,7 @@ export function useLaunchGame(server: ServerConfig | null) {
     setStatus,
     setProgress,
     setError,
-    addLog,
+    addGameLog,
     runTask,
     isBusy,
   } = useLauncherTask()
@@ -28,18 +28,18 @@ export function useLaunchGame(server: ServerConfig | null) {
       const deps = await api.checkDependencies(runner)
 
       if (deps.audioWarning) {
-        addLog(deps.audioWarning)
+        addGameLog(deps.audioWarning)
       }
 
       if (!deps.prefixConfigured) {
         setStatus('setting-up')
-        addLog('Configurando entorno por primera vez...')
+        addGameLog('Configurando entorno por primera vez...')
         await api.setupPrefix()
         setProgress(null)
       }
 
       setStatus('launching')
-      addLog(`Lanzando ${server.name}...`)
+      addGameLog(`Lanzando ${server.name}...`)
 
       await api.launchGame(withResolvedRunner(server, selectedRunner))
       setStatus('running')

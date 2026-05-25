@@ -1,0 +1,9 @@
+[package]
+name = "ro-tools-linux"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ro-tools-core = { path = "../ro-tools-core" }
+thiserror = "1"
+libc = "0.2"

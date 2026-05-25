@@ -2,8 +2,10 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
 pub const EVENT_LOG: &str = "ro-launcher://log";
+pub const EVENT_TOOL_LOG: &str = "ro-launcher://tool-log";
 pub const EVENT_PROGRESS: &str = "ro-launcher://progress";
 pub const EVENT_GAME_EXIT: &str = "ro-launcher://game-exit";
+pub const EVENT_AUTOPOT_STATUS: &str = "ro-launcher://autopot-status";
 
 #[derive(Clone, Serialize)]
 pub struct LogEvent {
@@ -26,10 +28,18 @@ pub fn emit_log(app: &AppHandle, line: impl Into<String>) -> Result<(), String> 
         .map_err(|e| e.to_string())
 }
 
-pub fn emit_log_opt(app: Option<&AppHandle>, line: impl Into<String>) {
+fn emit_line_opt(app: Option<&AppHandle>, event: &str, line: impl Into<String>) {
     if let Some(app) = app {
-        let _ = app.emit(EVENT_LOG, LogEvent { line: line.into() });
+        let _ = app.emit(event, LogEvent { line: line.into() });
     }
+}
+
+pub fn emit_log_opt(app: Option<&AppHandle>, line: impl Into<String>) {
+    emit_line_opt(app, EVENT_LOG, line);
+}
+
+pub fn emit_tool_log_opt(app: Option<&AppHandle>, line: impl Into<String>) {
+    emit_line_opt(app, EVENT_TOOL_LOG, line);
 }
 
 pub fn emit_progress(app: &AppHandle, step: &str, percent: u32) -> Result<(), String> {

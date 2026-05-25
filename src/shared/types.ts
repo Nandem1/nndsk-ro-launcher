@@ -15,13 +15,37 @@ export interface AppSettings {
   defaultRunner: string
 }
 
+export interface AutopotConfig {
+  enabled: boolean
+  hpKey: string
+  spKey: string
+  hpPercent: number
+  spPercent: number
+  delayMs: number
+  profileId?: string
+  hpBaseOverride?: string
+}
+
+export interface AutopotStatusEvent {
+  active: boolean
+  curHp: number
+  maxHp: number
+  curSp: number
+  maxSp: number
+  hpPercent: number
+  spPercent: number
+  characterName: string
+  error?: string | null
+}
+
 export interface ServerConfig {
   id: string
   name: string
   executablePath: string
   patcherPath?: string
   winePrefix?: string
-  runner?: string // path to wine/proton binary; undefined = use global setting
+  runner?: string
+  autopot?: AutopotConfig
 }
 
 export interface DependencyStatus {
@@ -32,11 +56,18 @@ export interface DependencyStatus {
   audioOk: boolean
   audioDriver: string
   audioWarning: string | null
+  autopotInputOk: boolean
+  autopotInputWarning: string | null
 }
 
 export type AudioStatus = Pick<
   DependencyStatus,
   'audioOk' | 'audioDriver' | 'audioWarning'
+>
+
+export type AutopotInputStatus = Pick<
+  DependencyStatus,
+  'autopotInputOk' | 'autopotInputWarning'
 >
 
 export interface RunnerInfo {

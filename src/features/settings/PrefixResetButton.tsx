@@ -3,7 +3,7 @@ import { DEFAULT_PREFIX_PATH } from '../../shared/constants'
 import { useLauncherTask } from '../launcher/useLauncherTask'
 
 export function PrefixResetButton() {
-  const { setStatus, setProgress, setError, addLog, runTask, isBusy } = useLauncherTask()
+  const { setStatus, setProgress, setError, addGameLog, runTask, isBusy } = useLauncherTask()
 
   const handleReset = async () => {
     const confirmed = window.confirm(
@@ -13,14 +13,14 @@ export function PrefixResetButton() {
 
     setError(null)
     setStatus('setting-up')
-    addLog('Rearmando WINEPREFIX...')
+    addGameLog('Rearmando WINEPREFIX...')
 
     await runTask(async () => {
       await api.stopGame()
       await api.resetPrefix()
       setProgress(null)
       setStatus('idle')
-      addLog('WINEPREFIX rearmado correctamente.')
+      addGameLog('WINEPREFIX rearmado correctamente.')
     }, 'Error al rearmar prefix')
   }
 

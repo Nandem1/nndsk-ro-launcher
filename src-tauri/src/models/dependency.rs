@@ -10,4 +10,6 @@ pub struct DependencyStatus {
     pub audio_ok: bool,
     pub audio_driver: String,
     pub audio_warning: Option<String>,
+    pub autopot_input_ok: bool,
+    pub autopot_input_warning: Option<String>,
 }

@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use crate::utils::prefix::effective_prefix;
 use crate::utils::settings::effective_runner;
 
 pub const PROTON_CACHYOS_SLR: &str = "proton-cachyos-slr";
@@ -7,6 +8,22 @@ pub const PROTON_CACHYOS_SLR: &str = "proton-cachyos-slr";
 pub struct ResolvedRunner {
     pub wine_bin: String,
     pub ld_library_path: Option<String>,
+}
+
+/// WINEPREFIX + runner resueltos para un servidor (o defaults globales).
+pub struct WineContext {
+    pub prefix: String,
+    pub resolved: ResolvedRunner,
+}
+
+pub async fn resolve_wine_context(
+    wine_prefix: Option<String>,
+    runner: Option<String>,
+) -> Result<WineContext, String> {
+    Ok(WineContext {
+        prefix: effective_prefix(wine_prefix),
+        resolved: resolve_effective_runner(runner).await?,
+    })
 }
 
 pub fn proton_runner_id(folder_name: &str) -> String {
