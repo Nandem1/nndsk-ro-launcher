@@ -11,6 +11,7 @@ interface SettingsState {
   selectedRunner: string
   audioStatus: AudioStatus | null
   autopotInputStatus: AutopotInputStatus | null
+  prefixConfigured: boolean
   init: () => Promise<void>
   loadSettings: () => Promise<void>
   loadRunners: () => Promise<void>
@@ -23,6 +24,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   selectedRunner: '',
   audioStatus: null,
   autopotInputStatus: null,
+  prefixConfigured: false,
 
   init: async () => {
     await get().loadSettings()
@@ -57,6 +59,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     set({
       audioStatus: result.ok ? audioFromDeps(result.value) : null,
       autopotInputStatus: result.ok ? autopotInputFromDeps(result.value) : null,
+      prefixConfigured: result.ok ? result.value.prefixConfigured : false,
     })
   },
 

@@ -7,9 +7,11 @@ import { Panel } from '../../shared/ui/Panel'
 import { ToolRow } from './ToolRow'
 import { useSelectedServer } from './useSelectedServer'
 import { useServerTools } from './useServerTools'
+import { useSettingsStore } from '../settings/settings.store'
 
 export function ServerToolsPanel() {
   const server = useSelectedServer()
+  const prefixConfigured = useSettingsStore((s) => s.prefixConfigured)
   const {
     status,
     loading,
@@ -58,6 +60,7 @@ export function ServerToolsPanel() {
         <div className="max-h-[220px] overflow-y-auto -mx-1 px-1">
           <ToolsList
             status={status}
+            prefixConfigured={prefixConfigured}
             dgvoodooNeedsInstall={!!dgvoodooNeedsInstall}
             opening={opening}
             installingDgVoodoo={installingDgVoodoo}
@@ -78,6 +81,7 @@ export function ServerToolsPanel() {
 
 interface ToolsListProps {
   status: ServerToolsStatus
+  prefixConfigured: boolean
   dgvoodooNeedsInstall: boolean
   opening: ToolKind | null
   installingDgVoodoo: boolean
@@ -104,6 +108,7 @@ function toolDetail(tool: ToolInfo): string {
 
 function ToolsList({
   status,
+  prefixConfigured,
   dgvoodooNeedsInstall,
   opening,
   installingDgVoodoo,
@@ -123,7 +128,7 @@ function ToolsList({
           onAction={tool.found ? () => onOpen(kind) : undefined}
           actionLabel="Abrir"
           actionBusy={opening === kind}
-          actionDisabled={!tool.found}
+          actionDisabled={!tool.found || !prefixConfigured}
         />
       ))}
       <ToolRow
@@ -148,6 +153,7 @@ function ToolsList({
         }
         actionLabel={dgvoodooNeedsInstall ? 'Instalar' : 'Configurar'}
         actionBusy={dgvoodooNeedsInstall ? installingDgVoodoo : opening === 'dgvoodoo'}
+        actionDisabled={!dgvoodooNeedsInstall && status.dgvoodoo.cpl.found && !prefixConfigured}
         onSecondary={
           status.dgvoodoo.canUninstall ? onUninstallDgVoodoo : undefined
         }

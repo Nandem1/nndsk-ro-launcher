@@ -8,7 +8,7 @@ use crate::models::server_tools::{
 };
 use crate::models::tool_kind::ToolKind;
 use crate::utils::{
-    apply_tool_env, required_game_dir, resolve_wine_context, wine_command,
+    apply_tool_env, ensure_dir_writable, required_game_dir, resolve_wine_context, wine_command,
 };
 
 use super::{dgvoodoo, scan};
@@ -24,6 +24,7 @@ pub async fn install_dgvoodoo(
     server: &ServerConfig,
 ) -> Result<InstallDgVoodooResult, String> {
     let game_dir = required_game_dir(&server.executable_path)?;
+    ensure_dir_writable(Path::new(&game_dir));
     let installed = dgvoodoo::install_files(app, Path::new(&game_dir))?;
     let status = scan_status(app, server)?;
     Ok(InstallDgVoodooResult { installed, status })
@@ -34,6 +35,7 @@ pub async fn uninstall_dgvoodoo(
     server: &ServerConfig,
 ) -> Result<UninstallDgVoodooResult, String> {
     let game_dir = required_game_dir(&server.executable_path)?;
+    ensure_dir_writable(Path::new(&game_dir));
     let removed = dgvoodoo::uninstall_files(Path::new(&game_dir))?;
     let status = scan_status(app, server)?;
     Ok(UninstallDgVoodooResult { removed, status })
