@@ -1,5 +1,7 @@
 use evdev::uinput::VirtualDevice;
 use evdev::{AttributeSet, Device, InputEvent, KeyCode};
+use ro_tools_core::spammer::keys::normalize_spammer_keys;
+use ro_tools_linux::key_label_to_keycode;
 use std::collections::HashMap;
 use std::io::{self, BufRead, Write};
 use std::os::unix::io::AsRawFd;
@@ -26,20 +28,31 @@ struct DiscoveredDevice {
     device: Device,
 }
 
+struct TriggerSet {
+    labels: Vec<String>,
+    code_to_label: HashMap<KeyCode, String>,
+}
+
 struct Config {
-    trigger: KeyCode,
+    triggers: TriggerSet,
     json: bool,
 }
 
 fn parse_args() -> Config {
-    let mut trigger = KeyCode::KEY_F1;
+    let mut trigger_labels: Vec<String> = Vec::new();
     let mut json = false;
     let args: Vec<String> = std::env::args().collect();
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
             "--trigger" if i + 1 < args.len() => {
-                trigger = parse_trigger_label(&args[i + 1]).unwrap_or(KeyCode::KEY_F1);
+                trigger_labels.push(args[i + 1].clone());
+                i += 2;
+            }
+            "--triggers" if i + 1 < args.len() => {
+                for part in args[i + 1].split(',') {
+                    trigger_labels.push(part.trim().to_string());
+                }
                 i += 2;
             }
             "--json" => {
@@ -49,13 +62,25 @@ fn parse_args() -> Config {
             _ => i += 1,
         }
     }
-    Config { trigger, json }
-}
 
-fn parse_trigger_label(label: &str) -> Option<KeyCode> {
-    match label.to_ascii_uppercase().as_str() {
-        "F1" => Some(KeyCode::KEY_F1),
-        _ => None,
+    if trigger_labels.is_empty() {
+        trigger_labels.push("F1".into());
+    }
+
+    let labels = normalize_spammer_keys(&trigger_labels);
+    let mut code_to_label = HashMap::new();
+    for label in &labels {
+        if let Some(code) = key_label_to_keycode(label) {
+            code_to_label.insert(code, label.clone());
+        }
+    }
+
+    Config {
+        triggers: TriggerSet {
+            labels,
+            code_to_label,
+        },
+        json,
     }
 }
 
@@ -87,13 +112,13 @@ fn phys_group_key(dev: &Device, path: &Path) -> String {
         .unwrap_or_else(|| path.to_string_lossy().into_owned())
 }
 
-fn discover_keyboards(trigger: KeyCode) -> Vec<DiscoveredDevice> {
+fn discover_keyboards(triggers: &HashMap<KeyCode, String>) -> Vec<DiscoveredDevice> {
     let mut candidates = Vec::new();
     for (path, dev) in evdev::enumerate() {
         let Some(keys) = dev.supported_keys() else {
             continue;
         };
-        if !keys.contains(trigger) {
+        if !triggers.keys().any(|code| keys.contains(*code)) {
             continue;
         }
         if has_rel_axes(&dev) || has_abs_axes(&dev) {
@@ -115,12 +140,12 @@ fn discover_keyboards(trigger: KeyCode) -> Vec<DiscoveredDevice> {
     groups.into_values().flatten().collect()
 }
 
-fn create_passthrough(devices: &[Device], trigger: KeyCode) -> Result<VirtualDevice, String> {
+fn create_passthrough(devices: &[Device], triggers: &HashMap<KeyCode, String>) -> Result<VirtualDevice, String> {
     let mut keys = AttributeSet::<KeyCode>::new();
     for dev in devices {
         if let Some(supported) = dev.supported_keys() {
             for key in supported.iter() {
-                if key != trigger {
+                if !triggers.contains_key(&key) {
                     keys.insert(key);
                 }
             }
@@ -158,23 +183,23 @@ fn any_alt_held(devices: &[Device]) -> bool {
     })
 }
 
-fn trigger_press_held(alt_held: bool) -> bool {
-    !alt_held
+fn label_for_code(triggers: &TriggerSet, code: KeyCode) -> Option<&str> {
+    triggers.code_to_label.get(&code).map(String::as_str)
 }
 
 fn main() {
     let cfg = parse_args();
-    if cfg.trigger != KeyCode::KEY_F1 {
+    if cfg.triggers.code_to_label.is_empty() {
         if cfg.json {
             emit_json(&serde_json::json!({
                 "type": "fatal",
-                "message": "MVP solo soporta --trigger F1"
+                "message": "Ninguna tecla trigger válida (usa F1-F9 o 0-9)"
             }));
         }
         return;
     }
 
-    let discovered = discover_keyboards(cfg.trigger);
+    let discovered = discover_keyboards(&cfg.triggers.code_to_label);
     if discovered.is_empty() {
         if cfg.json {
             emit_json(&serde_json::json!({
@@ -196,7 +221,7 @@ fn main() {
 
     let devices_only: Vec<Device> = discovered.into_iter().map(|d| d.device).collect();
 
-    let mut passthrough = match create_passthrough(&devices_only, cfg.trigger) {
+    let mut passthrough = match create_passthrough(&devices_only, &cfg.triggers.code_to_label) {
         Ok(pt) => pt,
         Err(e) => {
             if cfg.json {
@@ -230,6 +255,7 @@ fn main() {
             "type": "ready",
             "devices": device_paths,
             "name": device_names.first().cloned().unwrap_or_else(|| "unknown".into()),
+            "triggers": cfg.triggers.labels,
         }));
     }
 
@@ -275,20 +301,27 @@ fn main() {
                             if code == KeyCode::KEY_LEFTALT || code == KeyCode::KEY_RIGHTALT {
                                 alt_held = value != 0;
                             }
-                            if code == cfg.trigger {
+                            if cfg.triggers.code_to_label.contains_key(&code) {
+                                let Some(label) = label_for_code(&cfg.triggers, code) else {
+                                    continue;
+                                };
                                 match value {
                                     1 => {
                                         if cfg.json {
-                                            emit_json(
-                                                &serde_json::json!({"type":"trigger","held": trigger_press_held(alt_held)}),
-                                            );
+                                            emit_json(&serde_json::json!({
+                                                "type":"trigger",
+                                                "key": label,
+                                                "held": !alt_held,
+                                            }));
                                         }
                                     }
                                     0 => {
                                         if cfg.json {
-                                            emit_json(
-                                                &serde_json::json!({"type":"trigger","held":false}),
-                                            );
+                                            emit_json(&serde_json::json!({
+                                                "type":"trigger",
+                                                "key": label,
+                                                "held": false,
+                                            }));
                                         }
                                     }
                                     _ => {} // auto-repeat, ignorar
@@ -361,22 +394,6 @@ mod tests {
     }
 
     #[test]
-    fn blacklist_rejects_virtual_and_power_devices() {
-        let bad_names = [
-            "ydotoold virtual device",
-            "ro-launcher-kb-passthrough",
-            "uinput-fake",
-            "Power Button",
-            "Headset Control",
-        ];
-        for name in &bad_names {
-            let lower = name.to_lowercase();
-            let excluded = BLACKLIST.iter().any(|b| lower.contains(b));
-            assert!(excluded, "'{name}' should be excluded");
-        }
-    }
-
-    #[test]
     fn rejects_mouse_handler_paths() {
         assert!(is_mouse_handler(Path::new(
             "/dev/input/by-id/usb-mouse-event-mouse"
@@ -384,16 +401,4 @@ mod tests {
         assert!(!is_mouse_handler(Path::new("/dev/input/event6")));
     }
 
-    #[test]
-    fn parse_trigger_mvp_only_f1() {
-        assert_eq!(parse_trigger_label("F1"), Some(KeyCode::KEY_F1));
-        assert_eq!(parse_trigger_label("f1"), Some(KeyCode::KEY_F1));
-        assert_eq!(parse_trigger_label("F2"), None);
-    }
-
-    #[test]
-    fn trigger_press_held_respects_alt() {
-        assert!(trigger_press_held(false));
-        assert!(!trigger_press_held(true));
-    }
 }

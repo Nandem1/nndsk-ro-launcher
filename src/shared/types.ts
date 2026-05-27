@@ -41,6 +41,7 @@ export interface AutopotStatusEvent {
 export interface SpammerConfig {
   enabled: boolean
   delayMs: number
+  keys: string[]
 }
 
 export interface SpammerStatusEvent {

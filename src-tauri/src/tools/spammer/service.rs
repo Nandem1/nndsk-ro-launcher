@@ -57,6 +57,9 @@ impl SpammerHandle {
 
         let mut config = config.clamped();
         config.enabled = true;
+        config
+            .validate_for_start()
+            .map_err(|e| e.to_string())?;
         let (stop_tx, stop_rx) = watch::channel(false);
         *self.stop_tx.lock().unwrap() = Some(stop_tx);
 
@@ -66,7 +69,8 @@ impl SpammerHandle {
         emit_tool_log_opt(
             Some(&app),
             format!(
-                "[Spammer] Standby F1 + click delay={}ms — mantén F1 en el juego",
+                "[Spammer] Standby {} + click delay={}ms — mantén la tecla en el juego",
+                config.keys.join(","),
                 config.delay_ms
             ),
         );

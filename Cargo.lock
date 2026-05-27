@@ -2532,6 +2532,8 @@ version = "0.1.0"
 dependencies = [
  "evdev",
  "libc",
+ "ro-tools-core",
+ "ro-tools-linux",
  "serde_json",
  "signal-hook",
 ]

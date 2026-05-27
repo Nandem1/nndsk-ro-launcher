@@ -1,6 +1,8 @@
+import { POT_KEYS } from '../../shared/constants'
 import { Panel, type PanelTone } from '../../shared/ui/Panel'
 import { ToggleSwitch } from '../../shared/ui/ToggleSwitch'
 import { useSelectedServer } from '../servers/useSelectedServer'
+import { formatSpammerKeys, toggleSpammerKey } from './spammer.logic'
 import { useSpammer } from './useSpammer'
 
 function resolveTone(
@@ -15,31 +17,67 @@ function resolveTone(
   return 'neutral'
 }
 
+function KeyChip({
+  label,
+  active,
+  disabled,
+  onToggle,
+}: {
+  label: string
+  active: boolean
+  disabled: boolean
+  onToggle: () => void
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onToggle}
+      className={`min-w-[2rem] px-1.5 py-1 rounded-md text-[10px] font-semibold border transition-colors disabled:opacity-40 ${
+        active
+          ? 'border-amber-500/70 bg-amber-500/15 text-amber-200'
+          : 'border-zinc-800/80 bg-zinc-950/50 text-zinc-600 hover:text-zinc-400'
+      }`}
+    >
+      {label}
+    </button>
+  )
+}
+
 export function SpammerPanel() {
   const server = useSelectedServer()
   const { config, status, busy, isRunning, error, setEnabled, updateField } =
     useSpammer(server)
 
   const available = isRunning && !!server
+  const keysLabel = formatSpammerKeys(config.keys)
+  const selectedKeys = new Set(config.keys)
 
   const statusLabel = (() => {
     if (!available) return 'Inactivo'
     if (!status.armed) return 'Inactivo'
-    if (status.spamming) {
-      return `${status.cycleCount.toLocaleString()} ciclos · F1 + click`
+    if (status.spamming && status.key) {
+      return `${status.cycleCount.toLocaleString()} ciclos · ${status.key} + click`
     }
-    return 'Standby — mantén F1'
+    return `Standby — ${keysLabel}`
   })()
 
   const statusText = !server
     ? 'Selecciona un servidor'
     : !isRunning
       ? 'Inicia el juego'
-      : status.spamming
-        ? 'Spameando...'
-        : 'Mantén F1 en el juego'
+      : config.keys.length === 0
+        ? 'Selecciona al menos una tecla'
+        : status.spamming
+          ? 'Spameando...'
+          : 'Mantén una tecla configurada en el juego'
 
   const tone = resolveTone(available, config.enabled, status.armed, !!error)
+
+  const toggleKey = (key: string) => {
+    const next = toggleSpammerKey(config, key)
+    void updateField({ keys: next.keys })
+  }
 
   return (
     <Panel title="Spammer" compact tone={tone} className="h-full">
@@ -56,25 +94,36 @@ export function SpammerPanel() {
             <p className="text-[10px] text-zinc-600">{statusText}</p>
           </div>
           <ToggleSwitch
-            checked={config.enabled && available}
-            disabled={!available || busy}
+            checked={config.enabled && available && config.keys.length > 0}
+            disabled={!available || busy || config.keys.length === 0}
             onChange={(enabled) => void setEnabled(enabled)}
             tone="amber"
           />
         </div>
 
-        <div className="space-y-1.5 rounded-lg bg-zinc-950/40 border border-zinc-800/60 px-2.5 py-2 min-h-[52px]">
+        <div className="space-y-1.5 rounded-lg bg-zinc-950/40 border border-zinc-800/60 px-2.5 py-2">
           <div className="flex justify-between text-[10px]">
-            <span className="text-zinc-600">Modo</span>
+            <span className="text-zinc-600">Teclas</span>
             <span
               className={
                 available && status.armed
-                  ? 'text-amber-400/90 font-medium'
-                  : 'text-zinc-700'
+                  ? 'text-amber-400/90 font-medium truncate ml-2'
+                  : 'text-zinc-700 truncate ml-2'
               }
             >
-              F1 + click
+              {keysLabel}
             </span>
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {POT_KEYS.map((key) => (
+              <KeyChip
+                key={key}
+                label={key}
+                active={selectedKeys.has(key)}
+                disabled={!server || busy}
+                onToggle={() => toggleKey(key)}
+              />
+            ))}
           </div>
           <p className="text-[10px] text-zinc-600 leading-snug">
             Skill en barra + target con click izquierdo

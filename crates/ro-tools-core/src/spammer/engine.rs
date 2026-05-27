@@ -1,17 +1,16 @@
 use crate::error::ToolsError;
 use crate::ports::InputWriter;
 use crate::spammer::config::SpammerConfig;
+use crate::spammer::keys::is_valid_spammer_key;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SpammerTick {
     pub cycled: bool,
-    pub cycle_count: u64,
 }
 
 pub struct SpammerEngine<I: InputWriter> {
     input: I,
     config: SpammerConfig,
-    cycle_count: u64,
 }
 
 impl<I: InputWriter> SpammerEngine<I> {
@@ -19,7 +18,6 @@ impl<I: InputWriter> SpammerEngine<I> {
         Self {
             input,
             config: config.clamped(),
-            cycle_count: 0,
         }
     }
 
@@ -31,22 +29,22 @@ impl<I: InputWriter> SpammerEngine<I> {
         &self.config
     }
 
-    pub fn cycle_count(&self) -> u64 {
-        self.cycle_count
-    }
-
     /// Ciclo IPC-mode: KEYDOWN → click → KEYUP.
     /// El grab lo hace ro-inputd; cada ciclo es un press discreto independiente del estado físico.
-    pub fn tick(&mut self) -> Result<SpammerTick, ToolsError> {
-        self.input.key_down("F1")?;
-        self.input.click_left()?;
-        self.input.key_up("F1")?;
+    pub fn tick(&mut self, key: &str) -> Result<SpammerTick, ToolsError> {
+        let key = key.trim();
+        if !is_valid_spammer_key(key) {
+            return Err(ToolsError::Input {
+                key: key.to_string(),
+                message: "tecla spammer no soportada".into(),
+            });
+        }
 
-        self.cycle_count += 1;
-        Ok(SpammerTick {
-            cycled: true,
-            cycle_count: self.cycle_count,
-        })
+        self.input.key_down(key)?;
+        self.input.click_left()?;
+        self.input.key_up(key)?;
+
+        Ok(SpammerTick { cycled: true })
     }
 }
 
@@ -92,24 +90,23 @@ mod tests {
             SpammerConfig {
                 enabled: true,
                 delay_ms: 10,
+                keys: vec!["F2".into()],
             },
         );
 
-        let tick = engine.tick().unwrap();
+        let tick = engine.tick("F2").unwrap();
         assert!(tick.cycled);
-        assert_eq!(tick.cycle_count, 1);
 
         let log = engine.input.log.lock().unwrap();
-        assert_eq!(log.as_slice(), &["down:F1", "click", "up:F1"]);
+        assert_eq!(log.as_slice(), &["down:F2", "click", "up:F2"]);
     }
 
     #[test]
-    fn spammer_executes_when_tick_called() {
+    fn spammer_rejects_invalid_key() {
         let input = MockInput {
             log: Mutex::new(vec![]),
         };
         let mut engine = SpammerEngine::new(input, SpammerConfig::default());
-        let tick = engine.tick().unwrap();
-        assert!(tick.cycled);
+        assert!(engine.tick("Q").is_err());
     }
 }

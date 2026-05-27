@@ -54,4 +54,5 @@ export const DEFAULT_AUTOPOT_CONFIG = {
 export const DEFAULT_SPAMMER_CONFIG = {
   enabled: false,
   delayMs: 10,
+  keys: ['F1'],
 } as const

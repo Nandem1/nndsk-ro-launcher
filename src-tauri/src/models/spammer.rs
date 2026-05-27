@@ -19,7 +19,7 @@ impl Default for SpammerStatusEvent {
             active: false,
             armed: false,
             spamming: false,
-            key: "F1".to_string(),
+            key: String::new(),
             delay_ms: SpammerConfig::default().delay_ms,
             cycle_count: 0,
             error: None,

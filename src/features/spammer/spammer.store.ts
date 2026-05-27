@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { DEFAULT_SPAMMER_CONFIG } from '../../shared/constants'
 import type { SpammerStatusEvent } from '../../shared/types'
 
 interface SpammerStore {
@@ -15,8 +16,8 @@ const idleStatus = (): SpammerStatusEvent => ({
   active: false,
   armed: false,
   spamming: false,
-  key: 'F1',
-  delayMs: 10,
+  key: '',
+  delayMs: DEFAULT_SPAMMER_CONFIG.delayMs,
   cycleCount: 0,
   error: null,
 })

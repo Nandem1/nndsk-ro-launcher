@@ -158,6 +158,10 @@ impl KeyboardPassthrough {
     }
 }
 
+pub fn key_label_to_keycode(label: &str) -> Option<KeyCode> {
+    label_to_keycode(label)
+}
+
 fn label_to_keycode(label: &str) -> Option<KeyCode> {
     Some(match label.to_ascii_uppercase().as_str() {
         "F1" => KeyCode::KEY_F1,

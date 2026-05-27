@@ -8,7 +8,7 @@ pub mod wine_process;
 pub mod ydotool;
 
 pub use input_perms::{detect_input_permissions, InputPermStatus};
-pub use keyboard::{KeyboardMonitor, KeyboardPassthrough};
+pub use keyboard::{key_label_to_keycode, KeyboardMonitor, KeyboardPassthrough};
 
 pub use proc_memory::{address_in_maps, ProcMemoryReader};
 pub use resolve_pid::resolve_best_game_pid;
