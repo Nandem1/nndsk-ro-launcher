@@ -36,8 +36,9 @@ export function useLaunchGame(server: ServerConfig | null) {
         addGameLog('Configurando entorno por primera vez...')
         await api.setupPrefix()
         setProgress(null)
-        useSettingsStore.setState({ prefixConfigured: true })
       }
+
+      await useSettingsStore.getState().loadDepsStatus(runner ?? selectedRunner)
 
       setStatus('launching')
       addGameLog(`Lanzando ${server.name}...`)

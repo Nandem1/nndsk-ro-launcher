@@ -1,16 +1,15 @@
 import { create } from 'zustand'
 import { api } from '../../shared/api'
 import { runSafely } from '../../shared/async'
-import { audioFromDeps } from '../../shared/audio'
-import { autopotInputFromDeps } from '../../shared/autopotInput'
-import type { AudioStatus, AutopotInputStatus, RunnerInfo } from '../../shared/types'
+import type { AdvancedDepsStatus } from '../../shared/types'
+import type { RunnerInfo } from '../../shared/types'
+import { advancedStatusFromDeps } from './advanced.logic'
 import { resolveRunnerAfterLoad } from './settings.logic'
 
 interface SettingsState {
   runners: RunnerInfo[]
   selectedRunner: string
-  audioStatus: AudioStatus | null
-  autopotInputStatus: AutopotInputStatus | null
+  advancedStatus: AdvancedDepsStatus | null
   prefixConfigured: boolean
   init: () => Promise<void>
   loadSettings: () => Promise<void>
@@ -22,8 +21,7 @@ interface SettingsState {
 export const useSettingsStore = create<SettingsState>((set, get) => ({
   runners: [],
   selectedRunner: '',
-  audioStatus: null,
-  autopotInputStatus: null,
+  advancedStatus: null,
   prefixConfigured: false,
 
   init: async () => {
@@ -57,8 +55,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   loadDepsStatus: async (runner: string) => {
     const result = await runSafely(() => api.checkDependencies(runner))
     set({
-      audioStatus: result.ok ? audioFromDeps(result.value) : null,
-      autopotInputStatus: result.ok ? autopotInputFromDeps(result.value) : null,
+      advancedStatus: result.ok ? advancedStatusFromDeps(result.value) : null,
       prefixConfigured: result.ok ? result.value.prefixConfigured : false,
     })
   },

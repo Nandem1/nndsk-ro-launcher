@@ -71,19 +71,51 @@ export interface DependencyStatus {
   prefixConfigured: boolean
   audioOk: boolean
   audioDriver: string
+  audioStack: string
   audioWarning: string | null
   autopotInputOk: boolean
   autopotInputWarning: string | null
+  inputGroupOk: boolean
+  inputGroupWarning: string | null
+  prefixOk: boolean
+  prefixWarning: string | null
+  dxvkOk: boolean
+  dxvkWarning: string | null
 }
 
 export type AudioStatus = Pick<
   DependencyStatus,
-  'audioOk' | 'audioDriver' | 'audioWarning'
+  'audioOk' | 'audioDriver' | 'audioStack' | 'audioWarning'
 >
 
 export type AutopotInputStatus = Pick<
   DependencyStatus,
   'autopotInputOk' | 'autopotInputWarning'
+>
+
+export type InputGroupStatus = Pick<
+  DependencyStatus,
+  'inputGroupOk' | 'inputGroupWarning'
+>
+
+export type PrefixStatus = Pick<DependencyStatus, 'prefixOk' | 'prefixWarning'>
+
+export type DxvkStatus = Pick<DependencyStatus, 'dxvkOk' | 'dxvkWarning'>
+
+export type AdvancedDepsStatus = Pick<
+  DependencyStatus,
+  | 'audioOk'
+  | 'audioDriver'
+  | 'audioStack'
+  | 'audioWarning'
+  | 'inputGroupOk'
+  | 'inputGroupWarning'
+  | 'autopotInputOk'
+  | 'autopotInputWarning'
+  | 'prefixOk'
+  | 'prefixWarning'
+  | 'dxvkOk'
+  | 'dxvkWarning'
 >
 
 export interface RunnerInfo {

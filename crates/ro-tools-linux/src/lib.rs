@@ -1,11 +1,13 @@
 //! Linux adapters for ro-tools-core ports.
 
+pub mod input_perms;
 pub mod keyboard;
 pub mod proc_memory;
 pub mod resolve_pid;
 pub mod wine_process;
 pub mod ydotool;
 
+pub use input_perms::{detect_input_permissions, InputPermStatus};
 pub use keyboard::{KeyboardMonitor, KeyboardPassthrough};
 
 pub use proc_memory::{address_in_maps, ProcMemoryReader};

@@ -1,7 +1,11 @@
-import { useEffect, useState } from 'react'
-import { audioDriverLabel } from '../../shared/audio'
+import { audioStatusLabel } from '../../shared/audio'
+import { Panel } from '../../shared/ui/Panel'
 import { StatusDot, type DotStatus } from '../../shared/ui/StatusDot'
-import { PrefixResetButton } from './PrefixResetButton'
+import {
+  advancedHasIssue,
+  resolveAudioDotStatus,
+  resolveDotStatus,
+} from './advanced.logic'
 import { useSettingsStore } from './settings.store'
 
 function StatusLine({
@@ -27,77 +31,83 @@ function StatusLine({
 }
 
 export function AdvancedSettings() {
-  const audioStatus = useSettingsStore((s) => s.audioStatus)
-  const autopotInputStatus = useSettingsStore((s) => s.autopotInputStatus)
-  const [open, setOpen] = useState(false)
+  const advancedStatus = useSettingsStore((s) => s.advancedStatus)
 
-  const audioDot: DotStatus =
-    audioStatus && !audioStatus.audioOk
-      ? 'error'
-      : audioStatus?.audioWarning
-        ? 'warning'
-        : 'ok'
+  if (!advancedStatus) return null
 
-  const autopotWarn =
-    autopotInputStatus != null && !autopotInputStatus.autopotInputOk
+  const hasIssue = advancedHasIssue(advancedStatus)
 
-  const hasIssue = audioDot !== 'ok' || autopotWarn
+  const audioDot = resolveAudioDotStatus(
+    advancedStatus.audioOk,
+    advancedStatus.audioWarning,
+  )
+  const audioLabel = `Audio · ${audioStatusLabel(
+    advancedStatus.audioDriver,
+    advancedStatus.audioStack,
+  )}${!advancedStatus.audioOk ? ' (no disponible)' : ''}`
 
-  useEffect(() => {
-    if (hasIssue) setOpen(true)
-  }, [hasIssue])
-
-  if (!audioStatus) return null
-
-  const audioLabel = `Audio · ${audioDriverLabel(audioStatus.audioDriver)}${
-    !audioStatus.audioOk ? ' (no disponible)' : ''
-  }`
+  const lines = [
+    {
+      key: 'audio',
+      dot: audioDot,
+      label: audioLabel,
+      hint: advancedStatus.audioWarning,
+    },
+    {
+      key: 'prefix',
+      dot: resolveDotStatus(advancedStatus.prefixOk, advancedStatus.prefixWarning),
+      label: advancedStatus.prefixOk ? 'Prefix · configurado' : 'Prefix · sin configurar',
+      hint: advancedStatus.prefixWarning,
+    },
+    {
+      key: 'dxvk',
+      dot: resolveDotStatus(advancedStatus.dxvkOk, advancedStatus.dxvkWarning),
+      label: advancedStatus.dxvkOk ? 'DXVK · instalado' : 'DXVK · pendiente',
+      hint: advancedStatus.dxvkWarning,
+    },
+    {
+      key: 'input-group',
+      dot: resolveDotStatus(
+        advancedStatus.inputGroupOk,
+        advancedStatus.inputGroupWarning,
+      ),
+      label: advancedStatus.inputGroupOk
+        ? advancedStatus.inputGroupWarning
+          ? 'Permisos input · parcial'
+          : 'Permisos input · OK'
+        : 'Permisos input · grupo input',
+      hint: advancedStatus.inputGroupWarning,
+    },
+    {
+      key: 'autopot',
+      dot: resolveDotStatus(
+        advancedStatus.autopotInputOk,
+        advancedStatus.autopotInputWarning,
+      ),
+      label: advancedStatus.autopotInputOk
+        ? 'AutoPot · ydotool OK'
+        : 'AutoPot · ydotool (opcional)',
+      hint: advancedStatus.autopotInputWarning,
+    },
+  ]
 
   return (
-    <div
-      className={`rounded-xl border shrink-0 overflow-hidden ${
-        hasIssue && !open
-          ? 'border-amber-500/25 bg-amber-500/5'
-          : 'border-zinc-800/80 bg-zinc-900/40'
-      }`}
+    <Panel
+      title="Avanzado"
+      compact
+      tone={hasIssue ? 'warning' : 'neutral'}
+      className="shrink-0"
     >
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left hover:bg-zinc-800/30 transition-colors"
-      >
-        <span className="text-[10px] font-semibold text-zinc-500 uppercase tracking-[0.14em]">
-          Avanzado
-        </span>
-        <span className="flex items-center gap-2">
-          {hasIssue && !open && (
-            <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/25">
-              !
-            </span>
-          )}
-          <span className="text-[10px] text-zinc-600">{open ? '▾' : '▸'}</span>
-        </span>
-      </button>
-
-      {open && (
-        <div className="px-3 pb-3 space-y-2 border-t border-zinc-800/80 pt-2">
-          <div className={`rounded-lg px-2 py-1.5 space-y-1 ${hasIssue ? 'bg-amber-500/5' : ''}`}>
-            <StatusLine
-              dotStatus={audioDot}
-              label={audioLabel}
-              hint={audioStatus.audioWarning}
-            />
-            {autopotWarn && (
-              <StatusLine
-                dotStatus="warning"
-                label="AutoPot · input no disponible"
-                hint={autopotInputStatus.autopotInputWarning}
-              />
-            )}
-          </div>
-          <PrefixResetButton />
-        </div>
-      )}
-    </div>
+      <div className={`space-y-1 rounded-lg ${hasIssue ? 'bg-amber-500/5 px-2 py-1.5 -mx-0.5' : ''}`}>
+        {lines.map((line) => (
+          <StatusLine
+            key={line.key}
+            dotStatus={line.dot}
+            label={line.label}
+            hint={line.hint}
+          />
+        ))}
+      </div>
+    </Panel>
   )
 }

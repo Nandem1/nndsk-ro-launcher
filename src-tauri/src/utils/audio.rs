@@ -66,6 +66,34 @@ pub fn lib32_alsa_available() -> bool {
     Path::new("/usr/lib32/libasound.so.2").exists()
 }
 
+/// Socket Pulse expuesto por pipewire-pulse (sesión de escritorio típica en Arch/CachyOS).
+pub fn pulse_session_socket_available() -> bool {
+    if let Ok(xdg) = std::env::var("XDG_RUNTIME_DIR") {
+        if Path::new(&format!("{xdg}/pulse/native")).exists() {
+            return true;
+        }
+    }
+    false
+}
+
+pub fn pipewire_alsa_shim_available() -> bool {
+    Path::new("/etc/alsa/conf.d/50-pipewire.conf").exists()
+}
+
+pub fn desktop_audio_session_active() -> bool {
+    pulse_session_socket_available() || pipewire_alsa_shim_available()
+}
+
+pub fn audio_stack_label(driver: AudioDriver) -> &'static str {
+    match driver {
+        AudioDriver::None => "none",
+        AudioDriver::Pulse if pulse_session_socket_available() => "pipewire",
+        AudioDriver::Pulse => "pulse",
+        AudioDriver::Alsa if desktop_audio_session_active() => "pipewire",
+        AudioDriver::Alsa => "alsa",
+    }
+}
+
 pub fn recommended_driver() -> AudioDriver {
     if lib32_pulse_available() {
         AudioDriver::Pulse
@@ -82,12 +110,7 @@ pub fn detect_audio_backends(current_driver: Option<AudioDriver>) -> AudioBacken
     let recommended = recommended_driver();
     let ok = pulse_32 || alsa_32;
 
-    let warning = if !pulse_32 && alsa_32 {
-        Some(
-            "Audio en ALSA (fallback). Para PulseAudio: sudo pacman -S lib32-libpulse"
-                .to_string(),
-        )
-    } else if !ok {
+    let warning = if !ok {
         Some(
             "Sin librerías de audio 32-bit. Instala lib32-libpulse o lib32-alsa-lib."
                 .to_string(),
@@ -111,7 +134,7 @@ pub async fn dependency_audio_fields(
     prefix_path: &str,
     prefix_configured: bool,
     runner: &ResolvedRunner,
-) -> (bool, String, Option<String>) {
+) -> (bool, String, Option<String>, String) {
     let current_driver = if prefix_configured {
         read_current_driver(prefix_path, runner).await
     } else {
@@ -123,11 +146,13 @@ pub async fn dependency_audio_fields(
         .current_driver
         .or(Some(audio_status.recommended))
         .unwrap_or(AudioDriver::None);
+    let stack = audio_stack_label(audio_driver).to_string();
 
     (
         audio_status.ok,
         audio_driver.as_str().to_string(),
         audio_status.warning,
+        stack,
     )
 }
 
@@ -286,23 +311,55 @@ pub async fn ensure_audio_driver(
     // Pulse 32-bit no disponible: forzar ALSA para evitar mmdevapi.
     if current != Some(AudioDriver::Alsa) {
         set_audio_driver(prefix_path, runner, AudioDriver::Alsa).await?;
-        let message = detect_audio_backends(Some(AudioDriver::Alsa)).warning;
-        if let Some(msg) = &message {
-            emit_log_opt(app, format!("Audio configurado: ALSA (fallback). {msg}"));
+        let log_label = if desktop_audio_session_active() {
+            "Audio configurado: ALSA (PipeWire)"
         } else {
-            emit_log_opt(app, "Audio configurado: ALSA (fallback)".to_string());
-        }
+            "Audio configurado: ALSA"
+        };
+        emit_log_opt(app, log_label.to_string());
         return Ok(EnsureAudioResult {
             configured: true,
             driver: AudioDriver::Alsa,
-            message,
+            message: None,
         });
     }
 
-    let message = detect_audio_backends(current).warning;
     Ok(EnsureAudioResult {
         configured: true,
         driver: AudioDriver::Alsa,
-        message,
+        message: None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn alsa_only_backend_is_ok_without_warning() {
+        let status = detect_audio_backends(None);
+        if lib32_alsa_available() && !lib32_pulse_available() {
+            assert!(status.ok);
+            assert!(status.warning.is_none());
+            assert_eq!(status.recommended, AudioDriver::Alsa);
+        }
+    }
+
+    #[test]
+    fn missing_libs_is_not_ok() {
+        if lib32_alsa_available() || lib32_pulse_available() {
+            return;
+        }
+        let status = detect_audio_backends(None);
+        assert!(!status.ok);
+        assert!(status.warning.is_some());
+    }
+
+    #[test]
+    fn stack_label_marks_pipewire_alsa_on_desktop() {
+        if !desktop_audio_session_active() {
+            return;
+        }
+        assert_eq!(audio_stack_label(AudioDriver::Alsa), "pipewire");
+    }
 }

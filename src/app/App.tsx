@@ -9,6 +9,7 @@ import { SpammerPanel } from '../features/spammer/SpammerPanel'
 import { UnifiedLogPanel } from '../features/logs/LogPanels'
 import { RunnerSelector } from '../features/settings/RunnerSelector'
 import { AdvancedSettings } from '../features/settings/AdvancedSettings'
+import { PrefixResetButton } from '../features/settings/PrefixResetButton'
 import { useLauncherEvents } from '../features/launcher/useLauncherEvents'
 
 export function App() {
@@ -27,6 +28,9 @@ export function App() {
             <ServerList />
             <RunnerSelector />
             <AdvancedSettings />
+          </div>
+          <div className="shrink-0 pb-2.5">
+            <PrefixResetButton />
           </div>
           <LaunchButton />
         </div>

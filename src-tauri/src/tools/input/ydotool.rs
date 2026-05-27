@@ -31,16 +31,16 @@ impl YdotoolDaemon {
     }
 }
 
-/// Campos de input virtual para [`DependencyStatus`].
+/// Campos de input virtual para [`DependencyStatus`] (solo paquetes; no exige daemon activo).
 pub fn dependency_autopot_input_fields() -> (bool, Option<String>) {
-    if !autopot_input_installed() {
-        return (
-            false,
-            Some(format!("AutoPot necesita ydotool. {YDOTOOL_INSTALL_HINT}")),
-        );
+    if autopot_input_installed() {
+        return (true, None);
     }
 
-    (true, None)
+    (
+        false,
+        Some(format!("Opcional para AutoPot. {YDOTOOL_INSTALL_HINT}")),
+    )
 }
 
 /// Garantiza ydotoold activo antes de potear. Arranca el daemon si hace falta.

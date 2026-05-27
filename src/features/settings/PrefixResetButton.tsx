@@ -1,9 +1,12 @@
 import { api } from '../../shared/api'
 import { DEFAULT_PREFIX_PATH } from '../../shared/constants'
 import { useLauncherTask } from '../launcher/useLauncherTask'
+import { useSettingsStore } from './settings.store'
 
 export function PrefixResetButton() {
   const { setStatus, setProgress, setError, addGameLog, runTask, isBusy } = useLauncherTask()
+  const selectedRunner = useSettingsStore((s) => s.selectedRunner)
+  const loadDepsStatus = useSettingsStore((s) => s.loadDepsStatus)
 
   const handleReset = async () => {
     const confirmed = window.confirm(
@@ -21,6 +24,9 @@ export function PrefixResetButton() {
       setProgress(null)
       setStatus('idle')
       addGameLog('WINEPREFIX rearmado correctamente.')
+      if (selectedRunner) {
+        await loadDepsStatus(selectedRunner)
+      }
     }, 'Error al rearmar prefix')
   }
 
@@ -29,9 +35,9 @@ export function PrefixResetButton() {
       type="button"
       onClick={handleReset}
       disabled={isBusy}
-      className="w-full py-2 rounded-xl text-xs text-zinc-500 hover:text-amber-400 border border-zinc-800/80
-        hover:border-amber-500/30 hover:bg-amber-500/5 transition-colors shrink-0
-        disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:text-zinc-500 disabled:hover:border-zinc-800/80 disabled:hover:bg-transparent"
+      className="w-full py-1.5 px-3 rounded-lg text-[11px] font-medium text-zinc-400 border border-zinc-800/80
+        hover:text-amber-300 hover:border-amber-500/30 hover:bg-amber-500/5 transition-colors
+        disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:text-zinc-400 disabled:hover:border-zinc-800/80 disabled:hover:bg-transparent"
     >
       Rearmar WINEPREFIX
     </button>
