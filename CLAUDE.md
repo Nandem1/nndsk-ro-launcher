@@ -30,8 +30,17 @@ npm run dev
 # Frontend tests
 npm test
 
+# Run a single frontend test file
+npx vitest run src/features/spammer/spammer.logic.test.ts
+
 # Type-check
 npx tsc --noEmit
+
+# Rust tests
+cargo test --workspace
+
+# Format Rust
+cargo fmt --all
 ```
 
 `tauri:dev` sets `GDK_BACKEND=x11 WEBKIT_DISABLE_DMABUF_RENDERER=1` — both are required to prevent a black WebView window on Wayland.
@@ -40,17 +49,18 @@ npx tsc --noEmit
 
 ## Architecture
 
-Cargo workspace con tres capas en el backend. El frontend usa Feature-Sliced Design.
+Cargo workspace con cuatro capas en el backend. El frontend usa Feature-Sliced Design.
 
 ### Capas backend (de adentro hacia afuera)
 
 ```
-crates/ro-tools-core/     Dominio puro — sin OS (engine, config, ports, profiles, dgvoodoo)
-crates/ro-tools-linux/    Adaptadores Linux — memoria /proc, ydotool, procesos Wine
+crates/ro-tools-core/     Dominio puro — sin OS (engine, config, ports, profiles, dgvoodoo, spammer)
+crates/ro-tools-linux/    Adaptadores Linux — memoria /proc, ydotool, procesos Wine, keyboard evdev
+crates/ro-inputd/         Binario sidecar — grab de teclado via evdev + passthrough uinput (JSON stdio)
 src-tauri/src/
   commands/               Handlers Tauri delgados (nombre 1:1 con tools/ cuando aplica)
   tools/                  Servicios de aplicación (una carpeta por feature)
-  state/                  Estado compartido (GameState: pid, autopot, ydotoold)
+  state/                  Estado compartido (GameState: pid, autopot, spammer, input, ydotoold)
   models/                 DTOs IPC (serde camelCase, alineados con TypeScript)
   utils/                  Infra compartida (Wine, paths, eventos, JSON) — no mover a tools
 ```
@@ -60,12 +70,13 @@ src-tauri/src/
 | Módulo | Rol |
 |--------|-----|
 | `tools/autopot/` | AutoPot: PID, loop, perfiles |
+| `tools/spammer/` | Spammer: lifecycle ro-inputd, loop de spam via ydotool |
 | `tools/server_tools/` | OpenSetup, patcher, dgVoodoo |
 | `tools/launcher/` | Lanzar/detener juego, cleanup AutoPot |
 | `tools/prefix/` | Setup/reset WINEPREFIX (winetricks, marker) |
 | `tools/runners/` | Descubrir Wine/Proton instalados |
 | `tools/deps/` | Agregar checks de dependencias |
-| `tools/input/` | Ciclo de vida ydotoold |
+| `tools/input/` | Ciclo de vida ydotoold + InputGateway |
 
 `commands/servers.rs` y `commands/settings.rs` son CRUD JSON puro — delegan directo a
 `utils/` y **no** necesitan capa `tools/`.
@@ -87,6 +98,28 @@ commands/autopot.rs          invoke handlers (start/stop/config/status)
         → ro-tools-core AutopotEngine   lógica DT_AP (tick HP/SP)
           → ro-tools-linux ProcMemoryReader + LazyYdotoolInput
 ```
+
+### Spammer — flujo de capas
+
+```
+commands/spammer.rs          invoke handlers (start/stop/update_config/status)
+  → tools/spammer/session.rs  asegura ydotoold, delega a SpammerHandle
+    → tools/spammer/service.rs   ciclo de vida (SpammerHandle)
+      → tools/spammer/loop_runner.rs   tokio loop; spawna ro-inputd como subprocess
+        → crates/ro-inputd              grab evdev, passthrough uinput, JSON stdio
+        → ro-tools-core SpammerEngine   tick: key_down → click_left → key_up
+          → ro-tools-linux LazyYdotoolInput (ydotool)
+```
+
+**ro-inputd** es un binario sidecar bundleado junto al ejecutable principal. Lo encuentra en
+`find_ro_inputd()` (busca relativo al exe). Comunicación: args `--triggers F1,F2 --json`,
+recibe `{"type":"stop"}` por stdin, emite `ready`/`trigger`/`fatal`/`shutdown` por stdout.
+
+El Spammer exige que **el juego esté corriendo** (`pid` no null). `update_spammer_config` hace
+restart completo (no hay canal live de reconfiguración).
+
+Teclas válidas para el Spammer: `F1`–`F9` y `0`–`9`. Al mantener **Alt + tecla** el evento
+pasa por el passthrough en lugar de activar spam (comportamiento intencional).
 
 ### Server tools — flujo de capas
 
@@ -116,6 +149,7 @@ src/
     servers/                       ← server list, add/remove, selection, dgVoodoo
     launcher/                      ← launch flow, progress, error states
     autopot/                       ← panel AutoPot, store, hooks
+    spammer/                       ← panel Spammer, store, hooks
     logs/                          ← game log + tool log (max 200 lines c/u)
     settings/                      ← runner selector, system status banner
   shared/                          ← types, constants, api, hooks Tauri
@@ -124,10 +158,11 @@ src/
 ### Tests Rust
 
 ```bash
-cargo test --workspace    # ro-tools-core, ro-tools-linux, src-tauri
+cargo test --workspace    # ro-tools-core, ro-tools-linux, ro-inputd, src-tauri
 ```
 
-Frontend: `npm test` (vitest) — tests exist in `servers/servers.logic.test.ts` and `settings/settings.logic.test.ts`.
+Frontend: `npm test` (vitest) — tests en `servers/servers.logic.test.ts`,
+`settings/settings.logic.test.ts`, `spammer/spammer.logic.test.ts`, y `logs/logs.logic.test.ts`.
 
 ---
 
@@ -152,15 +187,16 @@ All commands are `async`. Long-running ones (`setup_prefix`, `launch_game`) spaw
 
 ```
 ro-launcher://log            { line: string }       — stdout/stderr Wine
-ro-launcher://tool-log       { line: string }       — AutoPot, input, launch hints
+ro-launcher://tool-log       { line: string }       — AutoPot, Spammer, input, launch hints
 ro-launcher://progress       { step: string, percent: number }
 ro-launcher://game-exit      { code: number }
 ro-launcher://autopot-status { AutopotStatusEvent }
+ro-launcher://spammer-status { SpammerStatusEvent }
 ```
 
 ### `check_dependencies` → `DependencyStatus`
 
-Checks: `wine-cachyos` or `wine` binary, `winetricks`, DXVK at `{prefix}/drive_c/windows/system32/d3d9.dll`, marker file, audio driver, and `ydotool`+`ydotoold` for AutoPot.
+Checks: `wine-cachyos` or `wine` binary, `winetricks`, DXVK at `{prefix}/drive_c/windows/system32/d3d9.dll`, marker file, audio driver, and `ydotool`+`ydotoold` for AutoPot/Spammer. Also checks `input` group membership (required for `ro-inputd` to grab evdev).
 
 ### `setup_prefix`
 
@@ -179,6 +215,13 @@ Verifies marker exists, then spawns `wine <exe>` with working dir set to the exe
 ### `list_runners`
 
 Scans for system Wine (`/usr/bin/wine-cachyos`, `/usr/bin/wine`, `/usr/bin/wine64`) and Proton installations under `~/.steam/root/compatibilitytools.d/`, `~/.local/share/Steam/compatibilitytools.d/`, `/usr/share/steam/compatibilitytools.d/`.
+
+### Spammer commands
+
+- `start_spammer(server)` — requiere `pid` (juego corriendo); inicia `ro-inputd` + loop
+- `stop_spammer()` — detiene loop y ro-inputd gracefully
+- `update_spammer_config(config)` — requiere `pid`; restart completo
+- `get_spammer_status()` → `SpammerStatusEvent` — snapshot sincrónico
 
 ---
 
@@ -208,6 +251,7 @@ interface ServerConfig {
   winePrefix?: string      // per-server prefix override
   runner?: string          // per-server runner override (path to wine/proton binary)
   autopot?: AutopotConfig  // per-server AutoPot settings
+  spammer?: SpammerConfig  // per-server Spammer settings
 }
 ```
 
@@ -224,6 +268,7 @@ Each feature has a Zustand store:
 - `logs.store.ts` — `gameLogs[]` + `toolLogs[]` (FIFO, max 200 c/u)
 - `settings.store.ts` — `runners[]`, `selectedRunner` (path), persisted via `load_settings`/`save_settings`
 - `autopot.store.ts` — estado en vivo vía `ro-launcher://autopot-status`
+- `spammer.store.ts` — `status: SpammerStatusEvent`, `busy`, `userEnabled` vía `ro-launcher://spammer-status`
 
 ---
 
@@ -235,4 +280,6 @@ Each feature has a Zustand store:
 - Don't use `std::process::Command` for Wine/winetricks — only `tokio::process::Command`
 - Wine log filtering happens in `utils/process.rs` — preserve the `fixme:` filter
 - AutoPot domain logic belongs in `ro-tools-core`; OS adapters in `ro-tools-linux`; never invert this
+- Spammer keys are restricted to F1–F9 and 0–9; validated in `ro-tools-core/spammer/keys.rs`; `delay_ms` is clamped to 5–100ms
+- `ro-inputd` requires the user to be in the `input` group (evdev grab); if not, it exits with a fatal JSON message
 - Window is fixed 500×720px (non-resizable) — don't design UI that needs more space
