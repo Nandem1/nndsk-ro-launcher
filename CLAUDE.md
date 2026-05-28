@@ -21,8 +21,11 @@ Target OS: Linux x86_64 (CachyOS/Arch primary, Ubuntu secondary).
 # Full app (Tauri shell + Vite dev server)
 npm run tauri:dev
 
-# Production build
+# Production build (all bundles: deb, AppImage, etc.)
 npm run tauri:build
+
+# AppImage only (portable distro; NO_STRIP=true for Arch/CachyOS)
+npm run tauri:build:appimage
 
 # Frontend only (no Tauri window)
 npm run dev
@@ -43,7 +46,11 @@ cargo test --workspace
 cargo fmt --all
 ```
 
-`tauri:dev` sets `GDK_BACKEND=x11 WEBKIT_DISABLE_DMABUF_RENDERER=1` — both are required to prevent a black WebView window on Wayland.
+Bundles de producción: `target/release/bundle/` (raíz del repo).
+
+`tauri:dev` sets `GDK_BACKEND=x11 WEBKIT_DISABLE_DMABUF_RENDERER=1` — required to prevent a black WebView on Wayland during development.
+
+Release builds (AppImage, binary) apply the same WebKit vars at startup via `utils/webview.rs` → `configure_linux_webview_env()` (called from `lib.rs` before Tauri init). Only set them manually if overriding.
 
 ---
 
@@ -62,7 +69,7 @@ src-tauri/src/
   tools/                  Servicios de aplicación (una carpeta por feature)
   state/                  Estado compartido (GameState: pid, autopot, spammer, input, ydotoold)
   models/                 DTOs IPC (serde camelCase, alineados con TypeScript)
-  utils/                  Infra compartida (Wine, paths, eventos, JSON) — no mover a tools
+  utils/                  Infra compartida (Wine, paths, eventos, JSON, webview) — no mover a tools
 ```
 
 ### Mapa `tools/` (completo)
@@ -200,11 +207,15 @@ Checks: `wine-cachyos` or `wine` binary, `winetricks`, DXVK at `{prefix}/drive_c
 
 ### `setup_prefix`
 
-1. Create WINEPREFIX dir (10%)
-2. `wineboot -i` (20%)
-3. `winetricks dxvk` (40%)
-4. `winetricks vcrun2019` (70%)
-5. Write marker file (100%)
+1. Create WINEPREFIX dir (5%)
+2. `wineboot -i` (10%)
+3. Install Wine Gecko (20%)
+4. `winetricks dxvk` (35%)
+5. `winetricks vcrun2019` (55%)
+6. `winetricks d3dx9` (75%)
+7. `winetricks corefonts` (90%)
+8. Configure audio driver (95%)
+9. Write marker file (100%)
 
 All subprocess calls set `WINEPREFIX` and `WAYLAND_DISPLAY=""`.
 
@@ -225,16 +236,31 @@ Scans for system Wine (`/usr/bin/wine-cachyos`, `/usr/bin/wine`, `/usr/bin/wine6
 
 ---
 
-## Critical env vars for game launch
+## Critical env vars
+
+### Game launch (`utils/wine.rs` → `apply_game_env`)
 
 ```rust
 WINEPREFIX   = "~/.local/share/ro-launcher/prefix"  // or server override
 WAYLAND_DISPLAY = ""          // forces Xwayland — black screen without this
 DXVK_ASYNC   = "1"
 DXVK_CONFIG  = "d3d9.forceSamplerTypeSpecConstants=True"
+WINE_LARGE_ADDRESS_AWARE = "1"
+WINEDLLOVERRIDES = "d3dimm=n,b;ddraw=n,b"
 ```
 
 `WAYLAND_DISPLAY=""` is non-negotiable on Hyprland/Wayland. The game uses dgVoodoo (DX11 output) → DXVK (Vulkan). Without DXVK installed in the prefix the screen will be black.
+
+### Launcher UI WebView (`utils/webview.rs`)
+
+Set before GTK/WebKit init (release + dev):
+
+```rust
+GDK_BACKEND = "x11"
+WEBKIT_DISABLE_DMABUF_RENDERER = "1"
+```
+
+Prevents black WebView / GBM buffer errors on Wayland (including AppImage). Skipped if already set in the environment.
 
 ---
 
@@ -282,4 +308,5 @@ Each feature has a Zustand store:
 - AutoPot domain logic belongs in `ro-tools-core`; OS adapters in `ro-tools-linux`; never invert this
 - Spammer keys are restricted to F1–F9 and 0–9; validated in `ro-tools-core/spammer/keys.rs`; `delay_ms` is clamped to 5–100ms
 - `ro-inputd` requires the user to be in the `input` group (evdev grab); if not, it exits with a fatal JSON message
-- Window is fixed 500×720px (non-resizable) — don't design UI that needs more space
+- Window is fixed 1280×820px (non-resizable) — don't design UI that needs more space
+- AppImage on Arch/CachyOS: build with `npm run tauri:build:appimage` (`NO_STRIP=true`); output at `target/release/bundle/appimage/`

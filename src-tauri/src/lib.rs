@@ -23,6 +23,7 @@ use commands::{
     spammer::{get_spammer_status, start_spammer, stop_spammer, update_spammer_config},
 };
 use state::GameState;
+use utils::configure_linux_webview_env;
 use tools::{
     autopot::AutopotHandle,
     input::{InputGateway, YdotoolDaemon},
@@ -38,6 +39,8 @@ async fn show_main_window(app: tauri::AppHandle) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    configure_linux_webview_env();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(GameState {

@@ -4,7 +4,7 @@
 
 This repository is a Tauri v2 desktop launcher for Ragnarok Online on Linux. The React/TypeScript frontend is in `src/`: `app/` wires the shell UI, `features/` contains domains such as launcher, servers, settings, logs, autopot, and spammer, and `shared/` holds reusable hooks, stores, UI, APIs, and types. Frontend tests are colocated as `*.test.ts`.
 
-Rust backend code lives in `src-tauri/src/`, organized into `commands/`, `models/`, `state/`, `tools/`, and `utils/`. Workspace crates live under `crates/`, including `ro-inputd`, `ro-tools-core`, and `ro-tools-linux`. Runtime resources are in `src-tauri/resources/`.
+Rust backend code lives in `src-tauri/src/`, organized into `commands/`, `models/`, `state/`, `tools/`, and `utils/` (including `utils/webview.rs` for Linux WebKit/Wayland). Workspace crates live under `crates/`, including `ro-inputd`, `ro-tools-core`, and `ro-tools-linux`. Runtime resources are in `src-tauri/resources/`; app icons in `src-tauri/icons/`.
 
 ## Build, Test, and Development Commands
 
@@ -15,7 +15,10 @@ Rust backend code lives in `src-tauri/src/`, organized into `commands/`, `models
 - `npm test`: run Vitest tests once.
 - `cargo test --workspace`: run Rust tests for the backend and local crates.
 - `cargo fmt --all`: format Rust workspace code.
-- `npm run tauri:build`: build `ro-inputd` in release mode and create the production Tauri bundle.
+- `npm run tauri:build`: build `ro-inputd` in release mode and create all production Tauri bundles.
+- `npm run tauri:build:appimage`: AppImage only; sets `NO_STRIP=true` (required on Arch/CachyOS for `linuxdeploy`).
+
+Production artifacts land in `target/release/bundle/` at the repo root (not under `src-tauri/`).
 
 ## Coding Style & Naming Conventions
 

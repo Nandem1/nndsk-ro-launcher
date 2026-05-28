@@ -10,15 +10,17 @@ Launcher dedicado para **Ragnarok Online** en Linux. Gestiona el WINEPREFIX, dep
 
 - **Multi-servidor** — agrega varios clientes RO, cada uno con su propia carpeta y ejecutable
 - **Selector de .exe** — diálogo nativo para elegir el cliente (sin escribir rutas a mano)
-- **Setup automático del prefix** — DXVK, Gecko, vcredist, d3dx9 y marker de configuración en el primer lanzamiento
+- **Setup automático del prefix** — DXVK, Gecko, vcredist, d3dx9, corefonts y marker de configuración en el primer lanzamiento
 - **Detección de herramientas** por carpeta del servidor:
   - **OpenSetup / Setup** — prioriza `opensetup.exe` si coexisten ambos
   - **Patcher** — detecta `*patcher*.exe` y variantes del nombre del servidor
   - **dgVoodoo** — verifica `D3DImm.dll`, `DDraw.dll`, `dgVoodoo.conf` y `dgVoodooCpl.exe`
 - **dgVoodoo embebido** — instala/desinstala desde una plantilla preconfigurada incluida en el launcher
 - **Runners** — Proton (recomendado) o Wine del sistema, seleccionables desde la UI
+- **AutoPot** — HP/SP automático por lectura de memoria del cliente (perfiles 4RTools)
+- **Spammer** — spam de teclas con trigger por hotkey (F1–F9, 0–9) vía `ro-inputd` + ydotool
 - **Audio** — detección PulseAudio/ALSA con avisos si falta el driver adecuado
-- **Logs en tiempo real** — salida de Wine/Proton/DXVK con copia de errores
+- **Logs en tiempo real** — salida de Wine/Proton/DXVK y herramientas (AutoPot, Spammer, input)
 
 ---
 
@@ -31,8 +33,10 @@ Launcher dedicado para **Ragnarok Online** en Linux. Gestiona el WINEPREFIX, dep
 | **Linux x86_64** | Probado en CachyOS/Arch; compatible con otras distros |
 | **Vulkan + drivers GPU** | Necesario para DXVK (AMD/NVIDIA/Intel) |
 | **winetricks** | Setup del prefix |
+| **ydotool + ydotoold** | AutoPot y Spammer (simulación de teclado/ratón) |
+| **grupo `input`** | Requerido para Spammer (`ro-inputd` grabea evdev); el banner de sistema lo indica |
 
-> En Wayland (Hyprland, etc.) el launcher lanza vía Xwayland automáticamente.
+> En Wayland (Hyprland, etc.) el juego se lanza vía Xwayland automáticamente. La UI del launcher también fuerza backend X11 para WebKit (incluido AppImage).
 
 ---
 
@@ -82,10 +86,26 @@ npm run tauri:dev
 ### Build de producción
 
 ```bash
+# Todos los bundles (deb, AppImage, etc.)
 npm run tauri:build
+
+# Solo AppImage (recomendado para distribución portable)
+npm run tauri:build:appimage
 ```
 
-El binario queda en `src-tauri/target/release/bundle/`.
+Los artefactos quedan en `target/release/bundle/` (raíz del repo, no dentro de `src-tauri/`).
+
+En Arch/CachyOS, `tauri:build:appimage` ya incluye `NO_STRIP=true` (workaround para `linuxdeploy` con librerías `.relr.dyn`).
+
+### AppImage
+
+```bash
+npm run tauri:build:appimage
+chmod +x target/release/bundle/appimage/RO-Launcher_*_amd64.AppImage
+./target/release/bundle/appimage/RO-Launcher_*_amd64.AppImage
+```
+
+Para actualizar: borra el `.AppImage` anterior y usa el nuevo. Tus datos en `~/.local/share/ro-launcher/` no se tocan.
 
 ### Uso rápido
 
@@ -151,12 +171,23 @@ La instalación es **manual** (botón Instalar) — no se copia automáticamente
 
 ---
 
+## AutoPot y Spammer
+
+| Herramienta | Requisitos | Notas |
+|-------------|------------|-------|
+| **AutoPot** | Juego corriendo, ydotool/ydotoold, perfil de memoria | HP/SP por lectura de memoria; perfiles embebidos (compatible 4RTools) |
+| **Spammer** | Juego corriendo, ydotool/ydotoold, grupo `input` | Hotkeys F1–F9 y 0–9; `ro-inputd` sidecar bundleado; Alt+tecla pasa el evento sin spam |
+
+La config de ambas se guarda por servidor en `servers.json`.
+
+---
+
 ## Stack técnico
 
 | Capa | Tecnología |
 |------|------------|
 | Shell | [Tauri v2](https://v2.tauri.app/) |
-| Backend | Rust + Tokio |
+| Backend | Rust + Tokio, crates `ro-tools-core`, `ro-tools-linux`, `ro-inputd` |
 | Frontend | React 18, TypeScript, Tailwind CSS, Zustand, Vite |
 | Arquitectura | Feature-Sliced Design |
 
@@ -170,10 +201,11 @@ La instalación es **manual** (botón Instalar) — no se copia automáticamente
 - Confirma dgVoodoo instalado (D3DImm + DDraw)
 - Usa `proton-cachyos-slr` como runner
 
-### Pantalla negra del launcher (UI)
+### Pantalla negra del launcher (UI) / error GBM
 
-- Lanza con `npm run tauri:dev` (ya incluye los flags de Wayland)
-- O exporta manualmente: `GDK_BACKEND=x11 WEBKIT_DISABLE_DMABUF_RENDERER=1`
+- En desarrollo: `npm run tauri:dev` (ya incluye los flags de Wayland)
+- En AppImage/binario release: la app aplica `GDK_BACKEND=x11` y `WEBKIT_DISABLE_DMABUF_RENDERER=1` al arranque
+- Si aún falla, exporta manualmente: `GDK_BACKEND=x11 WEBKIT_DISABLE_DMABUF_RENDERER=1 ./RO-Launcher_*.AppImage`
 
 ### Sin audio
 

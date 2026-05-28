@@ -15,6 +15,7 @@ mod runner;
 mod servers;
 mod settings;
 mod system;
+mod webview;
 mod wine;
 
 pub use events::*;
@@ -27,6 +28,7 @@ pub use runner::*;
 pub use servers::*;
 pub use settings::*;
 pub use system::*;
+pub use webview::*;
 pub use wine::*;
 
 use tauri::AppHandle;
