@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { runSafely } from '../async'
 import { withResolvedRunner } from '../resolveRunner'
 import type { ServerConfig } from '../types'
@@ -65,10 +65,10 @@ export function useServerRuntimeTool<
 }: ServerRuntimeToolOptions<Config, Status, Patch>) {
   const [startError, setStartError] = useState<string | null>(null)
 
-  const config: Config = {
-    ...mergeConfig(persistedConfig),
-    enabled: userEnabled,
-  }
+  const config = useMemo<Config>(
+    () => ({ ...mergeConfig(persistedConfig), enabled: userEnabled }),
+    [mergeConfig, persistedConfig, userEnabled],
+  )
 
   useTauriEvent<Status>(eventName, (payload) => setStatus(payload), [setStatus])
 

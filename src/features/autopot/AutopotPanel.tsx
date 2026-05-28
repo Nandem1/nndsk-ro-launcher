@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { DEFAULT_AUTOPOT_CONFIG, POT_KEYS } from '../../shared/constants'
+
+const POT_KEY_OPTIONS = POT_KEYS.map((key) => ({ value: key, label: key }))
 import { Panel, type PanelTone } from '../../shared/ui/Panel'
 import { DarkSelect } from '../../shared/ui/DarkSelect'
 import { ToggleSwitch } from '../../shared/ui/ToggleSwitch'
@@ -134,13 +136,7 @@ export function AutopotPanel() {
       <div className="space-y-2">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
-            <p
-              className={`truncate ${
-                hasCharacter
-                  ? 'text-base font-bold text-amber-100/95 tracking-tight'
-                  : 'text-sm font-semibold text-zinc-100'
-              }`}
-            >
+            <p className={`truncate text-sm font-semibold ${hasCharacter ? 'text-amber-100/95' : 'text-zinc-100'}`}>
               {displayName}
             </p>
             <p className="text-[10px] text-zinc-600">{statusText}</p>
@@ -166,7 +162,7 @@ export function AutopotPanel() {
                 value={config.hpKey}
                 disabled={!server}
                 onChange={(hpKey) => void updateField({ hpKey })}
-                options={POT_KEYS.map((key) => ({ value: key, label: key }))}
+                options={POT_KEY_OPTIONS}
               />
               <input
                 type="number"
@@ -190,7 +186,7 @@ export function AutopotPanel() {
                 value={config.spKey}
                 disabled={!server}
                 onChange={(spKey) => void updateField({ spKey })}
-                options={POT_KEYS.map((key) => ({ value: key, label: key }))}
+                options={POT_KEY_OPTIONS}
               />
               <input
                 type="number"
@@ -209,15 +205,13 @@ export function AutopotPanel() {
           </div>
         </div>
 
-        {error && available && (
-          <p className="text-[10px] text-red-400 leading-snug">{error}</p>
-        )}
-
-        {showProbeHint && (
-          <p className="text-[10px] text-amber-500/90 leading-snug">
-            HP/SP en cero — revisa Tools en Logs.
-          </p>
-        )}
+        <p className="text-[10px] leading-snug min-h-[calc(1em*1.375)]">
+          {error && available
+            ? <span className="text-red-400">{error}</span>
+            : showProbeHint
+              ? <span className="text-amber-500/90">HP/SP en cero — revisa Tools en Logs.</span>
+              : null}
+        </p>
       </div>
     </Panel>
   )

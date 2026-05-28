@@ -36,7 +36,7 @@ export function Panel({
 }: PanelProps) {
   return (
     <section
-      className={`rounded-xl border bg-zinc-900/40 backdrop-blur-sm flex flex-col min-h-0 transition-[border-color,opacity,box-shadow] duration-300 ${TONE_CLASSES[tone]} ${className}`}
+      className={`rounded-xl border bg-zinc-900/40 backdrop-blur-sm flex flex-col min-h-0 transition-[border-color,box-shadow] duration-300 ${TONE_CLASSES[tone]} ${className}`}
     >
       <div
         className={`flex items-center justify-between gap-2 border-b border-zinc-800/80 shrink-0 ${

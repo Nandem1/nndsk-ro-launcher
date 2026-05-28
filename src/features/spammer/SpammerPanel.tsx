@@ -1,3 +1,4 @@
+import { memo, useMemo, useCallback } from 'react'
 import { POT_KEYS } from '../../shared/constants'
 import { Panel, type PanelTone } from '../../shared/ui/Panel'
 import { ToggleSwitch } from '../../shared/ui/ToggleSwitch'
@@ -17,7 +18,7 @@ function resolveTone(
   return 'neutral'
 }
 
-function KeyChip({
+const KeyChip = memo(function KeyChip({
   label,
   active,
   disabled,
@@ -42,7 +43,7 @@ function KeyChip({
       {label}
     </button>
   )
-}
+})
 
 export function SpammerPanel() {
   const server = useSelectedServer()
@@ -50,8 +51,9 @@ export function SpammerPanel() {
     useSpammer(server)
 
   const available = isRunning && !!server
-  const keysLabel = formatSpammerKeys(config.keys)
-  const selectedKeys = new Set(config.keys)
+  const keysStr = config.keys.join(',')
+  const selectedKeys = useMemo(() => new Set(config.keys), [keysStr])
+  const keysLabel = useMemo(() => formatSpammerKeys(config.keys), [keysStr])
 
   const statusLabel = (() => {
     if (!available) return 'Inactivo'
@@ -74,10 +76,10 @@ export function SpammerPanel() {
 
   const tone = resolveTone(available, config.enabled, status.armed, !!error)
 
-  const toggleKey = (key: string) => {
+  const toggleKey = useCallback((key: string) => {
     const next = toggleSpammerKey(config, key)
     void updateField({ keys: next.keys })
-  }
+  }, [config, updateField])
 
   return (
     <Panel title="Spammer" compact tone={tone} className="h-full">
@@ -149,9 +151,11 @@ export function SpammerPanel() {
           </span>
         </div>
 
-        {error && available ? (
-          <p className="text-[10px] text-red-400/90 leading-snug">{error}</p>
-        ) : null}
+        <p className="text-[10px] leading-snug min-h-[calc(1em*1.375)]">
+          {error && available
+            ? <span className="text-red-400/90">{error}</span>
+            : null}
+        </p>
       </div>
     </Panel>
   )

@@ -57,7 +57,7 @@ export function ServerToolsPanel() {
     >
       {error && <p className="text-[10px] text-red-400 mb-1.5">{error}</p>}
 
-      {!loading && status && (
+      {status && (
         <ToolsGrid
           status={status}
           prefixConfigured={prefixConfigured}
