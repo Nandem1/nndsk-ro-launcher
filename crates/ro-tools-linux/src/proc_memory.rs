@@ -60,6 +60,15 @@ impl MemoryReader for ProcMemoryReader {
         let end = buf[..n].iter().position(|&b| b == 0).unwrap_or(n);
         Ok(String::from_utf8_lossy(&buf[..end]).into_owned())
     }
+
+    fn read_u32_slice(&self, address: u32, len: usize) -> Result<Vec<u32>, ToolsError> {
+        let mut bytes = vec![0u8; len * 4];
+        read_bytes_at(self.pid, address, &mut bytes, &self.file)?;
+        Ok(bytes
+            .chunks_exact(4)
+            .map(|chunk| u32::from_le_bytes(chunk.try_into().expect("exact chunk")))
+            .collect())
+    }
 }
 
 fn read_u32_at(pid: u32, address: u32, file: &Mutex<Option<File>>) -> Result<u32, ToolsError> {

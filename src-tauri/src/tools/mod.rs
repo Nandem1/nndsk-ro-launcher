@@ -13,6 +13,7 @@
 //! 2. Orquestación → `tools/<feature>/session.rs` (+ módulos internos)
 //! 3. Handler → `commands/<feature>.rs`
 
+pub mod autobuff;
 pub mod autopot;
 pub mod deps;
 pub mod input;

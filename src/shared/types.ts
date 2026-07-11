@@ -45,6 +45,30 @@ export interface SpammerConfig {
   keys: string[]
 }
 
+export interface AutobuffRule {
+  id: string
+  label: string
+  statusId: number
+  key: string
+  cooldownMs: number
+  priority: number
+  enabled: boolean
+}
+
+export interface AutobuffConfig {
+  enabled: boolean
+  delayMs: number
+  rules: AutobuffRule[]
+}
+
+export interface AutobuffStatusEvent {
+  active: boolean
+  activeStatuses: number
+  lastAppliedRule?: string | null
+  delayMs: number
+  error?: string | null
+}
+
 export interface SpammerStatusEvent {
   active: boolean
   armed: boolean
@@ -66,6 +90,7 @@ export interface ServerConfig {
   runner?: string | null
   autopot?: AutopotConfig
   spammer?: SpammerConfig
+  autobuff?: AutobuffConfig
 }
 
 export interface DependencyStatus {

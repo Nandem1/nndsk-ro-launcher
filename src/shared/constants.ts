@@ -4,6 +4,7 @@ export const LAUNCHER_EVENTS = {
   PROGRESS: 'ro-launcher://progress',
   GAME_EXIT: 'ro-launcher://game-exit',
   AUTOPOT_STATUS: 'ro-launcher://autopot-status',
+  AUTOBUFF_STATUS: 'ro-launcher://autobuff-status',
   SPAMMER_STATUS: 'ro-launcher://spammer-status',
 } as const
 
@@ -97,4 +98,10 @@ export const DEFAULT_SPAMMER_CONFIG = {
   enabled: false,
   delayMs: 10,
   keys: ['F1'],
+} as const
+
+export const DEFAULT_AUTOBUFF_CONFIG = {
+  enabled: false,
+  delayMs: 300,
+  rules: [],
 } as const

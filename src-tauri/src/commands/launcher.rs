@@ -17,6 +17,7 @@ pub async fn launch_game(
         app,
         &Arc::clone(&state.pid),
         &state.autopot,
+        &state.autobuff,
         &state.spammer,
         server,
     )

@@ -9,6 +9,7 @@ use std::sync::{Arc, Mutex};
 use tauri::{Manager, RunEvent};
 
 use commands::{
+    autobuff::{get_autobuff_status, start_autobuff, stop_autobuff, update_autobuff_config},
     autopot::{
         get_autopot_status, list_client_profiles, start_autopot, stop_autopot,
         update_autopot_config,
@@ -24,6 +25,7 @@ use commands::{
 };
 use state::GameState;
 use tools::{
+    autobuff::AutobuffHandle,
     autopot::AutopotHandle,
     input::{InputGateway, YdotoolDaemon},
     spammer::SpammerHandle,
@@ -46,6 +48,7 @@ pub fn run() {
         .manage(GameState {
             pid: Arc::new(Mutex::new(None)),
             autopot: AutopotHandle::new(),
+            autobuff: AutobuffHandle::new(),
             spammer: SpammerHandle::new(),
             input: InputGateway::new(),
             ydotoold: Arc::new(YdotoolDaemon::new()),
@@ -71,6 +74,10 @@ pub fn run() {
             update_autopot_config,
             get_autopot_status,
             list_client_profiles,
+            start_autobuff,
+            stop_autobuff,
+            update_autobuff_config,
+            get_autobuff_status,
             start_spammer,
             stop_spammer,
             update_spammer_config,
@@ -83,6 +90,7 @@ pub fn run() {
                 if let Some(state) = app.try_state::<GameState>() {
                     tauri::async_runtime::block_on(async {
                         state.spammer.stop().await;
+                        state.autobuff.stop().await;
                         state.ydotoold.shutdown().await;
                     });
                 }

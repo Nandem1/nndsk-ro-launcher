@@ -3,6 +3,8 @@ import type {
   AppSettings,
   AutopotConfig,
   AutopotStatusEvent,
+  AutobuffConfig,
+  AutobuffStatusEvent,
   ClientProfile,
   DependencyStatus,
   InstallDgVoodooResult,
@@ -86,6 +88,18 @@ export const api = {
     invoke<void>('update_autopot_config', { config }),
 
   getAutopotStatus: () => invoke<AutopotStatusEvent>('get_autopot_status'),
+
+  startAutobuff: (server: ServerConfig) => {
+    assertValid(validateServerConfig(server))
+    return invoke<void>('start_autobuff', { server })
+  },
+
+  stopAutobuff: () => invoke<void>('stop_autobuff'),
+
+  updateAutobuffConfig: (config: AutobuffConfig) =>
+    invoke<void>('update_autobuff_config', { config }),
+
+  getAutobuffStatus: () => invoke<AutobuffStatusEvent>('get_autobuff_status'),
 
   listClientProfiles: () => invoke<ClientProfile[]>('list_client_profiles'),
 

@@ -1,4 +1,4 @@
-use ro_tools_core::{AutopotConfig, SpammerConfig};
+use ro_tools_core::{AutobuffConfig, AutopotConfig, SpammerConfig};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -15,6 +15,8 @@ pub struct ServerConfig {
     pub autopot: AutopotConfig,
     #[serde(default)]
     pub spammer: SpammerConfig,
+    #[serde(default)]
+    pub autobuff: AutobuffConfig,
 }
 
 impl ServerConfig {
@@ -35,7 +37,8 @@ impl ServerConfig {
         self.autopot.validate().map_err(|error| error.to_string())?;
         self.spammer
             .validate_for_start()
-            .map_err(|error| error.to_string())
+            .map_err(|error| error.to_string())?;
+        self.autobuff.validate().map_err(|error| error.to_string())
     }
 
     pub fn validate_executable_available(&self) -> Result<(), String> {
@@ -98,6 +101,7 @@ mod tests {
             runner: None,
             autopot: Default::default(),
             spammer: Default::default(),
+            autobuff: Default::default(),
         }
     }
 

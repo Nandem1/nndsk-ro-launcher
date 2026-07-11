@@ -6,6 +6,7 @@ import { ServerToolsPanel } from '../features/servers/ServerToolsPanel'
 import { LaunchButton } from '../features/launcher/LaunchButton'
 import { AutopotPanel } from '../features/autopot/AutopotPanel'
 import { SpammerPanel } from '../features/spammer/SpammerPanel'
+import { AutobuffPanel } from '../features/autobuff/AutobuffPanel'
 import { UnifiedLogPanel } from '../features/logs/LogPanels'
 import { RunnerSelector } from '../features/settings/RunnerSelector'
 import { AdvancedSettings } from '../features/settings/AdvancedSettings'
@@ -38,8 +39,9 @@ export function App() {
         <div className="flex flex-col gap-2.5 min-h-0">
           <ServerToolsPanel />
 
-          <div className="grid grid-cols-2 gap-2.5 shrink-0 items-stretch">
+          <div className="grid grid-cols-3 gap-2.5 shrink-0 items-stretch">
             <AutopotPanel />
+            <AutobuffPanel />
             <SpammerPanel />
           </div>
 

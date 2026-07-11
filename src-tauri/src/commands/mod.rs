@@ -2,6 +2,7 @@
 //!
 //! Nombre de módulo = carpeta homóloga en `tools/` cuando aplica.
 
+pub mod autobuff;
 pub mod autopot;
 pub mod deps;
 pub mod launcher;

@@ -203,6 +203,7 @@ mod tests {
             runner: None,
             autopot: Default::default(),
             spammer: Default::default(),
+            autobuff: Default::default(),
         }
     }
 

@@ -6,6 +6,7 @@ pub const EVENT_TOOL_LOG: &str = "ro-launcher://tool-log";
 pub const EVENT_PROGRESS: &str = "ro-launcher://progress";
 pub const EVENT_GAME_EXIT: &str = "ro-launcher://game-exit";
 pub const EVENT_AUTOPOT_STATUS: &str = "ro-launcher://autopot-status";
+pub const EVENT_AUTOBUFF_STATUS: &str = "ro-launcher://autobuff-status";
 pub const EVENT_SPAMMER_STATUS: &str = "ro-launcher://spammer-status";
 
 #[derive(Clone, Serialize)]
