@@ -71,6 +71,8 @@ impl AutobuffHandle {
         let (config_tx, config_rx) = watch::channel(config.clone());
         *self.stop_tx.lock().unwrap() = Some(stop_tx);
         *self.config_tx.lock().unwrap() = Some(config_tx);
+        let writer = input.writer();
+        let status_arc = Arc::clone(&self.status);
         emit_tool_log_opt(
             Some(&app),
             format!(
@@ -79,18 +81,18 @@ impl AutobuffHandle {
                 config.rules.len()
             ),
         );
-        tokio::spawn(super::loop_runner::run(
+        tokio::spawn(super::loop_runner::run(super::loop_runner::RunContext {
             app,
             memory,
-            input.writer(),
+            writer,
             config,
             profile,
             stop_rx,
             config_rx,
-            Arc::clone(&self.status),
-            input,
+            status_arc,
+            gateway: input,
             ydotoold,
-        ));
+        }));
         sleep(Duration::from_millis(50)).await;
         Ok(())
     }

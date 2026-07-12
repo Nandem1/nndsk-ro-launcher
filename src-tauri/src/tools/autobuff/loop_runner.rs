@@ -10,23 +10,38 @@ use tauri::AppHandle;
 use tokio::sync::watch;
 use tokio::time::{interval, MissedTickBehavior};
 
+pub(super) struct RunContext {
+    pub(super) app: AppHandle,
+    pub(super) memory: ro_tools_linux::ProcMemoryReader,
+    pub(super) writer: crate::tools::input::GatewayWriter,
+    pub(super) config: AutobuffConfig,
+    pub(super) profile: ClientProfile,
+    pub(super) stop_rx: watch::Receiver<bool>,
+    pub(super) config_rx: watch::Receiver<AutobuffConfig>,
+    pub(super) status_arc: Arc<Mutex<AutobuffStatusEvent>>,
+    pub(super) gateway: InputGateway,
+    pub(super) ydotoold: Arc<YdotoolDaemon>,
+}
+
 fn ticker(delay_ms: u64) -> tokio::time::Interval {
     let mut value = interval(Duration::from_millis(delay_ms.max(100)));
     value.set_missed_tick_behavior(MissedTickBehavior::Skip);
     value
 }
-pub async fn run(
-    app: AppHandle,
-    memory: ro_tools_linux::ProcMemoryReader,
-    writer: crate::tools::input::GatewayWriter,
-    config: AutobuffConfig,
-    profile: ClientProfile,
-    mut stop_rx: watch::Receiver<bool>,
-    mut config_rx: watch::Receiver<AutobuffConfig>,
-    status_arc: Arc<Mutex<AutobuffStatusEvent>>,
-    gateway: InputGateway,
-    ydotoold: Arc<YdotoolDaemon>,
-) {
+
+pub(super) async fn run(context: RunContext) {
+    let RunContext {
+        app,
+        memory,
+        writer,
+        config,
+        profile,
+        mut stop_rx,
+        mut config_rx,
+        status_arc,
+        gateway,
+        ydotoold,
+    } = context;
     let engine = Arc::new(Mutex::new(AutobuffEngine::new(
         memory,
         writer,
