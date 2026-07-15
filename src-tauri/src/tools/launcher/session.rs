@@ -66,9 +66,13 @@ pub async fn launch_game(
     let app_for_exit = app.clone();
     tokio::spawn(async move {
         drain_game_output(&app_for_exit, &mut child).await;
-        autopot.stop().await;
-        autobuff.stop().await;
-        spammer.stop().await;
+        let stops = tokio::join!(autopot.stop(), autobuff.stop(), spammer.stop());
+        for error in [stops.0.err(), stops.1.err(), stops.2.err()]
+            .into_iter()
+            .flatten()
+        {
+            emit_tool_log_opt(Some(&app_for_exit), format!("[Launch] Cleanup: {error}"));
+        }
         emit_tool_log_opt(
             Some(&app_for_exit),
             "[Launch] Juego terminado, AutoPot, AutoBuff y Spammer detenidos",
@@ -87,9 +91,15 @@ pub async fn launch_game(
 }
 
 pub async fn stop_game(state: &GameState) -> Result<(), String> {
-    state.autopot.stop().await;
-    state.autobuff.stop().await;
-    state.spammer.stop().await;
+    let stops = tokio::join!(
+        state.autopot.stop(),
+        state.autobuff.stop(),
+        state.spammer.stop()
+    );
+    let tool_errors: Vec<_> = [stops.0.err(), stops.1.err(), stops.2.err()]
+        .into_iter()
+        .flatten()
+        .collect();
     if let Some(pid) = state.game.running_pid()? {
         let status = tokio::process::Command::new("kill")
             .args(["-TERM", &pid.to_string()])
@@ -101,6 +111,9 @@ pub async fn stop_game(state: &GameState) -> Result<(), String> {
                 "No se pudo detener el juego (kill terminó con {status})"
             ));
         }
+    }
+    if !tool_errors.is_empty() {
+        return Err(tool_errors.join("; "));
     }
     Ok(())
 }

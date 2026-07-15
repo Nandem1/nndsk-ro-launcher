@@ -16,9 +16,11 @@
 pub mod autobuff;
 pub mod autopot;
 pub mod deps;
+mod game_pid;
 pub mod input;
 pub mod launcher;
 pub mod prefix;
 pub mod runners;
 pub mod server_tools;
+pub mod session;
 pub mod spammer;

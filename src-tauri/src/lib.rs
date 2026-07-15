@@ -90,8 +90,11 @@ pub fn run() {
             if let RunEvent::Exit = event {
                 if let Some(state) = app.try_state::<GameState>() {
                     tauri::async_runtime::block_on(async {
-                        state.spammer.stop().await;
-                        state.autobuff.stop().await;
+                        let _ = tokio::join!(
+                            state.autopot.stop(),
+                            state.autobuff.stop(),
+                            state.spammer.stop()
+                        );
                         state.ydotoold.shutdown().await;
                     });
                 }

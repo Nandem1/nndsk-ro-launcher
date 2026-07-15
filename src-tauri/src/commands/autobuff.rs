@@ -26,8 +26,7 @@ pub async fn start_autobuff(
 }
 #[tauri::command]
 pub async fn stop_autobuff(state: State<'_, GameState>) -> Result<(), String> {
-    state.autobuff.stop().await;
-    Ok(())
+    state.autobuff.stop().await
 }
 #[tauri::command]
 pub fn update_autobuff_config(

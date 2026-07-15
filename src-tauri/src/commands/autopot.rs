@@ -32,8 +32,7 @@ pub async fn start_autopot(
 
 #[tauri::command]
 pub async fn stop_autopot(state: State<'_, GameState>) -> Result<(), String> {
-    state.autopot.stop().await;
-    Ok(())
+    state.autopot.stop().await
 }
 
 #[tauri::command]

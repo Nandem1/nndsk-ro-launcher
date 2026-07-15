@@ -29,8 +29,7 @@ pub async fn start_spammer(
 
 #[tauri::command]
 pub async fn stop_spammer(state: State<'_, GameState>) -> Result<(), String> {
-    state.spammer.stop().await;
-    Ok(())
+    state.spammer.stop().await
 }
 
 /// Config change = restart completo (no hay canal live; ro-inputd es stateless en config).
