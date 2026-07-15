@@ -12,3 +12,4 @@ pub mod server_tools;
 pub mod servers;
 pub mod settings;
 pub mod spammer;
+pub mod storage;

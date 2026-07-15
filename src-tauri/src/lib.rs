@@ -22,8 +22,9 @@ use commands::{
     servers::{list_servers, save_servers},
     settings::{load_settings, save_settings},
     spammer::{get_spammer_status, start_spammer, stop_spammer, update_spammer_config},
+    storage::take_storage_notices,
 };
-use state::{GameState, ServerRepository};
+use state::{GameState, ServerRepository, SettingsRepository, StorageNotices};
 use tools::{
     autobuff::AutobuffHandle,
     autopot::AutopotHandle,
@@ -54,6 +55,8 @@ pub fn run() {
             ydotoold: Arc::new(YdotoolDaemon::new()),
         })
         .manage(ServerRepository::default())
+        .manage(SettingsRepository)
+        .manage(StorageNotices::default())
         .invoke_handler(tauri::generate_handler![
             show_main_window,
             check_dependencies,
@@ -68,6 +71,7 @@ pub fn run() {
             uninstall_dgvoodoo,
             launch_server_tool,
             save_settings,
+            take_storage_notices,
             setup_prefix,
             reset_prefix,
             start_autopot,

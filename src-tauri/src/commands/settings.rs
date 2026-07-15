@@ -1,13 +1,20 @@
+use tauri::State;
+
 use crate::models::settings::AppSettings;
-use crate::utils::{load_app_settings, save_app_settings};
+use crate::state::{SettingsRepository, StorageNotices};
 
 #[tauri::command]
-pub async fn load_settings() -> Result<AppSettings, String> {
-    load_app_settings().await
+pub async fn load_settings(
+    repository: State<'_, SettingsRepository>,
+    notices: State<'_, StorageNotices>,
+) -> Result<AppSettings, String> {
+    repository.load(&notices)
 }
 
 #[tauri::command]
-pub async fn save_settings(settings: AppSettings) -> Result<(), String> {
-    settings.validate()?;
-    save_app_settings(&settings).await
+pub async fn save_settings(
+    repository: State<'_, SettingsRepository>,
+    settings: AppSettings,
+) -> Result<(), String> {
+    repository.save(&settings)
 }

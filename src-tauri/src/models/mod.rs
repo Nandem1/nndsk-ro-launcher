@@ -6,4 +6,5 @@ pub mod server;
 pub mod server_tools;
 pub mod settings;
 pub mod spammer;
+pub mod storage;
 pub mod tool_kind;

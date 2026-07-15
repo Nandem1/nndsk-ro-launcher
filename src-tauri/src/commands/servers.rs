@@ -1,11 +1,14 @@
 use tauri::State;
 
 use crate::models::server::ServerConfig;
-use crate::state::ServerRepository;
+use crate::state::{ServerRepository, StorageNotices};
 
 #[tauri::command]
-pub fn list_servers(repository: State<'_, ServerRepository>) -> Result<Vec<ServerConfig>, String> {
-    repository.list()
+pub fn list_servers(
+    repository: State<'_, ServerRepository>,
+    notices: State<'_, StorageNotices>,
+) -> Result<Vec<ServerConfig>, String> {
+    repository.list(&notices)
 }
 
 #[tauri::command]
