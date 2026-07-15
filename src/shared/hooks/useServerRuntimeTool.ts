@@ -8,6 +8,39 @@ type RuntimeToolConfig = {
   enabled: boolean
 }
 
+interface ToolStateAdapter<Status> {
+  status: Status
+  busy: boolean
+  userEnabled: boolean
+  setStatus: (status: Status) => void
+  setBusy: (busy: boolean) => void
+  setUserEnabled: (enabled: boolean) => void
+  reset: () => void
+}
+
+interface ToolPersistenceAdapter<Config, Patch> {
+  persistedConfig?: Config
+  mergeConfig: (config?: Config) => Config
+  withPatch: (config: Config, patch: Patch) => Config
+  readServerConfig: (server: ServerConfig) => Config | undefined
+  persistServer: (
+    serverId: string,
+    update: (server: ServerConfig) => ServerConfig,
+  ) => Promise<ServerConfig | null>
+  buildServerConfig: (server: ServerConfig, config: Config) => ServerConfig
+}
+
+interface ToolRuntimeAdapter<Config, Status> {
+  eventName: string
+  toolName: string
+  addToolLog: (line: string) => void
+  start: (server: ServerConfig) => Promise<void>
+  stop: () => Promise<void>
+  updateConfig: (config: Config) => Promise<void>
+  isActive: () => boolean
+  statusError: (status: Status) => string | null | undefined
+}
+
 interface ServerRuntimeToolOptions<
   Config extends RuntimeToolConfig,
   Status,
@@ -16,30 +49,9 @@ interface ServerRuntimeToolOptions<
   server: ServerConfig | null
   isRunning: boolean
   selectedRunner: string
-  eventName: string
-  toolName: string
-  persistedConfig?: Config
-  status: Status
-  busy: boolean
-  userEnabled: boolean
-  setStatus: (status: Status) => void
-  setBusy: (busy: boolean) => void
-  setUserEnabled: (enabled: boolean) => void
-  reset: () => void
-  addToolLog: (line: string) => void
-  mergeConfig: (config?: Config) => Config
-  withPatch: (config: Config, patch: Patch) => Config
-  readServerConfig: (server: ServerConfig) => Config | undefined
-  persistServer: (
-    serverId: string,
-    update: (server: ServerConfig) => ServerConfig,
-  ) => Promise<ServerConfig | null>
-  startTool: (server: ServerConfig) => Promise<void>
-  stopTool: () => Promise<void>
-  updateToolConfig: (config: Config) => Promise<void>
-  buildServerConfig: (server: ServerConfig, config: Config) => ServerConfig
-  isRuntimeActive: () => boolean
-  statusError: (status: Status) => string | null | undefined
+  state: ToolStateAdapter<Status>
+  persistence: ToolPersistenceAdapter<Config, Patch>
+  runtime: ToolRuntimeAdapter<Config, Status>
 }
 
 export function useServerRuntimeTool<
@@ -50,27 +62,33 @@ export function useServerRuntimeTool<
   server,
   isRunning,
   selectedRunner,
-  eventName,
-  toolName,
-  persistedConfig,
-  status,
-  busy,
-  userEnabled,
-  setStatus,
-  setBusy,
-  setUserEnabled,
-  reset,
-  addToolLog,
-  mergeConfig,
-  withPatch,
-  readServerConfig,
-  persistServer,
-  startTool,
-  stopTool,
-  updateToolConfig,
-  buildServerConfig,
-  isRuntimeActive,
-  statusError,
+  state: {
+    status,
+    busy,
+    userEnabled,
+    setStatus,
+    setBusy,
+    setUserEnabled,
+    reset,
+  },
+  persistence: {
+    persistedConfig,
+    mergeConfig,
+    withPatch,
+    readServerConfig,
+    persistServer,
+    buildServerConfig,
+  },
+  runtime: {
+    eventName,
+    toolName,
+    addToolLog,
+    start: startTool,
+    stop: stopTool,
+    updateConfig: updateToolConfig,
+    isActive: isRuntimeActive,
+    statusError,
+  },
 }: ServerRuntimeToolOptions<Config, Status, Patch>) {
   const [startError, setStartError] = useState<string | null>(null)
 

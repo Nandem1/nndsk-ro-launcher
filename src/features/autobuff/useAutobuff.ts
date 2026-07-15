@@ -18,6 +18,15 @@ import {
 import { useAutobuffStore } from './autobuff.store'
 
 export function useAutobuff(server: ServerConfig | null) {
+  const status = useAutobuffStore((s) => s.status)
+  const busy = useAutobuffStore((s) => s.busy)
+  const userEnabled = useAutobuffStore((s) => s.userEnabled)
+  const setStatus = useAutobuffStore((s) => s.setStatus)
+  const setBusy = useAutobuffStore((s) => s.setBusy)
+  const setUserEnabled = useAutobuffStore((s) => s.setUserEnabled)
+  const reset = useAutobuffStore((s) => s.reset)
+  const addToolLog = useLogsStore((s) => s.addToolLog)
+
   return useServerRuntimeTool<
     AutobuffConfig,
     AutobuffStatusEvent,
@@ -26,27 +35,33 @@ export function useAutobuff(server: ServerConfig | null) {
     server,
     isRunning: useLauncherStore((s) => s.status) === 'running',
     selectedRunner: useSettingsStore((s) => s.selectedRunner),
-    eventName: LAUNCHER_EVENTS.AUTOBUFF_STATUS,
-    toolName: 'AutoBuff',
-    persistedConfig: server?.autobuff,
-    status: useAutobuffStore((s) => s.status),
-    busy: useAutobuffStore((s) => s.busy),
-    userEnabled: useAutobuffStore((s) => s.userEnabled),
-    setStatus: useAutobuffStore((s) => s.setStatus),
-    setBusy: useAutobuffStore((s) => s.setBusy),
-    setUserEnabled: useAutobuffStore((s) => s.setUserEnabled),
-    reset: useAutobuffStore((s) => s.reset),
-    addToolLog: useLogsStore((s) => s.addToolLog),
-    mergeConfig: mergeAutobuffConfig,
-    withPatch: withAutobuffPatch,
-    readServerConfig: (currentServer) => currentServer.autobuff,
-    persistServer: (serverId, update) =>
-      useServersStore.getState().updateServer(serverId, update),
-    startTool: api.startAutobuff,
-    stopTool: api.stopAutobuff,
-    updateToolConfig: api.updateAutobuffConfig,
-    buildServerConfig: (base, autobuff) => ({ ...base, autobuff }),
-    isRuntimeActive: () => useAutobuffStore.getState().status.active,
-    statusError: (status) => status.error,
+    state: {
+      status,
+      busy,
+      userEnabled,
+      setStatus,
+      setBusy,
+      setUserEnabled,
+      reset,
+    },
+    persistence: {
+      persistedConfig: server?.autobuff,
+      mergeConfig: mergeAutobuffConfig,
+      withPatch: withAutobuffPatch,
+      readServerConfig: (currentServer) => currentServer.autobuff,
+      persistServer: (serverId, update) =>
+        useServersStore.getState().updateServer(serverId, update),
+      buildServerConfig: (base, autobuff) => ({ ...base, autobuff }),
+    },
+    runtime: {
+      eventName: LAUNCHER_EVENTS.AUTOBUFF_STATUS,
+      toolName: 'AutoBuff',
+      addToolLog,
+      start: api.startAutobuff,
+      stop: api.stopAutobuff,
+      updateConfig: api.updateAutobuffConfig,
+      isActive: () => useAutobuffStore.getState().status.active,
+      statusError: (nextStatus) => nextStatus.error,
+    },
   })
 }
