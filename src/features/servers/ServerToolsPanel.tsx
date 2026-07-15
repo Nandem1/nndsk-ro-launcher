@@ -1,9 +1,5 @@
 import { RotateCw } from 'lucide-react'
-import type {
-  ServerToolsStatus,
-  ToolInfo,
-  ToolKind,
-} from '../../shared/types'
+import type { ServerToolsStatus, ToolInfo, ToolKind } from '../../shared/types'
 import { Panel } from '../../shared/ui/Panel'
 import { StatusDot } from '../../shared/ui/StatusDot'
 import { buttonClasses } from '../../shared/ui/Button'
@@ -29,7 +25,11 @@ export function ServerToolsPanel() {
 
   if (!server) {
     return (
-      <Panel title="Herramientas" compact className="shrink-0 animate-fade-rise">
+      <Panel
+        title="Herramientas"
+        compact
+        className="shrink-0 animate-fade-rise"
+      >
         <p className="text-[11px] text-zinc-600 text-center py-1">
           Selecciona un servidor
         </p>
@@ -74,7 +74,9 @@ export function ServerToolsPanel() {
       )}
 
       {loading && !status && (
-        <p className="text-[10px] text-zinc-600 py-1 text-center">Escaneando...</p>
+        <p className="text-[10px] text-zinc-600 py-1 text-center">
+          Escaneando...
+        </p>
       )}
     </Panel>
   )
@@ -98,7 +100,9 @@ interface SimpleToolConfig {
   tool: ToolInfo
 }
 
-const SIMPLE_TOOLS: (status: ServerToolsStatus) => SimpleToolConfig[] = (status) => [
+const SIMPLE_TOOLS: (status: ServerToolsStatus) => SimpleToolConfig[] = (
+  status,
+) => [
   { kind: 'opensetup', label: 'OpenSetup', tool: status.openSetup },
   { kind: 'patcher', label: 'Patcher', tool: status.patcher },
 ]
@@ -136,8 +140,13 @@ function CompactToolCard({
     <div className="rounded-lg border border-white/[0.04] bg-zinc-950/40 px-2.5 py-2 flex flex-col gap-1.5 min-w-0">
       <div className="flex items-center gap-1.5 min-w-0">
         <StatusDot status={dotOk ? 'ok' : 'neutral'} />
-        <span className="text-[11px] text-zinc-300 font-medium shrink-0">{label}</span>
-        <span className="text-[10px] text-zinc-600 truncate font-mono" title={detail}>
+        <span className="text-[11px] text-zinc-300 font-medium shrink-0">
+          {label}
+        </span>
+        <span
+          className="text-[10px] text-zinc-600 truncate font-mono"
+          title={detail}
+        >
           {detail}
         </span>
       </div>
@@ -208,8 +217,12 @@ function ToolsGrid({
               : undefined
         }
         actionLabel={dgvoodooNeedsInstall ? 'Instalar' : 'Config'}
-        actionBusy={dgvoodooNeedsInstall ? installingDgVoodoo : opening === 'dgvoodoo'}
-        actionDisabled={!dgvoodooNeedsInstall && dg.cpl.found && !prefixConfigured}
+        actionBusy={
+          dgvoodooNeedsInstall ? installingDgVoodoo : opening === 'dgvoodoo'
+        }
+        actionDisabled={
+          !dgvoodooNeedsInstall && dg.cpl.found && !prefixConfigured
+        }
         onSecondary={dg.canUninstall ? onUninstallDgVoodoo : undefined}
         secondaryLabel="Quitar"
         secondaryBusy={uninstallingDgVoodoo}

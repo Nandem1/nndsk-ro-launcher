@@ -5,7 +5,8 @@ import { useLauncherTask } from '../launcher/useLauncherTask'
 import { useSettingsStore } from './settings.store'
 
 export function PrefixResetButton() {
-  const { setStatus, setProgress, setError, addGameLog, runTask, isBusy } = useLauncherTask()
+  const { setStatus, setProgress, setError, addGameLog, runTask, isBusy } =
+    useLauncherTask()
   const selectedRunner = useSettingsStore((s) => s.selectedRunner)
   const loadDepsStatus = useSettingsStore((s) => s.loadDepsStatus)
 
@@ -32,7 +33,13 @@ export function PrefixResetButton() {
   }
 
   return (
-    <Button variant="secondary" size="sm" block onClick={handleReset} disabled={isBusy}>
+    <Button
+      variant="secondary"
+      size="sm"
+      block
+      onClick={handleReset}
+      disabled={isBusy}
+    >
       Rearmar WINEPREFIX
     </Button>
   )

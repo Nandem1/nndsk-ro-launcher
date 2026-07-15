@@ -1,11 +1,6 @@
 import type { ReactNode } from 'react'
 
-export type PanelTone =
-  | 'neutral'
-  | 'idle'
-  | 'success'
-  | 'warning'
-  | 'danger'
+export type PanelTone = 'neutral' | 'idle' | 'success' | 'warning' | 'danger'
 
 export function resolveToolTone(
   available: boolean,

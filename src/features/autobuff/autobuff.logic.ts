@@ -1,7 +1,9 @@
 import type { AutobuffConfig } from '../../shared/types'
 import { DEFAULT_AUTOBUFF_CONFIG } from '../../shared/constants'
 
-export function mergeAutobuffConfig(config?: Partial<AutobuffConfig>): AutobuffConfig {
+export function mergeAutobuffConfig(
+  config?: Partial<AutobuffConfig>,
+): AutobuffConfig {
   const seenStatusIds = new Set<number>()
   const rules = (config?.rules ?? []).filter((rule) => {
     if (rule.statusId <= 0 || seenStatusIds.has(rule.statusId)) return false
@@ -13,6 +15,9 @@ export function mergeAutobuffConfig(config?: Partial<AutobuffConfig>): AutobuffC
 
 export type PersistedAutobuffPatch = Partial<Omit<AutobuffConfig, 'enabled'>>
 
-export function withAutobuffPatch(config: AutobuffConfig, patch: PersistedAutobuffPatch): AutobuffConfig {
+export function withAutobuffPatch(
+  config: AutobuffConfig,
+  patch: PersistedAutobuffPatch,
+): AutobuffConfig {
   return mergeAutobuffConfig({ ...config, ...patch })
 }

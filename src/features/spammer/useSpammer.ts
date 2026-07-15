@@ -1,5 +1,9 @@
 import { api } from '../../shared/api'
-import type { ServerConfig, SpammerConfig, SpammerStatusEvent } from '../../shared/types'
+import type {
+  ServerConfig,
+  SpammerConfig,
+  SpammerStatusEvent,
+} from '../../shared/types'
 import { useLauncherStore } from '../launcher/launcher.store'
 import { useLogsStore } from '../logs/logs.store'
 import { useSettingsStore } from '../settings/settings.store'

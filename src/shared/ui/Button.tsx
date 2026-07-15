@@ -1,11 +1,7 @@
 import type { ComponentPropsWithoutRef, ReactNode } from 'react'
 
 export type ButtonVariant =
-  | 'primary'
-  | 'secondary'
-  | 'ghost'
-  | 'danger'
-  | 'success'
+  'primary' | 'secondary' | 'ghost' | 'danger' | 'success'
 
 export type ButtonSize = 'xs' | 'sm' | 'md' | 'lg'
 

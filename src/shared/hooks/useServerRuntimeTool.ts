@@ -8,7 +8,11 @@ type RuntimeToolConfig = {
   enabled: boolean
 }
 
-interface ServerRuntimeToolOptions<Config extends RuntimeToolConfig, Status, Patch> {
+interface ServerRuntimeToolOptions<
+  Config extends RuntimeToolConfig,
+  Status,
+  Patch,
+> {
   server: ServerConfig | null
   isRunning: boolean
   selectedRunner: string
@@ -122,7 +126,10 @@ export function useServerRuntimeTool<
       try {
         if (enabled) {
           addToolLog(`[${toolName}] Solicitando inicio...`)
-          const ok = await startSafely(mergeConfig(persistedConfig), 'Start falló')
+          const ok = await startSafely(
+            mergeConfig(persistedConfig),
+            'Start falló',
+          )
           if (!ok) setUserEnabled(false)
         } else {
           await stopTool()

@@ -11,13 +11,19 @@ export function validateServerConfig(server: ServerConfig): string | null {
   if (!server.id.trim() || server.id.length > SERVER_CONTRACT.maxIdLength) {
     return 'El identificador del servidor no es válido'
   }
-  if (!server.name.trim() || server.name.length > SERVER_CONTRACT.maxNameLength) {
+  if (
+    !server.name.trim() ||
+    server.name.length > SERVER_CONTRACT.maxNameLength
+  ) {
     return `El nombre debe tener entre 1 y ${SERVER_CONTRACT.maxNameLength} caracteres`
   }
   if (!hasExeExtension(server.executablePath)) {
     return 'El ejecutable del cliente debe ser un archivo .exe'
   }
-  if (typeof server.patcherPath === 'string' && !hasExeExtension(server.patcherPath)) {
+  if (
+    typeof server.patcherPath === 'string' &&
+    !hasExeExtension(server.patcherPath)
+  ) {
     return 'El patcher debe ser un archivo .exe'
   }
   if (typeof server.winePrefix === 'string' && !server.winePrefix.trim()) {
@@ -34,14 +40,17 @@ export function validateServers(servers: ServerConfig[]): string | null {
   for (const server of servers) {
     const error = validateServerConfig(server)
     if (error) return error
-    if (ids.has(server.id)) return `El identificador '${server.id}' está duplicado`
+    if (ids.has(server.id))
+      return `El identificador '${server.id}' está duplicado`
     ids.add(server.id)
   }
   return null
 }
 
 export function validateAppSettings(settings: AppSettings): string | null {
-  return settings.defaultRunner.trim() ? null : 'El runner por defecto no puede estar vacío'
+  return settings.defaultRunner.trim()
+    ? null
+    : 'El runner por defecto no puede estar vacío'
 }
 
 function hasExeExtension(path: string): boolean {

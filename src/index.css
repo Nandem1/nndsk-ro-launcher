@@ -14,8 +14,16 @@
     @apply bg-zinc-950 text-zinc-100 antialiased;
     color-scheme: dark;
     background-image:
-      radial-gradient(ellipse 80% 50% at 50% -20%, rgb(245 158 11 / 0.08), transparent),
-      radial-gradient(ellipse 60% 40% at 100% 100%, rgb(245 158 11 / 0.04), transparent);
+      radial-gradient(
+        ellipse 80% 50% at 50% -20%,
+        rgb(245 158 11 / 0.08),
+        transparent
+      ),
+      radial-gradient(
+        ellipse 60% 40% at 100% 100%,
+        rgb(245 158 11 / 0.04),
+        transparent
+      );
   }
 
   ::-webkit-scrollbar {
@@ -49,13 +57,23 @@
 
 @layer utilities {
   @keyframes stat-flash-red {
-    0%, 100% { filter: brightness(1); }
-    50% { filter: brightness(1.6); }
+    0%,
+    100% {
+      filter: brightness(1);
+    }
+    50% {
+      filter: brightness(1.6);
+    }
   }
 
   @keyframes stat-flash-blue {
-    0%, 100% { filter: brightness(1); }
-    50% { filter: brightness(1.5); }
+    0%,
+    100% {
+      filter: brightness(1);
+    }
+    50% {
+      filter: brightness(1.5);
+    }
   }
 
   .animate-stat-flash-red {
@@ -67,13 +85,25 @@
   }
 
   @keyframes rail-expand {
-    from { opacity: 0.4; transform: translateX(-24px); }
-    to { opacity: 1; transform: translateX(0); }
+    from {
+      opacity: 0.4;
+      transform: translateX(-24px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
   }
 
   @keyframes rail-collapse {
-    from { opacity: 0.4; transform: translateX(24px); }
-    to { opacity: 1; transform: translateX(0); }
+    from {
+      opacity: 0.4;
+      transform: translateX(24px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
   }
 
   .animate-rail-expand {
@@ -88,12 +118,24 @@
     animation: fade-rise 0.4s cubic-bezier(0.25, 1, 0.5, 1) both;
   }
 
-  .stagger-children > *:nth-child(1) { animation-delay: 0ms; }
-  .stagger-children > *:nth-child(2) { animation-delay: 40ms; }
-  .stagger-children > *:nth-child(3) { animation-delay: 80ms; }
-  .stagger-children > *:nth-child(4) { animation-delay: 120ms; }
-  .stagger-children > *:nth-child(5) { animation-delay: 160ms; }
-  .stagger-children > *:nth-child(6) { animation-delay: 200ms; }
+  .stagger-children > *:nth-child(1) {
+    animation-delay: 0ms;
+  }
+  .stagger-children > *:nth-child(2) {
+    animation-delay: 40ms;
+  }
+  .stagger-children > *:nth-child(3) {
+    animation-delay: 80ms;
+  }
+  .stagger-children > *:nth-child(4) {
+    animation-delay: 120ms;
+  }
+  .stagger-children > *:nth-child(5) {
+    animation-delay: 160ms;
+  }
+  .stagger-children > *:nth-child(6) {
+    animation-delay: 200ms;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

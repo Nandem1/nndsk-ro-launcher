@@ -6,8 +6,16 @@ import { Panel } from '../../shared/ui/Panel'
 import { IconButton } from '../../shared/ui/Button'
 
 export function ServerList() {
-  const { servers, selectedId, loading, error, selectServer, removeServer, loadServers, clearError } =
-    useServersStore()
+  const {
+    servers,
+    selectedId,
+    loading,
+    error,
+    selectServer,
+    removeServer,
+    loadServers,
+    clearError,
+  } = useServersStore()
   const [showAdd, setShowAdd] = useState(false)
 
   const handleOpenAdd = () => {
@@ -21,13 +29,20 @@ export function ServerList() {
         title="Servidor"
         className="shrink-0"
         action={
-          <IconButton label="Agregar servidor" variant="ghost" size="xs" onClick={handleOpenAdd}>
+          <IconButton
+            label="Agregar servidor"
+            variant="ghost"
+            size="xs"
+            onClick={handleOpenAdd}
+          >
             <Plus className="w-3.5 h-3.5" />
           </IconButton>
         }
       >
         {loading && (
-          <p className="text-zinc-600 text-sm py-1 text-center">Cargando servidores...</p>
+          <p className="text-zinc-600 text-sm py-1 text-center">
+            Cargando servidores...
+          </p>
         )}
 
         {error && !loading && (

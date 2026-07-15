@@ -62,13 +62,19 @@ export function AddServerModal({ onClose }: Props) {
     >
       <div className="border border-white/[0.08] bg-gradient-to-b from-zinc-800/90 to-zinc-900/95 rounded-2xl p-6 w-[420px] flex flex-col gap-4 shadow-glass shadow-2xl animate-scale-in">
         <div>
-          <h3 className="text-zinc-100 font-semibold text-lg">Agregar servidor</h3>
-          <p className="text-xs text-zinc-500 mt-1">Selecciona el .exe del cliente de Ragnarok Online</p>
+          <h3 className="text-zinc-100 font-semibold text-lg">
+            Agregar servidor
+          </h3>
+          <p className="text-xs text-zinc-500 mt-1">
+            Selecciona el .exe del cliente de Ragnarok Online
+          </p>
         </div>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
           <div className="flex flex-col gap-1.5">
-            <label className="text-[11px] text-zinc-500 uppercase tracking-wider">Ejecutable</label>
+            <label className="text-[11px] text-zinc-500 uppercase tracking-wider">
+              Ejecutable
+            </label>
             <button
               type="button"
               onClick={handlePickExe}
@@ -77,13 +83,22 @@ export function AddServerModal({ onClose }: Props) {
                 rounded-lg px-3 py-2.5 text-sm text-left hover:border-amber-500/40 transition-colors
                 disabled:opacity-50 disabled:cursor-wait"
             >
-              <span className={selectedFile ? 'text-zinc-100 truncate' : 'text-zinc-600'}>
-                {picking ? 'Abriendo...' : selectedFile ?? 'Seleccionar .exe...'}
+              <span
+                className={
+                  selectedFile ? 'text-zinc-100 truncate' : 'text-zinc-600'
+                }
+              >
+                {picking
+                  ? 'Abriendo...'
+                  : (selectedFile ?? 'Seleccionar .exe...')}
               </span>
               <span className="text-xs text-amber-400 shrink-0">Examinar</span>
             </button>
             {exePath && (
-              <p className="text-[10px] text-zinc-600 font-mono truncate px-1" title={exePath}>
+              <p
+                className="text-[10px] text-zinc-600 font-mono truncate px-1"
+                title={exePath}
+              >
                 {exePath}
               </p>
             )}
@@ -91,7 +106,9 @@ export function AddServerModal({ onClose }: Props) {
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label className="text-[11px] text-zinc-500 uppercase tracking-wider">Nombre</label>
+            <label className="text-[11px] text-zinc-500 uppercase tracking-wider">
+              Nombre
+            </label>
             <input
               autoFocus
               type="text"

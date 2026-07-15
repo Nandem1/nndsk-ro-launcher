@@ -1,7 +1,8 @@
 import { create } from 'zustand'
 import type { ProgressPayload } from '../../shared/types'
 
-export type LaunchStatus = 'idle' | 'setting-up' | 'launching' | 'running' | 'error'
+export type LaunchStatus =
+  'idle' | 'setting-up' | 'launching' | 'running' | 'error'
 
 interface LauncherState {
   status: LaunchStatus
@@ -22,5 +23,7 @@ export const useLauncherStore = create<LauncherState>((set) => ({
 }))
 
 export function isLauncherBusy(status: LaunchStatus): boolean {
-  return status === 'setting-up' || status === 'launching' || status === 'running'
+  return (
+    status === 'setting-up' || status === 'launching' || status === 'running'
+  )
 }

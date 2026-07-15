@@ -15,9 +15,7 @@ export function IngameRail() {
   const initial = server?.name.trim().charAt(0).toUpperCase() || '?'
 
   return (
-    <section
-      className="h-full rounded-xl border border-white/[0.06] bg-gradient-to-b from-zinc-800/30 to-zinc-900/50 backdrop-blur-sm shadow-glass flex flex-col items-center py-3 gap-3 animate-rail-collapse"
-    >
+    <section className="h-full rounded-xl border border-white/[0.06] bg-gradient-to-b from-zinc-800/30 to-zinc-900/50 backdrop-blur-sm shadow-glass flex flex-col items-center py-3 gap-3 animate-rail-collapse">
       <div
         className="relative w-10 h-10 rounded-xl border border-white/[0.08] bg-zinc-950/50 shadow-glass flex items-center justify-center"
         title={server?.name}

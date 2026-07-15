@@ -62,7 +62,9 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   setRunner: async (path) => {
     const previous = get().selectedRunner
-    const result = await runSafely(() => api.saveSettings({ defaultRunner: path }))
+    const result = await runSafely(() =>
+      api.saveSettings({ defaultRunner: path }),
+    )
     if (!result.ok) {
       set({ selectedRunner: previous })
       return

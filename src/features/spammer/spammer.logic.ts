@@ -21,8 +21,7 @@ interface LegacyGearSwitchConfig {
   defKeys?: string[]
 }
 
-export type GearSwitchInput = Partial<GearSwitchConfig> &
-  LegacyGearSwitchConfig
+export type GearSwitchInput = Partial<GearSwitchConfig> & LegacyGearSwitchConfig
 
 type SpammerConfigInput = Omit<Partial<SpammerConfig>, 'gearSwitch'> & {
   gearSwitch?: GearSwitchInput
@@ -42,9 +41,7 @@ function normalizeKeys(keys: string[]): string[] {
     seen.add(key)
     out.push(key)
   }
-  return out.sort(
-    (a, b) => (KEY_ORDER.get(a) ?? 99) - (KEY_ORDER.get(b) ?? 99),
-  )
+  return out.sort((a, b) => (KEY_ORDER.get(a) ?? 99) - (KEY_ORDER.get(b) ?? 99))
 }
 
 function clampGearDelay(ms?: number): number {
@@ -82,10 +79,10 @@ export function mergeGearSwitchConfig(
       (config.defKeys?.length ?? 0) > 0)
   const legacyTriggers = config?.triggerKeys?.length
     ? config.triggerKeys
-    : allowedTriggers ?? []
+    : (allowedTriggers ?? [])
   const rawRules =
     config?.rules?.length || !legacyConfigured
-      ? config?.rules ?? []
+      ? (config?.rules ?? [])
       : legacyTriggers.map((trigger) => ({
           trigger,
           atkKeys: config?.atkKeys ?? [],
@@ -190,7 +187,10 @@ export function withSpammerPatch(
   return mergeSpammerConfig(merged)
 }
 
-export function toggleSpammerKey(config: SpammerConfig, key: string): SpammerConfig {
+export function toggleSpammerKey(
+  config: SpammerConfig,
+  key: string,
+): SpammerConfig {
   const normalized = key.toUpperCase()
   const has = config.keys.includes(normalized)
   const keys = has

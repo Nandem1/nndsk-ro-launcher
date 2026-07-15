@@ -86,10 +86,7 @@ describe('gear switch', () => {
   })
 
   it('adds, edits and removes independent trigger rules', () => {
-    const base = addGearRule(
-      mergeGearSwitchConfig({ enabled: true }),
-      'f3',
-    )
+    const base = addGearRule(mergeGearSwitchConfig({ enabled: true }), 'f3')
     const withAtk = toggleGearRuleKey(base, 'F3', 'atkKeys', '8')
     const withDef = toggleGearRuleKey(withAtk, 'F3', 'defKeys', '9')
     const withSecondRule = addGearRule(withDef, 'F4')

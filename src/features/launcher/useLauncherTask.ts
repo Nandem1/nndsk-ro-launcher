@@ -4,7 +4,8 @@ import { useLauncherStore, isLauncherBusy } from './launcher.store'
 
 /** Ejecuta una tarea async y sincroniza error/estado con el store del launcher. */
 export function useLauncherTask() {
-  const { status, setupProgress, error, setStatus, setProgress, setError } = useLauncherStore()
+  const { status, setupProgress, error, setStatus, setProgress, setError } =
+    useLauncherStore()
   const addGameLog = useLogsStore((s) => s.addGameLog)
 
   const runTask = async (fn: () => Promise<void>, errorPrefix?: string) => {
@@ -13,7 +14,11 @@ export function useLauncherTask() {
       setError(result.error)
       setStatus('error')
       setProgress(null)
-      addGameLog(errorPrefix ? `${errorPrefix}: ${result.error}` : `Error: ${result.error}`)
+      addGameLog(
+        errorPrefix
+          ? `${errorPrefix}: ${result.error}`
+          : `Error: ${result.error}`,
+      )
     }
     return result
   }

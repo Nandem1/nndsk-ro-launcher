@@ -2,7 +2,11 @@ import { Swords, Sparkles } from 'lucide-react'
 import type { ComponentType } from 'react'
 import { useUiModeStore, type ToolView } from './uiMode.store'
 
-const TABS: { view: ToolView; label: string; icon: ComponentType<{ className?: string }> }[] = [
+const TABS: {
+  view: ToolView
+  label: string
+  icon: ComponentType<{ className?: string }>
+}[] = [
   { view: 'combat', label: 'Combate', icon: Swords },
   { view: 'buffs', label: 'Buffs', icon: Sparkles },
 ]

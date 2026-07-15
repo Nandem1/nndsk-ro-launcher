@@ -28,9 +28,7 @@ function StatBar({
   const empty = max <= 0
   const pct = statPercent(cur, max)
   const gradient =
-    tone === 'red'
-      ? 'from-red-600 to-red-400'
-      : 'from-sky-600 to-sky-400'
+    tone === 'red' ? 'from-red-600 to-red-400' : 'from-sky-600 to-sky-400'
 
   const flashClass = flash
     ? tone === 'red'
@@ -40,7 +38,9 @@ function StatBar({
 
   return (
     <div className={`space-y-0.5 ${flashClass}`}>
-      <div className={`flex justify-between text-[10px] ${empty ? 'text-zinc-700' : 'text-zinc-500'}`}>
+      <div
+        className={`flex justify-between text-[10px] ${empty ? 'text-zinc-700' : 'text-zinc-500'}`}
+      >
         <span>{tone === 'red' ? 'HP' : 'SP'}</span>
         <span>
           {empty
@@ -48,7 +48,9 @@ function StatBar({
             : `${cur.toLocaleString()} / ${max.toLocaleString()} (${pct}%)`}
         </span>
       </div>
-      <div className={`h-2 rounded-full overflow-hidden ${empty ? 'bg-zinc-900/80 border border-dashed border-zinc-800/80' : 'bg-zinc-800'}`}>
+      <div
+        className={`h-2 rounded-full overflow-hidden ${empty ? 'bg-zinc-900/80 border border-dashed border-zinc-800/80' : 'bg-zinc-800'}`}
+      >
         {!empty && (
           <div
             className={`h-full bg-gradient-to-r ${gradient} transition-all duration-300`}
@@ -62,7 +64,8 @@ function StatBar({
 
 export function AutopotPanel() {
   const server = useSelectedServer()
-  const { config, status, busy, isRunning, error, setEnabled, updateField } = useAutopot(server)
+  const { config, status, busy, isRunning, error, setEnabled, updateField } =
+    useAutopot(server)
   const launching = useLauncherStore((s) => s.status === 'launching')
   const hero = useUiModeStore((s) => s.mode === 'ingame')
   const available = isRunning && !!server
@@ -78,11 +81,7 @@ export function AutopotPanel() {
   }, [])
 
   const showProbeHint =
-    available &&
-    config.enabled &&
-    status.active &&
-    status.maxHp === 0 &&
-    !error
+    available && config.enabled && status.active && status.maxHp === 0 && !error
 
   useEffect(() => {
     if (!available || status.maxHp <= 0) {
@@ -114,7 +113,7 @@ export function AutopotPanel() {
 
   const displayName = available
     ? status.characterName || server!.name
-    : server?.name ?? 'Sin servidor'
+    : (server?.name ?? 'Sin servidor')
 
   const statusText = !server
     ? 'Selecciona un servidor'
@@ -126,12 +125,20 @@ export function AutopotPanel() {
           ? 'Activo'
           : 'Inactivo'
 
-  const hpCur = available && (status.active || config.enabled) ? status.curHp : 0
-  const hpMax = available && (status.active || config.enabled) ? status.maxHp : 0
-  const spCur = available && (status.active || config.enabled) ? status.curSp : 0
-  const spMax = available && (status.active || config.enabled) ? status.maxSp : 0
+  const hpCur =
+    available && (status.active || config.enabled) ? status.curHp : 0
+  const hpMax =
+    available && (status.active || config.enabled) ? status.maxHp : 0
+  const spCur =
+    available && (status.active || config.enabled) ? status.curSp : 0
+  const spMax =
+    available && (status.active || config.enabled) ? status.maxSp : 0
 
-  const tone = resolveToolTone(available, config.enabled && status.active, !!error)
+  const tone = resolveToolTone(
+    available,
+    config.enabled && status.active,
+    !!error,
+  )
 
   return (
     <Panel
@@ -140,15 +147,21 @@ export function AutopotPanel() {
       hero={hero}
       tone={tone}
       className="h-full"
-      leading={<FlaskConical className="w-3 h-3 text-zinc-600 shrink-0" aria-hidden />}
+      leading={
+        <FlaskConical className="w-3 h-3 text-zinc-600 shrink-0" aria-hidden />
+      }
     >
       <div className="flex-1 min-h-0 overflow-y-auto space-y-2 pr-0.5">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
-            <p className={`truncate text-sm font-semibold ${hasCharacter ? 'text-amber-100/95' : 'text-zinc-100'}`}>
+            <p
+              className={`truncate text-sm font-semibold ${hasCharacter ? 'text-amber-100/95' : 'text-zinc-100'}`}
+            >
               {displayName}
             </p>
-            <p className={`text-[10px] ${launching ? 'text-zinc-500 animate-pulse-dot' : 'text-zinc-600'}`}>
+            <p
+              className={`text-[10px] ${launching ? 'text-zinc-500 animate-pulse-dot' : 'text-zinc-600'}`}
+            >
               {statusText}
             </p>
           </div>
@@ -167,9 +180,12 @@ export function AutopotPanel() {
 
         <div className="flex items-center justify-between gap-2 rounded-lg border border-amber-500/15 bg-amber-500/5 px-2.5 py-2">
           <div className="min-w-0">
-            <p className="text-[11px] font-medium text-amber-100/90">Modo proactivo</p>
+            <p className="text-[11px] font-medium text-amber-100/90">
+              Modo proactivo
+            </p>
             <p className="text-[10px] leading-snug text-zinc-500">
-              Envía HP entre recuperaciones para reducir la reacción con latencia alta.
+              Envía HP entre recuperaciones para reducir la reacción con
+              latencia alta.
             </p>
           </div>
           <ToggleSwitch
@@ -181,12 +197,16 @@ export function AutopotPanel() {
         </div>
 
         <div className="space-y-1">
-          <span className="text-[10px] text-zinc-600 uppercase tracking-wide">Perfil de memoria</span>
+          <span className="text-[10px] text-zinc-600 uppercase tracking-wide">
+            Perfil de memoria
+          </span>
           <DarkSelect
             compact
             value={config.profileId ?? ''}
             disabled={!server}
-            onChange={(val) => void updateField({ profileId: val || undefined })}
+            onChange={(val) =>
+              void updateField({ profileId: val || undefined })
+            }
             options={[
               { value: '', label: 'Auto' },
               ...profiles.map((p) => ({ value: p.id, label: p.label })),
@@ -196,7 +216,9 @@ export function AutopotPanel() {
 
         <div className="grid grid-cols-2 gap-1.5">
           <div className="space-y-1">
-            <span className="text-[10px] text-zinc-600 uppercase tracking-wide">HP</span>
+            <span className="text-[10px] text-zinc-600 uppercase tracking-wide">
+              HP
+            </span>
             <div className="flex gap-1">
               <DarkSelect
                 compact
@@ -217,17 +239,23 @@ export function AutopotPanel() {
                   value={config.hpPercent}
                   onChange={(e) =>
                     void updateField({
-                      hpPercent: Number(e.target.value) || DEFAULT_AUTOPOT_CONFIG.hpPercent,
+                      hpPercent:
+                        Number(e.target.value) ||
+                        DEFAULT_AUTOPOT_CONFIG.hpPercent,
                     })
                   }
                   className="input-no-spinner w-full rounded-md border border-zinc-700/80 bg-zinc-950/60 py-1 pl-1.5 pr-4 text-center text-[11px] text-zinc-200 outline-none transition-colors focus:border-amber-500/60 focus:ring-1 focus:ring-amber-500/20 disabled:opacity-50"
                 />
-                <span className="pointer-events-none absolute inset-y-0 right-1.5 flex items-center text-[9px] text-zinc-600">%</span>
+                <span className="pointer-events-none absolute inset-y-0 right-1.5 flex items-center text-[9px] text-zinc-600">
+                  %
+                </span>
               </div>
             </div>
           </div>
           <div className="space-y-1">
-            <span className="text-[10px] text-zinc-600 uppercase tracking-wide">SP</span>
+            <span className="text-[10px] text-zinc-600 uppercase tracking-wide">
+              SP
+            </span>
             <div className="flex gap-1">
               <DarkSelect
                 compact
@@ -248,23 +276,29 @@ export function AutopotPanel() {
                   value={config.spPercent}
                   onChange={(e) =>
                     void updateField({
-                      spPercent: Number(e.target.value) || DEFAULT_AUTOPOT_CONFIG.spPercent,
+                      spPercent:
+                        Number(e.target.value) ||
+                        DEFAULT_AUTOPOT_CONFIG.spPercent,
                     })
                   }
                   className="input-no-spinner w-full rounded-md border border-zinc-700/80 bg-zinc-950/60 py-1 pl-1.5 pr-4 text-center text-[11px] text-zinc-200 outline-none transition-colors focus:border-amber-500/60 focus:ring-1 focus:ring-amber-500/20 disabled:opacity-50"
                 />
-                <span className="pointer-events-none absolute inset-y-0 right-1.5 flex items-center text-[9px] text-zinc-600">%</span>
+                <span className="pointer-events-none absolute inset-y-0 right-1.5 flex items-center text-[9px] text-zinc-600">
+                  %
+                </span>
               </div>
             </div>
           </div>
         </div>
 
         <p className="text-[10px] leading-snug min-h-[calc(1em*1.375)]">
-          {error && available
-            ? <span className="text-red-400/90">{error}</span>
-            : showProbeHint
-              ? <span className="text-amber-500/90">HP/SP en cero — revisa Tools en Logs.</span>
-              : null}
+          {error && available ? (
+            <span className="text-red-400/90">{error}</span>
+          ) : showProbeHint ? (
+            <span className="text-amber-500/90">
+              HP/SP en cero — revisa Tools en Logs.
+            </span>
+          ) : null}
         </p>
       </div>
     </Panel>

@@ -2,11 +2,16 @@ import { useCallback, useEffect, useState } from 'react'
 import { api } from '../../shared/api'
 import { useAsyncAction } from '../../shared/hooks/useAsyncAction'
 import { isToolKind } from '../../shared/types'
-import type { ServerConfig, ServerToolsStatus, ToolKind } from '../../shared/types'
+import type {
+  ServerConfig,
+  ServerToolsStatus,
+  ToolKind,
+} from '../../shared/types'
 import { useSettingsStore } from '../settings/settings.store'
 import { withResolvedRunner } from '../../shared/resolveRunner'
 
-type ActionKey = ToolKind | 'refresh' | 'install-dgvoodoo' | 'uninstall-dgvoodoo'
+type ActionKey =
+  ToolKind | 'refresh' | 'install-dgvoodoo' | 'uninstall-dgvoodoo'
 
 export function useServerTools(server: ServerConfig | null) {
   const selectedRunner = useSettingsStore((s) => s.selectedRunner)
@@ -58,7 +63,10 @@ export function useServerTools(server: ServerConfig | null) {
     if (!server) return
 
     await run(tool, async () => {
-      await api.launchServerTool(withResolvedRunner(server, selectedRunner), tool)
+      await api.launchServerTool(
+        withResolvedRunner(server, selectedRunner),
+        tool,
+      )
     })
   }
 

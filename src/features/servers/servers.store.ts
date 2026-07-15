@@ -3,7 +3,11 @@ import { api } from '../../shared/api'
 import { runSafely } from '../../shared/async'
 import { persistWithError } from '../../shared/store/persist'
 import type { ServerConfig } from '../../shared/types'
-import { findSelectedServer, firstServerId, nextSelectedId } from './servers.logic'
+import {
+  findSelectedServer,
+  firstServerId,
+  nextSelectedId,
+} from './servers.logic'
 
 interface ServersState {
   servers: ServerConfig[]
@@ -66,7 +70,9 @@ export const useServersStore = create<ServersState>((set, get) => ({
   },
 
   updateServer: async (id, patch) => {
-    const updated = get().servers.map((s) => (s.id === id ? { ...s, ...patch } : s))
+    const updated = get().servers.map((s) =>
+      s.id === id ? { ...s, ...patch } : s,
+    )
     const ok = await persistWithError(
       (error) => set({ error }),
       () => api.saveServers(updated),

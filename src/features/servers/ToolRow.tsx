@@ -42,7 +42,10 @@ export function ToolRow({
         <StatusDot status={dotStatus} />
         <span className="text-sm text-zinc-200 shrink-0 w-20">{label}</span>
         {detail && (
-          <span className="text-xs text-zinc-500 truncate flex-1 font-mono" title={detail}>
+          <span
+            className="text-xs text-zinc-500 truncate flex-1 font-mono"
+            title={detail}
+          >
             {detail}
           </span>
         )}
@@ -70,7 +73,9 @@ export function ToolRow({
         </div>
       </div>
       {warning && (
-        <p className="text-xs text-amber-400/90 pl-[18px] leading-relaxed">{warning}</p>
+        <p className="text-xs text-amber-400/90 pl-[18px] leading-relaxed">
+          {warning}
+        </p>
       )}
     </div>
   )

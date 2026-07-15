@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react'
 import { createPortal } from 'react-dom'
 import { ChevronDown } from 'lucide-react'
 
@@ -86,7 +92,11 @@ export function DarkSelect({
 
     function handleClickOutside(e: MouseEvent) {
       const target = e.target as Node
-      if (rootRef.current?.contains(target) || menuRef.current?.contains(target)) return
+      if (
+        rootRef.current?.contains(target) ||
+        menuRef.current?.contains(target)
+      )
+        return
       setOpen(false)
     }
 
@@ -132,9 +142,10 @@ export function DarkSelect({
                       setOpen(false)
                     }}
                     className={`w-full text-left transition-colors truncate ${compact ? 'px-2 py-1.5 text-[11px]' : 'px-3 py-2 text-sm'}
-                      ${isSelected
-                        ? 'bg-amber-600/25 text-amber-200'
-                        : 'text-zinc-200 hover:bg-zinc-800/80 hover:text-zinc-100'
+                      ${
+                        isSelected
+                          ? 'bg-amber-600/25 text-amber-200'
+                          : 'text-zinc-200 hover:bg-zinc-800/80 hover:text-zinc-100'
                       }`}
                   >
                     {option.label}
@@ -158,9 +169,10 @@ export function DarkSelect({
         onClick={() => !disabled && setOpen((v) => !v)}
         className={`w-full flex items-center justify-between border text-left focus:outline-none focus:border-amber-500/60 focus:ring-1 focus:ring-amber-500/20
           transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed
-          ${keycap
-            ? 'border-amber-500/20 bg-amber-500/[0.04] font-medium text-amber-100/90 hover:border-amber-500/40 hover:bg-amber-500/[0.07] disabled:hover:border-amber-500/20'
-            : 'border-zinc-700/80 bg-zinc-950 text-zinc-100 hover:border-zinc-600 disabled:hover:border-zinc-700/80'
+          ${
+            keycap
+              ? 'border-amber-500/20 bg-amber-500/[0.04] font-medium text-amber-100/90 hover:border-amber-500/40 hover:bg-amber-500/[0.07] disabled:hover:border-amber-500/20'
+              : 'border-zinc-700/80 bg-zinc-950 text-zinc-100 hover:border-zinc-600 disabled:hover:border-zinc-700/80'
           }
           ${compact ? 'gap-1 rounded-md px-2 py-1 text-[11px]' : 'gap-2 rounded-lg px-3 py-2 text-sm'}`}
       >

@@ -85,7 +85,10 @@ export function App() {
           )}
         </div>
 
-        <div ref={contentRef} className="flex flex-col gap-2.5 min-h-0 will-change-transform">
+        <div
+          ref={contentRef}
+          className="flex flex-col gap-2.5 min-h-0 will-change-transform"
+        >
           {mode === 'prep' && <ServerToolsPanel />}
 
           <ToolViewTabs />

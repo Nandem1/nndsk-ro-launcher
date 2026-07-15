@@ -7,7 +7,8 @@ import { useSettingsStore } from '../settings/settings.store'
 export function LaunchButton() {
   const server = useSelectedServer()
   const prefixConfigured = useSettingsStore((s) => s.prefixConfigured)
-  const { status, setupProgress, error, isBusy, handleLaunch, handleStop } = useLaunchGame(server)
+  const { status, setupProgress, error, isBusy, handleLaunch, handleStop } =
+    useLaunchGame(server)
 
   const isDisabled = !server || isBusy
   const buildMode = status === 'idle' && !prefixConfigured
@@ -44,7 +45,9 @@ export function LaunchButton() {
         <div className="space-y-1">
           <div className="flex justify-between gap-2 text-[10px] text-zinc-500">
             <span className="truncate">{setupProgress.step}</span>
-            <span className="shrink-0 tabular-nums">{setupProgress.percent}%</span>
+            <span className="shrink-0 tabular-nums">
+              {setupProgress.percent}%
+            </span>
           </div>
           <div className="w-full bg-zinc-800 rounded-full h-1.5 overflow-hidden">
             <div
@@ -76,7 +79,9 @@ export function LaunchButton() {
         </button>
       )}
       {status === 'error' && error && (
-        <p className="text-red-400 text-[11px] text-center px-2 leading-relaxed">{error}</p>
+        <p className="text-red-400 text-[11px] text-center px-2 leading-relaxed">
+          {error}
+        </p>
       )}
     </div>
   )

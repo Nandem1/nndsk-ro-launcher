@@ -7,7 +7,12 @@ function appendLog(existing: string[], line: string): string[] {
 }
 
 function makeAppender(
-  set: (partial: LogsState | Partial<LogsState> | ((state: LogsState) => LogsState | Partial<LogsState>)) => void,
+  set: (
+    partial:
+      | LogsState
+      | Partial<LogsState>
+      | ((state: LogsState) => LogsState | Partial<LogsState>),
+  ) => void,
   key: 'gameLogs' | 'toolLogs',
 ) {
   return (line: string) =>

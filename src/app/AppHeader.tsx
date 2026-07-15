@@ -34,8 +34,7 @@ export function AppHeader() {
         <IngameStatusChip />
       ) : (
         <p className="text-[11px] text-zinc-600 tracking-wide">
-          Developed by:{' '}
-          <span className="text-zinc-400 font-medium">nndsk</span>
+          Developed by: <span className="text-zinc-400 font-medium">nndsk</span>
         </p>
       )}
     </header>

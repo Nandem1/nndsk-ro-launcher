@@ -87,7 +87,7 @@ const GearKeySet = memo(function GearKeySet({
         value: k,
         label: k,
       })),
-    [keys.join(',')],
+    [keys],
   )
 
   return (
@@ -137,9 +137,8 @@ export function SpammerPanel() {
   const hero = useUiModeStore((s) => s.mode === 'ingame')
 
   const available = isRunning && !!server
-  const keysStr = config.keys.join(',')
-  const selectedKeys = useMemo(() => new Set(config.keys), [keysStr])
-  const keysLabel = useMemo(() => formatSpammerKeys(config.keys), [keysStr])
+  const selectedKeys = useMemo(() => new Set(config.keys), [config.keys])
+  const keysLabel = useMemo(() => formatSpammerKeys(config.keys), [config.keys])
 
   const statusLabel = (() => {
     if (!available) return 'Inactivo'
@@ -162,12 +161,20 @@ export function SpammerPanel() {
             ? 'Spameando...'
             : 'Mantén una tecla configurada en el juego'
 
-  const tone = resolveToolTone(available, config.enabled && status.armed, !!error, 'warning')
+  const tone = resolveToolTone(
+    available,
+    config.enabled && status.armed,
+    !!error,
+    'warning',
+  )
 
-  const toggleKey = useCallback((key: string) => {
-    const next = toggleSpammerKey(config, key)
-    void updateField({ keys: next.keys })
-  }, [config, updateField])
+  const toggleKey = useCallback(
+    (key: string) => {
+      const next = toggleSpammerKey(config, key)
+      void updateField({ keys: next.keys })
+    },
+    [config, updateField],
+  )
 
   const gear = config.gearSwitch
   const [gearOpen, setGearOpen] = useState(false)
@@ -176,7 +183,7 @@ export function SpammerPanel() {
       config.keys
         .filter((key) => !gear.rules.some((rule) => rule.trigger === key))
         .map((key) => ({ value: key, label: key })),
-    [config.keys.join(','), gear.rules],
+    [config.keys, gear.rules],
   )
 
   const patchGear = useCallback(
@@ -221,7 +228,9 @@ export function SpammerPanel() {
             >
               {statusLabel}
             </p>
-            <p className={`text-[10px] ${launching ? 'text-zinc-500 animate-pulse-dot' : 'text-zinc-600'}`}>
+            <p
+              className={`text-[10px] ${launching ? 'text-zinc-500 animate-pulse-dot' : 'text-zinc-600'}`}
+            >
               {statusText}
             </p>
           </div>
@@ -235,7 +244,9 @@ export function SpammerPanel() {
 
         <div className="space-y-1.5 rounded-lg bg-zinc-950/40 border border-zinc-800/60 px-2.5 py-2">
           <div className="flex justify-between text-[10px]">
-            <span className="text-zinc-600 uppercase tracking-wide">Teclas</span>
+            <span className="text-zinc-600 uppercase tracking-wide">
+              Teclas
+            </span>
             <span
               className={
                 available && status.armed
@@ -247,19 +258,21 @@ export function SpammerPanel() {
             </span>
           </div>
           <div className="space-y-1">
-            {[SPAMMER_FUNCTION_KEYS, SPAMMER_NUMBER_KEYS].map((row, rowIndex) => (
-              <div key={rowIndex} className="flex gap-1">
-                {row.map((key) => (
-                  <KeyChip
-                    key={key}
-                    label={key}
-                    active={selectedKeys.has(key)}
-                    disabled={!server || busy}
-                    onToggle={() => toggleKey(key)}
-                  />
-                ))}
-              </div>
-            ))}
+            {[SPAMMER_FUNCTION_KEYS, SPAMMER_NUMBER_KEYS].map(
+              (row, rowIndex) => (
+                <div key={rowIndex} className="flex gap-1">
+                  {row.map((key) => (
+                    <KeyChip
+                      key={key}
+                      label={key}
+                      active={selectedKeys.has(key)}
+                      disabled={!server || busy}
+                      onToggle={() => toggleKey(key)}
+                    />
+                  ))}
+                </div>
+              ),
+            )}
             <div className="space-y-1 pt-0.5">
               {SPAMMER_LETTER_KEY_ROWS.map((row, rowIndex) => (
                 <div
@@ -301,7 +314,9 @@ export function SpammerPanel() {
             step={1}
             disabled={!server || busy}
             value={config.delayMs}
-            onChange={(e) => void updateField({ delayMs: Number(e.target.value) })}
+            onChange={(e) =>
+              void updateField({ delayMs: Number(e.target.value) })
+            }
             className="flex-1 accent-amber-500 disabled:opacity-50"
           />
           <span className="text-[10px] text-zinc-500 w-8 text-right shrink-0">
@@ -463,9 +478,9 @@ export function SpammerPanel() {
         </div>
 
         <p className="text-[10px] leading-snug min-h-[calc(1em*1.375)]">
-          {error && available
-            ? <span className="text-red-400/90">{error}</span>
-            : null}
+          {error && available ? (
+            <span className="text-red-400/90">{error}</span>
+          ) : null}
         </p>
       </div>
     </Panel>

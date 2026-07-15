@@ -1,4 +1,7 @@
-import { LEGACY_DEFAULT_WINE, PREFERRED_PROTON_ID } from '../../shared/constants'
+import {
+  LEGACY_DEFAULT_WINE,
+  PREFERRED_PROTON_ID,
+} from '../../shared/constants'
 import type { RunnerInfo } from '../../shared/types'
 
 export interface RunnerResolution {

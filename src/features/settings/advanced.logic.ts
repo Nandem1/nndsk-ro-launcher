@@ -3,19 +3,27 @@ import { autopotInputFromDeps } from '../../shared/autopotInput'
 import type { AdvancedDepsStatus, DependencyStatus } from '../../shared/types'
 import type { DotStatus } from '../../shared/ui/StatusDot'
 
-export function resolveDotStatus(ok: boolean, warning?: string | null): DotStatus {
+export function resolveDotStatus(
+  ok: boolean,
+  warning?: string | null,
+): DotStatus {
   if (ok && !warning) return 'ok'
   if (!ok) return 'error'
   return 'warning'
 }
 
-export function resolveAudioDotStatus(ok: boolean, warning?: string | null): DotStatus {
+export function resolveAudioDotStatus(
+  ok: boolean,
+  warning?: string | null,
+): DotStatus {
   if (!ok) return 'error'
   if (warning) return 'warning'
   return 'ok'
 }
 
-export function advancedStatusFromDeps(deps: DependencyStatus): AdvancedDepsStatus {
+export function advancedStatusFromDeps(
+  deps: DependencyStatus,
+): AdvancedDepsStatus {
   return {
     ...audioFromDeps(deps),
     ...autopotInputFromDeps(deps),
