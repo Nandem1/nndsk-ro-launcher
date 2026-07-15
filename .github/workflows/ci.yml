@@ -31,6 +31,8 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+      - run: npm run lint
+      - run: npm run format:check
       - run: cargo fmt --all -- --check
       - name: Build ro-inputd sidecar
         run: cargo build -p ro-inputd

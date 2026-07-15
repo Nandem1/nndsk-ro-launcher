@@ -8,15 +8,14 @@ export default defineConfig({
   clearScreen: false,
   test: {
     environment: 'node',
-    include: ['src/**/*.test.ts'],
+    include: ['src/**/*.test.{ts,tsx}'],
+    setupFiles: ['src/test/setup.ts'],
   },
   server: {
     port: 5173,
     strictPort: true,
     host: host || false,
-    hmr: host
-      ? { protocol: 'ws', host, port: 5183 }
-      : undefined,
+    hmr: host ? { protocol: 'ws', host, port: 5183 } : undefined,
   },
   envPrefix: ['VITE_', 'TAURI_ENV_*'],
   build: {
