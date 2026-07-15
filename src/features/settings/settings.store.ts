@@ -11,7 +11,9 @@ interface SettingsState {
   selectedRunner: string
   advancedStatus: AdvancedDepsStatus | null
   prefixConfigured: boolean
-  init: () => Promise<void>
+  loading: boolean
+  error: string | null
+  init: () => Promise<boolean>
   loadSettings: () => Promise<void>
   loadRunners: () => Promise<void>
   loadDepsStatus: (runner: string) => Promise<void>
@@ -23,10 +25,17 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   selectedRunner: '',
   advancedStatus: null,
   prefixConfigured: false,
+  loading: true,
+  error: null,
 
   init: async () => {
-    await get().loadSettings()
-    await get().loadRunners()
+    set({ loading: true, error: null })
+    const result = await runSafely(async () => {
+      await get().loadSettings()
+      await get().loadRunners()
+    })
+    set({ loading: false, error: result.ok ? null : result.error })
+    return result.ok
   },
 
   loadSettings: async () => {
@@ -66,10 +75,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       api.saveSettings({ defaultRunner: path }),
     )
     if (!result.ok) {
-      set({ selectedRunner: previous })
+      set({ selectedRunner: previous, error: result.error })
       return
     }
-    set({ selectedRunner: path })
+    set({ selectedRunner: path, error: null })
     await get().loadDepsStatus(path)
   },
 }))

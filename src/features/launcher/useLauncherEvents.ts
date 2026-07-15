@@ -15,38 +15,28 @@ export function useLauncherEvents() {
   const addGameLog = useLogsStore((s) => s.addGameLog)
   const addToolLog = useLogsStore((s) => s.addToolLog)
 
-  useTauriEvent<LogEventPayload>(
-    LAUNCHER_EVENTS.LOG,
-    (payload) => addGameLog(payload.line),
-    [addGameLog],
+  useTauriEvent<LogEventPayload>(LAUNCHER_EVENTS.LOG, (payload) =>
+    addGameLog(payload.line),
   )
 
-  useTauriEvent<LogEventPayload>(
-    LAUNCHER_EVENTS.TOOL_LOG,
-    (payload) => addToolLog(payload.line),
-    [addToolLog],
+  useTauriEvent<LogEventPayload>(LAUNCHER_EVENTS.TOOL_LOG, (payload) =>
+    addToolLog(payload.line),
   )
 
-  useTauriEvent<ProgressPayload>(
-    LAUNCHER_EVENTS.PROGRESS,
-    (payload) => setProgress(payload),
-    [setProgress],
+  useTauriEvent<ProgressPayload>(LAUNCHER_EVENTS.PROGRESS, (payload) =>
+    setProgress(payload),
   )
 
-  useTauriEvent<ExitEventPayload>(
-    LAUNCHER_EVENTS.GAME_EXIT,
-    (payload) => {
-      const { code } = payload
-      if (code !== 0) {
-        const msg = `El juego cerró inesperadamente (código ${code})`
-        addGameLog(msg)
-        setError(msg)
-        setStatus('error')
-      } else {
-        addGameLog('Juego cerrado')
-        setStatus('idle')
-      }
-    },
-    [addGameLog, setError, setStatus],
-  )
+  useTauriEvent<ExitEventPayload>(LAUNCHER_EVENTS.GAME_EXIT, (payload) => {
+    const { code } = payload
+    if (code !== 0) {
+      const msg = `El juego cerró inesperadamente (código ${code})`
+      addGameLog(msg)
+      setError(msg)
+      setStatus('error')
+    } else {
+      addGameLog('Juego cerrado')
+      setStatus('idle')
+    }
+  })
 }

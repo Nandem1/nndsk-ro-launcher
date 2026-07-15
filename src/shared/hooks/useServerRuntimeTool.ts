@@ -79,7 +79,7 @@ export function useServerRuntimeTool<
     [mergeConfig, persistedConfig, userEnabled],
   )
 
-  useTauriEvent<Status>(eventName, (payload) => setStatus(payload), [setStatus])
+  useTauriEvent<Status>(eventName, (payload) => setStatus(payload))
 
   useEffect(() => {
     if (!isRunning) {

@@ -18,7 +18,7 @@ interface ServersState {
   selectedId: string | null
   loading: boolean
   error: string | null
-  loadServers: () => Promise<void>
+  loadServers: () => Promise<boolean>
   selectServer: (id: string) => void
   addServer: (server: ServerConfig) => Promise<void>
   removeServer: (id: string) => Promise<void>
@@ -59,9 +59,10 @@ export const useServersStore = create<ServersState>((set, get) => ({
         selectedId: firstServerId(result.value),
         loading: false,
       })
-      return
+      return true
     }
     set({ loading: false, error: result.error })
+    return false
   },
 
   selectServer: (id) => set({ selectedId: id }),

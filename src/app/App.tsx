@@ -20,12 +20,13 @@ import { ToolViewTabs } from './ToolViewTabs'
 import { useUiModeStore } from './uiMode.store'
 import { useUiModeTransition } from './useUiModeTransition'
 import { useTransformLayoutTransition } from './useTransformLayoutTransition'
+import { StartupNotice } from './StartupNotice'
 
 const RAIL_EXPANDED_PX = 300
 const RAIL_COLLAPSED_PX = 64
 
 export function App() {
-  const { ready } = useAppInit()
+  const { phase, errors, retrying, retry } = useAppInit()
   useLauncherEvents()
   useUiModeTransition()
 
@@ -42,11 +43,18 @@ export function App() {
     RAIL_EXPANDED_PX - RAIL_COLLAPSED_PX,
   )
 
-  if (!ready) return <LoadingScreen />
+  if (phase === 'loading') return <LoadingScreen />
 
   return (
     <div className="h-full flex flex-col">
       <AppHeader />
+      {phase === 'degraded' && (
+        <StartupNotice
+          errors={errors}
+          retrying={retrying}
+          onRetry={() => void retry()}
+        />
+      )}
 
       <main
         style={{ gridTemplateColumns: `${railWidth}px 1fr` }}
