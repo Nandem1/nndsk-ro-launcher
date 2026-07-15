@@ -39,8 +39,9 @@ export function useAutobuff(server: ServerConfig | null) {
     addToolLog: useLogsStore((s) => s.addToolLog),
     mergeConfig: mergeAutobuffConfig,
     withPatch: withAutobuffPatch,
-    persistConfig: (serverId, autobuff) =>
-      useServersStore.getState().updateServer(serverId, { autobuff }),
+    readServerConfig: (currentServer) => currentServer.autobuff,
+    persistServer: (serverId, update) =>
+      useServersStore.getState().updateServer(serverId, update),
     startTool: api.startAutobuff,
     stopTool: api.stopAutobuff,
     updateToolConfig: api.updateAutobuffConfig,

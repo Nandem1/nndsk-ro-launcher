@@ -14,3 +14,27 @@ pub struct GameState {
     pub input: InputGateway,
     pub ydotoold: Arc<YdotoolDaemon>,
 }
+
+#[derive(Default)]
+pub struct ServerRepository {
+    lock: Mutex<()>,
+}
+
+impl ServerRepository {
+    pub fn list(&self) -> Result<Vec<crate::models::server::ServerConfig>, String> {
+        let _guard = self
+            .lock
+            .lock()
+            .map_err(|_| "El repositorio de servidores está bloqueado".to_string())?;
+        crate::utils::read_json(&crate::utils::servers_path())
+    }
+
+    pub fn save(&self, servers: &[crate::models::server::ServerConfig]) -> Result<(), String> {
+        crate::models::server::validate_servers(servers)?;
+        let _guard = self
+            .lock
+            .lock()
+            .map_err(|_| "El repositorio de servidores está bloqueado".to_string())?;
+        crate::utils::write_json(&crate::utils::servers_path(), servers)
+    }
+}

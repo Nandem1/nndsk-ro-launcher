@@ -1,13 +1,17 @@
-use crate::models::server::{validate_servers, ServerConfig};
-use crate::utils::{read_json, servers_path, write_json};
+use tauri::State;
+
+use crate::models::server::ServerConfig;
+use crate::state::ServerRepository;
 
 #[tauri::command]
-pub async fn list_servers() -> Result<Vec<ServerConfig>, String> {
-    read_json(&servers_path())
+pub fn list_servers(repository: State<'_, ServerRepository>) -> Result<Vec<ServerConfig>, String> {
+    repository.list()
 }
 
 #[tauri::command]
-pub async fn save_servers(servers: Vec<ServerConfig>) -> Result<(), String> {
-    validate_servers(&servers)?;
-    write_json(&servers_path(), &servers)
+pub fn save_servers(
+    repository: State<'_, ServerRepository>,
+    servers: Vec<ServerConfig>,
+) -> Result<(), String> {
+    repository.save(&servers)
 }

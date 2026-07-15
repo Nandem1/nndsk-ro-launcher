@@ -29,7 +29,11 @@ interface ServerRuntimeToolOptions<
   addToolLog: (line: string) => void
   mergeConfig: (config?: Config) => Config
   withPatch: (config: Config, patch: Patch) => Config
-  persistConfig: (serverId: string, config: Config) => Promise<void>
+  readServerConfig: (server: ServerConfig) => Config | undefined
+  persistServer: (
+    serverId: string,
+    update: (server: ServerConfig) => ServerConfig,
+  ) => Promise<ServerConfig | null>
   startTool: (server: ServerConfig) => Promise<void>
   stopTool: () => Promise<void>
   updateToolConfig: (config: Config) => Promise<void>
@@ -59,7 +63,8 @@ export function useServerRuntimeTool<
   addToolLog,
   mergeConfig,
   withPatch,
-  persistConfig,
+  readServerConfig,
+  persistServer,
   startTool,
   stopTool,
   updateToolConfig,
@@ -86,11 +91,24 @@ export function useServerRuntimeTool<
   const saveConfig = useCallback(
     async (patch: Patch): Promise<Config | null> => {
       if (!server) return null
-      const nextConfig = withPatch(mergeConfig(persistedConfig), patch)
-      await persistConfig(server.id, nextConfig)
-      return nextConfig
+      let nextConfig: Config | null = null
+      const updated = await persistServer(server.id, (currentServer) => {
+        nextConfig = withPatch(
+          mergeConfig(readServerConfig(currentServer)),
+          patch,
+        )
+        return buildServerConfig(currentServer, nextConfig)
+      })
+      return updated ? nextConfig : null
     },
-    [mergeConfig, persistConfig, persistedConfig, server, withPatch],
+    [
+      buildServerConfig,
+      mergeConfig,
+      persistServer,
+      readServerConfig,
+      server,
+      withPatch,
+    ],
   )
 
   const startSafely = useCallback(

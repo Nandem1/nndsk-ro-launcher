@@ -23,7 +23,7 @@ use commands::{
     settings::{load_settings, save_settings},
     spammer::{get_spammer_status, start_spammer, stop_spammer, update_spammer_config},
 };
-use state::GameState;
+use state::{GameState, ServerRepository};
 use tools::{
     autobuff::AutobuffHandle,
     autopot::AutopotHandle,
@@ -53,6 +53,7 @@ pub fn run() {
             input: InputGateway::new(),
             ydotoold: Arc::new(YdotoolDaemon::new()),
         })
+        .manage(ServerRepository::default())
         .invoke_handler(tauri::generate_handler![
             show_main_window,
             check_dependencies,

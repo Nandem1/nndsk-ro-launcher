@@ -16,7 +16,7 @@ pub fn read_json<T: DeserializeOwned + Default>(path: &Path) -> Result<T, String
     serde_json::from_str(&content).map_err(|e| e.to_string())
 }
 
-pub fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<(), String> {
+pub fn write_json<T: Serialize + ?Sized>(path: &Path, value: &T) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
