@@ -15,7 +15,7 @@ pub use autopot::config::AutopotConfig;
 pub use autopot::engine::{AutopotEngine, AutopotTick};
 pub use domain::ClientProfile;
 pub use error::ToolsError;
-pub use ports::{HeldKeyWriter, KeyPressWriter, MemoryReader, PointerWriter};
+pub use ports::{HeldKeyWriter, KeyPressWriter, MemoryReader, SpamCycleWriter};
 pub use profiles::{parse_hex, parse_profiles_json, resolve_profile};
 pub use spammer::config::{GearSwitchConfig, GearSwitchRule, SpammerConfig};
 pub use spammer::engine::{SpammerEngine, SpammerTick};

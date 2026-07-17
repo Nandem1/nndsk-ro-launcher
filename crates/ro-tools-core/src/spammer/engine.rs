@@ -1,19 +1,20 @@
 use crate::error::ToolsError;
-use crate::ports::{HeldKeyWriter, PointerWriter};
+use crate::ports::SpamCycleWriter;
 use crate::spammer::config::SpammerConfig;
 use crate::spammer::keys::is_valid_spammer_key;
+use std::time::Instant;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SpammerTick {
     pub cycled: bool,
 }
 
-pub struct SpammerEngine<I: HeldKeyWriter + PointerWriter> {
+pub struct SpammerEngine<I: SpamCycleWriter> {
     input: I,
     config: SpammerConfig,
 }
 
-impl<I: HeldKeyWriter + PointerWriter> SpammerEngine<I> {
+impl<I: SpamCycleWriter> SpammerEngine<I> {
     pub fn new(input: I, config: SpammerConfig) -> Self {
         Self {
             input,
@@ -32,6 +33,14 @@ impl<I: HeldKeyWriter + PointerWriter> SpammerEngine<I> {
     /// Ciclo IPC-mode: KEYDOWN → click → KEYUP.
     /// El grab lo hace ro-inputd; cada ciclo es un press discreto independiente del estado físico.
     pub fn tick(&mut self, key: &str) -> Result<SpammerTick, ToolsError> {
+        self.tick_with_deadline(key, None)
+    }
+
+    pub fn tick_with_deadline(
+        &mut self,
+        key: &str,
+        deadline: Option<Instant>,
+    ) -> Result<SpammerTick, ToolsError> {
         let key = key.trim();
         if !is_valid_spammer_key(key) {
             return Err(ToolsError::Input {
@@ -40,40 +49,28 @@ impl<I: HeldKeyWriter + PointerWriter> SpammerEngine<I> {
             });
         }
 
-        self.input.key_down(key)?;
-        self.input.click_left()?;
-        self.input.key_up(key)?;
+        let cycled = self.input.spam_cycle(key, deadline)?;
 
-        Ok(SpammerTick { cycled: true })
+        Ok(SpammerTick { cycled })
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ports::{HeldKeyWriter, PointerWriter};
+    use crate::ports::SpamCycleWriter;
     use std::sync::Mutex;
 
     struct MockInput {
         log: Mutex<Vec<String>>,
     }
 
-    impl HeldKeyWriter for MockInput {
-        fn key_down(&self, key: &str) -> Result<(), ToolsError> {
+    impl SpamCycleWriter for MockInput {
+        fn spam_cycle(&self, key: &str, _deadline: Option<Instant>) -> Result<bool, ToolsError> {
             self.log.lock().unwrap().push(format!("down:{key}"));
-            Ok(())
-        }
-
-        fn key_up(&self, key: &str) -> Result<(), ToolsError> {
-            self.log.lock().unwrap().push(format!("up:{key}"));
-            Ok(())
-        }
-    }
-
-    impl PointerWriter for MockInput {
-        fn click_left(&self) -> Result<(), ToolsError> {
             self.log.lock().unwrap().push("click".into());
-            Ok(())
+            self.log.lock().unwrap().push(format!("up:{key}"));
+            Ok(true)
         }
     }
 

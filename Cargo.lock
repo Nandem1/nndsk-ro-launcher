@@ -2542,6 +2542,7 @@ dependencies = [
 name = "ro-launcher"
 version = "0.1.0"
 dependencies = [
+ "crossbeam-channel",
  "ro-tools-core",
  "ro-tools-linux",
  "serde",

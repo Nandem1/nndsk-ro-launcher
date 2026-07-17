@@ -4,6 +4,22 @@ import {
   resolveAudioDotStatus,
   resolveDotStatus,
 } from './advanced.logic'
+import type { AdvancedDepsStatus } from '../../shared/types'
+
+const healthyStatus: AdvancedDepsStatus = {
+  audioOk: true,
+  audioDriver: 'pulse',
+  audioStack: 'pipewire',
+  audioWarning: null,
+  inputGroupOk: true,
+  inputGroupWarning: null,
+  uinputInputOk: true,
+  uinputInputWarning: null,
+  prefixOk: true,
+  prefixWarning: null,
+  dxvkOk: true,
+  dxvkWarning: null,
+}
 
 describe('resolveDotStatus', () => {
   it('verde cuando ok sin aviso', () => {
@@ -32,58 +48,40 @@ describe('resolveAudioDotStatus', () => {
 
 describe('advancedHasIssue', () => {
   it('sin problemas cuando todo verde', () => {
-    expect(
-      advancedHasIssue({
-        audioOk: true,
-        audioDriver: 'pulse',
-        audioStack: 'pipewire',
-        audioWarning: null,
-        inputGroupOk: true,
-        inputGroupWarning: null,
-        autopotInputOk: true,
-        autopotInputWarning: null,
-        prefixOk: true,
-        prefixWarning: null,
-        dxvkOk: true,
-        dxvkWarning: null,
-      }),
-    ).toBe(false)
+    expect(advancedHasIssue(healthyStatus)).toBe(false)
   })
 
   it('detecta dxvk pendiente como aviso', () => {
     expect(
       advancedHasIssue({
-        audioOk: true,
-        audioDriver: 'pulse',
-        audioStack: 'pipewire',
-        audioWarning: null,
+        ...healthyStatus,
         inputGroupOk: false,
         inputGroupWarning: 'usermod',
-        autopotInputOk: false,
-        autopotInputWarning: 'falta ydotool',
+        uinputInputOk: false,
+        uinputInputWarning: 'falta uinput',
         prefixOk: false,
         prefixWarning: 'configura',
-        dxvkOk: true,
         dxvkWarning: 'tras prefix',
       }),
     ).toBe(true)
   })
 
-  it('ignora autopot e input group para el aviso del panel', () => {
+  it('detecta uinput no disponible como problema de producción', () => {
     expect(
       advancedHasIssue({
-        audioOk: true,
-        audioDriver: 'pulse',
-        audioStack: 'pipewire',
-        audioWarning: null,
+        ...healthyStatus,
+        uinputInputOk: false,
+        uinputInputWarning: 'falta /dev/uinput',
+      }),
+    ).toBe(true)
+  })
+
+  it('ignora input group aislado para el aviso del panel', () => {
+    expect(
+      advancedHasIssue({
+        ...healthyStatus,
         inputGroupOk: false,
         inputGroupWarning: 'usermod',
-        autopotInputOk: false,
-        autopotInputWarning: 'falta ydotool',
-        prefixOk: true,
-        prefixWarning: null,
-        dxvkOk: true,
-        dxvkWarning: null,
       }),
     ).toBe(false)
   })

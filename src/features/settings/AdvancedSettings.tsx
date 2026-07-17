@@ -86,15 +86,15 @@ export function AdvancedSettings() {
       hint: advancedStatus.inputGroupWarning,
     },
     {
-      key: 'autopot',
+      key: 'uinput',
       dot: resolveDotStatus(
-        advancedStatus.autopotInputOk,
-        advancedStatus.autopotInputWarning,
+        advancedStatus.uinputInputOk,
+        advancedStatus.uinputInputWarning,
       ),
-      label: advancedStatus.autopotInputOk
-        ? 'AutoPot · ydotool OK'
-        : 'AutoPot · ydotool (opcional)',
-      hint: advancedStatus.autopotInputWarning,
+      label: advancedStatus.uinputInputOk
+        ? 'Input de combate · uinput OK'
+        : 'Input de combate · uinput no disponible',
+      hint: advancedStatus.uinputInputWarning,
     },
   ]
 

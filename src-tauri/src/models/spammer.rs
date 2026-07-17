@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase")]
 pub struct SpammerStatusEvent {
     pub active: bool,
+    pub effective_delay_ms: u64,
     pub armed: bool,
     pub spamming: bool,
     pub key: String,
@@ -20,6 +21,7 @@ impl Default for SpammerStatusEvent {
     fn default() -> Self {
         Self {
             active: false,
+            effective_delay_ms: SpammerConfig::default().delay_ms,
             armed: false,
             spamming: false,
             key: String::new(),

@@ -2,16 +2,14 @@ use super::AutobuffHandle;
 use crate::models::server::ServerConfig;
 use crate::tools::autopot::{load_profiles, resolve_profile};
 use crate::tools::game_pid::resolve_game_pid_with_retry;
-use crate::tools::input::{ensure_ydotoold, InputGateway, YdotoolDaemon};
+use crate::tools::input::InputGateway;
 use crate::utils::{effective_prefix, emit_tool_log_opt};
-use std::sync::Arc;
 use tauri::AppHandle;
 
 pub async fn start_session(
     app: AppHandle,
     handle: &AutobuffHandle,
     input: InputGateway,
-    ydotoold: Arc<YdotoolDaemon>,
     launcher_pid: u32,
     server: ServerConfig,
 ) -> Result<(), String> {
@@ -30,8 +28,10 @@ pub async fn start_session(
         Some(&app),
         format!("[AutoBuff] PID seleccionado: {pid} ({detail})"),
     );
-    ensure_ydotoold(Some(&app), ydotoold.as_ref()).await?;
+    if !input.is_prepared() {
+        return Err("AutoBuff no puede iniciar: uinput no fue preparado antes de Wine".into());
+    }
     handle
-        .start(app, pid, server.autobuff, profile, input, ydotoold)
+        .start(app, pid, server.autobuff, profile, input)
         .await
 }

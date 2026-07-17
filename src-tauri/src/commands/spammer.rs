@@ -21,7 +21,6 @@ pub async fn start_spammer(
         app,
         &state.spammer,
         state.input.clone(),
-        std::sync::Arc::clone(&state.ydotoold),
         server.spammer.clone(),
     )
     .await
@@ -44,14 +43,7 @@ pub async fn update_spammer_config(
         .running_pid()?
         .ok_or_else(|| "No hay juego en ejecución (lanza el juego primero)".to_string())?;
 
-    start_session(
-        app,
-        &state.spammer,
-        state.input.clone(),
-        std::sync::Arc::clone(&state.ydotoold),
-        config,
-    )
-    .await
+    start_session(app, &state.spammer, state.input.clone(), config).await
 }
 
 #[tauri::command]

@@ -34,6 +34,32 @@ pub fn detect_input_permissions() -> InputPermStatus {
     }
 }
 
+pub fn detect_uinput_permissions() -> InputPermStatus {
+    let uinput = uinput_writable();
+    let evdev = evdev_accessible();
+    if uinput && evdev {
+        return InputPermStatus {
+            ok: true,
+            warning: None,
+        };
+    }
+
+    let mut missing = Vec::new();
+    if !uinput {
+        missing.push("/dev/uinput no es escribible");
+    }
+    if !evdev {
+        missing.push("/dev/input/event* no es legible");
+    }
+    InputPermStatus {
+        ok: false,
+        warning: Some(format!(
+            "uinput no disponible: {}. {INPUT_GROUP_HINT}",
+            missing.join("; ")
+        )),
+    }
+}
+
 fn current_username() -> Option<String> {
     std::env::var("USER")
         .ok()

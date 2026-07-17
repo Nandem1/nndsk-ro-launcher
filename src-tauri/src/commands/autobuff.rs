@@ -1,7 +1,6 @@
 use crate::models::{autobuff::AutobuffStatusEvent, server::ServerConfig};
 use crate::state::GameState;
 use crate::tools::autobuff::start_session;
-use std::sync::Arc;
 use tauri::{AppHandle, State};
 #[tauri::command]
 pub async fn start_autobuff(
@@ -18,7 +17,6 @@ pub async fn start_autobuff(
         app,
         &state.autobuff,
         state.input.clone(),
-        Arc::clone(&state.ydotoold),
         launcher_pid,
         server,
     )

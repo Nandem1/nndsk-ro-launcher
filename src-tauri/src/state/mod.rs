@@ -1,15 +1,12 @@
 mod game_process;
 
-use std::{
-    path::PathBuf,
-    sync::{Arc, Mutex},
-};
+use std::{path::PathBuf, sync::Mutex};
 
 pub use game_process::{GameProcessHandle, LaunchReservation};
 
 use crate::tools::autobuff::AutobuffHandle;
 use crate::tools::autopot::AutopotHandle;
-use crate::tools::input::{InputGateway, YdotoolDaemon};
+use crate::tools::input::InputGateway;
 use crate::tools::spammer::SpammerHandle;
 use crate::{
     models::{
@@ -30,7 +27,6 @@ pub struct GameState {
     pub autobuff: AutobuffHandle,
     pub spammer: SpammerHandle,
     pub input: InputGateway,
-    pub ydotoold: Arc<YdotoolDaemon>,
 }
 
 pub struct ServerRepository {
@@ -143,7 +139,10 @@ mod tests {
     use serde_json::json;
     use std::{
         fs,
-        sync::atomic::{AtomicU64, Ordering},
+        sync::{
+            atomic::{AtomicU64, Ordering},
+            Arc,
+        },
         thread,
     };
 
@@ -182,6 +181,7 @@ mod tests {
             "id": "legacy",
             "name": "Legacy RO",
             "executablePath": "/games/legacy/Ragexe.exe",
+            "combatInputBackend": "lowLatency",
             "spammer": {
                 "keys": ["F3", "F4"],
                 "gearSwitch": {
@@ -210,6 +210,7 @@ mod tests {
                 .len(),
             2
         );
+        assert!(canonical[0].get("combatInputBackend").is_none());
         assert_eq!(
             serde_json::from_str::<serde_json::Value>(
                 &fs::read_to_string(backup_path(&path)).unwrap()

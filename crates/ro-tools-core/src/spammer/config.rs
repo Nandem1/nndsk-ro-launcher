@@ -204,7 +204,7 @@ impl Default for SpammerConfig {
 impl SpammerConfig {
     pub fn clamped(&self) -> Self {
         let mut c = self.normalized();
-        c.delay_ms = c.delay_ms.clamp(5, 100);
+        c.delay_ms = c.delay_ms.clamp(10, 100);
         c
     }
 

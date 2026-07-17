@@ -2,16 +2,13 @@ use evdev::uinput::VirtualDevice;
 use evdev::{AttributeSet, Device, InputEvent, KeyCode};
 use ro_tools_core::spammer::keys::normalize_spammer_keys;
 use ro_tools_linux::key_label_to_keycode;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::{self, BufRead, Write};
 use std::os::unix::io::AsRawFd;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 
 const BLACKLIST: &[&str] = &[
     "mouse",
-    "ydotoold",
     "ro-launcher",
     "uinput",
     "power",
@@ -140,17 +137,12 @@ fn discover_keyboards(triggers: &HashMap<KeyCode, String>) -> Vec<DiscoveredDevi
     groups.into_values().flatten().collect()
 }
 
-fn create_passthrough(
-    devices: &[Device],
-    triggers: &HashMap<KeyCode, String>,
-) -> Result<VirtualDevice, String> {
+fn create_passthrough(devices: &[Device]) -> Result<VirtualDevice, String> {
     let mut keys = AttributeSet::<KeyCode>::new();
     for dev in devices {
         if let Some(supported) = dev.supported_keys() {
             for key in supported.iter() {
-                if !triggers.contains_key(&key) {
-                    keys.insert(key);
-                }
+                keys.insert(key);
             }
         }
     }
@@ -186,8 +178,78 @@ fn any_alt_held(devices: &[Device]) -> bool {
     })
 }
 
+fn code_held(devices: &[Device], code: KeyCode) -> bool {
+    devices.iter().any(|dev| {
+        dev.cached_state()
+            .key_vals()
+            .map(|keys| keys.contains(code))
+            .unwrap_or(false)
+    })
+}
+
+fn trigger_uses_alt_passthrough(
+    code: KeyCode,
+    value: i32,
+    alt_held: bool,
+    passthrough_keys: &mut HashSet<KeyCode>,
+) -> bool {
+    match value {
+        1 if alt_held => passthrough_keys.insert(code),
+        2 => passthrough_keys.contains(&code),
+        0 => passthrough_keys.remove(&code),
+        _ => false,
+    }
+}
+
 fn label_for_code(triggers: &TriggerSet, code: KeyCode) -> Option<&str> {
     triggers.code_to_label.get(&code).map(String::as_str)
+}
+
+fn create_shutdown_eventfd() -> io::Result<i32> {
+    let fd = unsafe { libc::eventfd(0, libc::EFD_CLOEXEC | libc::EFD_NONBLOCK) };
+    if fd < 0 {
+        Err(io::Error::last_os_error())
+    } else {
+        Ok(fd)
+    }
+}
+
+fn wake_shutdown(fd: i32) {
+    let value: u64 = 1;
+    unsafe {
+        libc::write(
+            fd,
+            (&value as *const u64).cast::<libc::c_void>(),
+            std::mem::size_of::<u64>(),
+        );
+    }
+}
+
+/// Blocks until an evdev descriptor is readable or shutdown is signalled.
+/// Returns false for shutdown and true for input activity.
+fn wait_for_events(device_fds: &[i32], shutdown_fd: i32) -> io::Result<bool> {
+    let mut fds = Vec::with_capacity(device_fds.len() + 1);
+    fds.push(libc::pollfd {
+        fd: shutdown_fd,
+        events: libc::POLLIN,
+        revents: 0,
+    });
+    fds.extend(device_fds.iter().map(|fd| libc::pollfd {
+        fd: *fd,
+        events: libc::POLLIN,
+        revents: 0,
+    }));
+
+    loop {
+        let result = unsafe { libc::poll(fds.as_mut_ptr(), fds.len() as libc::nfds_t, -1) };
+        if result >= 0 {
+            return Ok(fds[0].revents & libc::POLLIN == 0);
+        }
+        let error = io::Error::last_os_error();
+        if error.kind() != io::ErrorKind::Interrupted {
+            return Err(error);
+        }
+    }
 }
 
 fn main() {
@@ -224,7 +286,7 @@ fn main() {
 
     let devices_only: Vec<Device> = discovered.into_iter().map(|d| d.device).collect();
 
-    let mut passthrough = match create_passthrough(&devices_only, &cfg.triggers.code_to_label) {
+    let mut passthrough = match create_passthrough(&devices_only) {
         Ok(pt) => pt,
         Err(e) => {
             if cfg.json {
@@ -262,9 +324,23 @@ fn main() {
         }));
     }
 
-    let shutdown = Arc::new(AtomicBool::new(false));
+    let shutdown_fd = match create_shutdown_eventfd() {
+        Ok(fd) => fd,
+        Err(error) => {
+            if cfg.json {
+                emit_json(&serde_json::json!({
+                    "type": "fatal",
+                    "message": format!("eventfd shutdown: {error}")
+                }));
+            }
+            for dev in &mut devices {
+                ungrab(dev);
+            }
+            return;
+        }
+    };
 
-    let shutdown_stdin = Arc::clone(&shutdown);
+    let shutdown_stdin_fd = shutdown_fd;
     std::thread::spawn(move || {
         let stdin = io::stdin();
         for line in stdin.lock().lines() {
@@ -274,23 +350,37 @@ fn main() {
                 _ => {}
             }
         }
-        shutdown_stdin.store(true, Ordering::SeqCst);
+        wake_shutdown(shutdown_stdin_fd);
     });
 
-    let shutdown_signal = Arc::clone(&shutdown);
+    let shutdown_signal_fd = shutdown_fd;
     std::thread::spawn(move || {
         let mut signals =
             signal_hook::iterator::Signals::new([libc::SIGTERM, libc::SIGINT]).expect("signals");
         if signals.forever().next().is_some() {
-            shutdown_signal.store(true, Ordering::SeqCst);
+            wake_shutdown(shutdown_signal_fd);
         }
     });
 
+    let mut left_alt_held = code_held(&devices, KeyCode::KEY_LEFTALT);
+    let mut right_alt_held = code_held(&devices, KeyCode::KEY_RIGHTALT);
     let mut alt_held = any_alt_held(&devices);
+    let mut alt_passthrough_keys = HashSet::new();
+    let device_fds: Vec<i32> = devices.iter().map(AsRawFd::as_raw_fd).collect();
 
     loop {
-        if shutdown.load(Ordering::Relaxed) {
-            break;
+        match wait_for_events(&device_fds, shutdown_fd) {
+            Ok(true) => {}
+            Ok(false) => break,
+            Err(error) => {
+                if cfg.json {
+                    emit_json(&serde_json::json!({
+                        "type":"fatal",
+                        "message": format!("poll evdev: {error}")
+                    }));
+                }
+                break;
+            }
         }
 
         let mut had_error = false;
@@ -301,12 +391,33 @@ fn main() {
                     for event in events {
                         if let evdev::EventSummary::Key(_, code, value) = event.destructure() {
                             if code == KeyCode::KEY_LEFTALT || code == KeyCode::KEY_RIGHTALT {
-                                alt_held = value != 0;
+                                if code == KeyCode::KEY_LEFTALT {
+                                    left_alt_held = value != 0;
+                                } else {
+                                    right_alt_held = value != 0;
+                                }
+                                alt_held = left_alt_held || right_alt_held;
                             }
                             if cfg.triggers.code_to_label.contains_key(&code) {
                                 let Some(label) = label_for_code(&cfg.triggers, code) else {
                                     continue;
                                 };
+                                if trigger_uses_alt_passthrough(
+                                    code,
+                                    value,
+                                    alt_held,
+                                    &mut alt_passthrough_keys,
+                                ) {
+                                    if value == 1 && cfg.json {
+                                        emit_json(&serde_json::json!({
+                                            "type":"trigger",
+                                            "key": label,
+                                            "held": false,
+                                        }));
+                                    }
+                                    passthrough_buf.push(event);
+                                    continue;
+                                }
                                 match value {
                                     1 => {
                                         if cfg.json {
@@ -349,13 +460,12 @@ fn main() {
         if had_error {
             break;
         }
-
-        std::thread::sleep(std::time::Duration::from_millis(5));
     }
 
     for dev in &mut devices {
         ungrab(dev);
     }
+    unsafe { libc::close(shutdown_fd) };
     if cfg.json {
         emit_json(&serde_json::json!({"type":"shutdown"}));
     }
@@ -399,5 +509,39 @@ mod tests {
             "/dev/input/by-id/usb-mouse-event-mouse"
         )));
         assert!(!is_mouse_handler(Path::new("/dev/input/event6")));
+    }
+
+    #[test]
+    fn eventfd_wakes_blocked_poll_for_shutdown() {
+        let fd = create_shutdown_eventfd().unwrap();
+        let wake_fd = fd;
+        let wake = std::thread::spawn(move || wake_shutdown(wake_fd));
+        assert!(!wait_for_events(&[], fd).unwrap());
+        wake.join().unwrap();
+        unsafe { libc::close(fd) };
+    }
+
+    #[test]
+    fn alt_trigger_passthrough_keeps_down_repeat_up_sequence() {
+        let mut keys = HashSet::new();
+        assert!(trigger_uses_alt_passthrough(
+            KeyCode::KEY_F2,
+            1,
+            true,
+            &mut keys
+        ));
+        assert!(trigger_uses_alt_passthrough(
+            KeyCode::KEY_F2,
+            2,
+            false,
+            &mut keys
+        ));
+        assert!(trigger_uses_alt_passthrough(
+            KeyCode::KEY_F2,
+            0,
+            false,
+            &mut keys
+        ));
+        assert!(!keys.contains(&KeyCode::KEY_F2));
     }
 }

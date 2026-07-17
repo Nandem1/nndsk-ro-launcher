@@ -35,6 +35,7 @@ export interface AutopotConfig {
 
 export interface AutopotStatusEvent {
   active: boolean
+  effectiveDelayMs: number
   curHp: number
   maxHp: number
   curSp: number
@@ -90,6 +91,7 @@ export interface AutobuffStatusEvent {
 
 export interface SpammerStatusEvent {
   active: boolean
+  effectiveDelayMs: number
   armed: boolean
   spamming: boolean
   key: string
@@ -122,10 +124,10 @@ export interface DependencyStatus {
   audioDriver: string
   audioStack: string
   audioWarning: string | null
-  autopotInputOk: boolean
-  autopotInputWarning: string | null
   inputGroupOk: boolean
   inputGroupWarning: string | null
+  uinputInputOk: boolean
+  uinputInputWarning: string | null
   prefixOk: boolean
   prefixWarning: string | null
   dxvkOk: boolean
@@ -135,11 +137,6 @@ export interface DependencyStatus {
 export type AudioStatus = Pick<
   DependencyStatus,
   'audioOk' | 'audioDriver' | 'audioStack' | 'audioWarning'
->
-
-export type AutopotInputStatus = Pick<
-  DependencyStatus,
-  'autopotInputOk' | 'autopotInputWarning'
 >
 
 export type InputGroupStatus = Pick<
@@ -159,8 +156,8 @@ export type AdvancedDepsStatus = Pick<
   | 'audioWarning'
   | 'inputGroupOk'
   | 'inputGroupWarning'
-  | 'autopotInputOk'
-  | 'autopotInputWarning'
+  | 'uinputInputOk'
+  | 'uinputInputWarning'
   | 'prefixOk'
   | 'prefixWarning'
   | 'dxvkOk'

@@ -57,10 +57,14 @@ impl<M: MemoryReader, I: KeyPressWriter> AutopotEngine<M, I> {
     pub fn tick(&mut self) -> Result<AutopotTick, ToolsError> {
         self.tick_count += 1;
 
-        let cur_hp = self.memory.read_u32(self.profile.hp_base)?;
-        let max_hp = self.memory.read_u32(self.profile.max_hp_address())?;
-        let cur_sp = self.memory.read_u32(self.profile.cur_sp_address())?;
-        let max_sp = self.memory.read_u32(self.profile.max_sp_address())?;
+        let values = self.memory.read_u32_slice(self.profile.hp_base, 4)?;
+        let [cur_hp, max_hp, cur_sp, max_sp] = values.as_slice() else {
+            return Err(ToolsError::Other(format!(
+                "AutoPot: lectura HP/SP incompleta ({} de 4)",
+                values.len()
+            )));
+        };
+        let (cur_hp, max_hp, cur_sp, max_sp) = (*cur_hp, *max_hp, *cur_sp, *max_sp);
 
         if self.tick_count == 1 || self.tick_count.is_multiple_of(20) {
             self.cached_name = self
@@ -93,7 +97,7 @@ impl<M: MemoryReader, I: KeyPressWriter> AutopotEngine<M, I> {
             }
         }
 
-        if self.is_sp_below(cur_sp, max_sp) {
+        if self.is_sp_below(cur_sp, max_sp) && !tick.potted_sp {
             self.pot_sp()?;
             tick.potted_sp = true;
         }
@@ -135,6 +139,7 @@ mod tests {
     struct MockMemory {
         data: HashMap<u32, u32>,
         name: String,
+        slice_reads: Mutex<u64>,
     }
 
     impl MemoryReader for MockMemory {
@@ -147,6 +152,13 @@ mod tests {
 
         fn read_string(&self, _address: u32, _max_len: usize) -> Result<String, ToolsError> {
             Ok(self.name.clone())
+        }
+
+        fn read_u32_slice(&self, address: u32, len: usize) -> Result<Vec<u32>, ToolsError> {
+            *self.slice_reads.lock().unwrap() += 1;
+            (0..len)
+                .map(|index| self.read_u32(address + index as u32 * 4))
+                .collect()
         }
     }
 
@@ -179,6 +191,7 @@ mod tests {
             MockMemory {
                 data,
                 name: "TestChar".into(),
+                slice_reads: Mutex::new(0),
             },
             MockInput {
                 pressed: Mutex::new(vec![]),
@@ -238,5 +251,22 @@ mod tests {
         assert!(tick.potted_sp);
         assert!(!tick.proactive_hp_pulse);
         assert_eq!(e.input.pressed.lock().unwrap().as_slice(), ["F9"]);
+    }
+
+    #[test]
+    fn reads_hp_and_sp_in_one_slice_operation() {
+        let mut e = engine(900, 1000, 500, 500);
+        e.tick().unwrap();
+        assert_eq!(*e.memory.slice_reads.lock().unwrap(), 1);
+    }
+
+    #[test]
+    fn third_hp_cycle_sends_sp_only_once() {
+        let mut e = engine(700, 1000, 200, 500);
+        e.tick().unwrap();
+        e.tick().unwrap();
+        e.tick().unwrap();
+        let pressed = e.input.pressed.lock().unwrap();
+        assert_eq!(pressed.iter().filter(|key| key.as_str() == "F9").count(), 3);
     }
 }

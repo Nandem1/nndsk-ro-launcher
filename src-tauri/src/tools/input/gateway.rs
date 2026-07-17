@@ -1,69 +1,85 @@
-use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
-use ro_tools_core::{HeldKeyWriter, KeyPressWriter, PointerWriter, ToolsError};
-use ro_tools_linux::LazyYdotoolInput;
+use ro_tools_core::{HeldKeyWriter, KeyPressWriter, SpamCycleWriter, ToolsError};
 
-/// Cola global de input: serializa ydotool entre AutoPot, Spammer y futuro AutoBuff.
+use super::uinput_worker::{InputSource, MetricsSnapshot, UinputInput, UinputWriter};
+
+/// Shared gateway to the single persistent, prioritized uinput worker.
 #[derive(Clone)]
 pub struct InputGateway {
-    inner: Arc<Mutex<LazyYdotoolInput>>,
+    uinput: UinputInput,
 }
 
 impl InputGateway {
     pub fn new() -> Self {
         Self {
-            inner: Arc::new(Mutex::new(LazyYdotoolInput::new())),
+            uinput: UinputInput::new(),
         }
     }
 
-    pub fn reset(&self) {
-        if let Ok(guard) = self.inner.lock() {
-            guard.reset();
-        }
+    pub fn writer(
+        &self,
+        source: InputSource,
+        effective_delay_ms: u64,
+    ) -> Result<GatewayWriter, ToolsError> {
+        self.uinput
+            .writer(source, Duration::from_millis(effective_delay_ms.max(10)))
     }
 
-    pub fn writer(&self) -> GatewayWriter {
-        GatewayWriter(Arc::clone(&self.inner))
+    pub async fn prepare(&self) -> Result<String, ToolsError> {
+        let uinput = self.uinput.clone();
+        tokio::task::spawn_blocking(move || uinput.prepare())
+            .await
+            .map_err(|error| {
+                ToolsError::Other(format!(
+                    "uinput stage=join preparation device=both errno=none: {error}"
+                ))
+            })?
+    }
+
+    pub fn is_prepared(&self) -> bool {
+        self.uinput.is_prepared()
+    }
+
+    pub fn metrics(&self, source: InputSource) -> MetricsSnapshot {
+        self.uinput.snapshot_metrics(source)
+    }
+
+    pub fn shutdown(&self) {
+        self.uinput.shutdown();
     }
 }
 
-#[derive(Clone)]
-pub struct GatewayWriter(Arc<Mutex<LazyYdotoolInput>>);
+impl Default for InputGateway {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
-impl KeyPressWriter for GatewayWriter {
+pub type GatewayWriter = UinputWriter;
+
+impl KeyPressWriter for UinputWriter {
     fn press_key(&self, key: &str) -> Result<(), ToolsError> {
-        let guard = self
-            .0
-            .lock()
-            .map_err(|_| ToolsError::Other("input gateway lock poisoned".into()))?;
-        guard.press_key(key)
+        UinputWriter::press_key(self, key)
     }
 }
 
-impl PointerWriter for GatewayWriter {
-    fn click_left(&self) -> Result<(), ToolsError> {
-        let guard = self
-            .0
-            .lock()
-            .map_err(|_| ToolsError::Other("input gateway lock poisoned".into()))?;
-        guard.click_left()
-    }
-}
-
-impl HeldKeyWriter for GatewayWriter {
+impl HeldKeyWriter for UinputWriter {
     fn key_down(&self, key: &str) -> Result<(), ToolsError> {
-        let guard = self
-            .0
-            .lock()
-            .map_err(|_| ToolsError::Other("input gateway lock poisoned".into()))?;
-        guard.key_down(key)
+        self.key_event(key, 1)
     }
 
     fn key_up(&self, key: &str) -> Result<(), ToolsError> {
-        let guard = self
-            .0
-            .lock()
-            .map_err(|_| ToolsError::Other("input gateway lock poisoned".into()))?;
-        guard.key_up(key)
+        self.key_event(key, 0)
+    }
+}
+
+impl SpamCycleWriter for UinputWriter {
+    fn spam_cycle(
+        &self,
+        key: &str,
+        deadline: Option<std::time::Instant>,
+    ) -> Result<bool, ToolsError> {
+        UinputWriter::spam_cycle(self, key, deadline)
     }
 }

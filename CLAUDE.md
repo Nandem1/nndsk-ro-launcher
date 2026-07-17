@@ -62,7 +62,7 @@ Cargo workspace con cuatro capas en el backend. El frontend usa Feature-Sliced D
 
 ```
 crates/ro-tools-core/     Dominio puro — sin OS (engine, config, ports, profiles, dgvoodoo, spammer)
-crates/ro-tools-linux/    Adaptadores Linux — memoria /proc, ydotool, procesos Wine, keyboard evdev
+crates/ro-tools-linux/    Adaptadores Linux — memoria /proc, uinput, procesos Wine, keyboard evdev
 crates/ro-inputd/         Binario sidecar — grab de teclado via evdev + passthrough uinput (JSON stdio)
 src-tauri/src/
   commands/               Handlers Tauri delgados (nombre 1:1 con tools/ cuando aplica)
@@ -78,13 +78,13 @@ src-tauri/src/
 |--------|-----|
 | `tools/autopot/` | AutoPot: PID, loop, perfiles |
 | `tools/autobuff/` | AutoBuff: PID, reglas, loop y estado live |
-| `tools/spammer/` | Spammer: lifecycle ro-inputd, loop de spam via ydotool |
+| `tools/spammer/` | Spammer: lifecycle ro-inputd, scheduler de 10 ms e input uinput |
 | `tools/server_tools/` | OpenSetup, patcher, dgVoodoo |
 | `tools/launcher/` | Lanzar/detener juego y cleanup de las tres herramientas |
 | `tools/prefix/` | Setup/reset WINEPREFIX (winetricks, marker) |
 | `tools/runners/` | Descubrir Wine/Proton instalados |
 | `tools/deps/` | Agregar checks de dependencias |
-| `tools/input/` | Ciclo de vida ydotoold + InputGateway |
+| `tools/input/` | Worker uinput persistente, colas priorizadas, métricas + InputGateway |
 
 `commands/servers.rs` y `commands/settings.rs` delegan en repositorios serializados. Estos
 canonicalizan configuraciones legacy, rotan `.bak` y recuperan archivos corruptos sin cambiar
@@ -102,23 +102,23 @@ los payloads IPC. `GameProcessHandle` modela `Idle | Launching | Running` con ge
 
 ```
 commands/autopot.rs          invoke handlers (start/stop/config/status)
-  → tools/autopot/session.rs  resuelve PID, valida ydotool, arranca servicio
+  → tools/autopot/session.rs  resuelve PID, valida uinput y arranca servicio
     → tools/autopot/service.rs   ciclo de vida (AutopotHandle)
       → tools/autopot/loop_runner.rs   tokio loop + eventos de estado
         → ro-tools-core AutopotEngine   lógica DT_AP (tick HP/SP)
-          → ro-tools-linux ProcMemoryReader + LazyYdotoolInput
+          → ro-tools-linux ProcMemoryReader + CombatUinput
 ```
 
 ### Spammer — flujo de capas
 
 ```
 commands/spammer.rs          invoke handlers (start/stop/update_config/status)
-  → tools/spammer/session.rs  asegura ydotoold, delega a SpammerHandle
+  → tools/spammer/session.rs  valida uinput preparado, delega a SpammerHandle
     → tools/spammer/service.rs   ciclo de vida (SpammerHandle)
       → tools/spammer/loop_runner.rs   tokio loop; spawna ro-inputd como subprocess
         → crates/ro-inputd              grab evdev, passthrough uinput, JSON stdio
-        → ro-tools-core SpammerEngine   tick: key_down → click_left → key_up
-          → ro-tools-linux LazyYdotoolInput (ydotool)
+        → ro-tools-core SpammerEngine   tick atómico: key_down → click → key_up
+          → tools/input UinputWriter
 ```
 
 **ro-inputd** es un binario sidecar bundleado junto al ejecutable principal. Lo encuentra en
@@ -216,7 +216,7 @@ ro-launcher://spammer-status { SpammerStatusEvent }
 
 ### `check_dependencies` → `DependencyStatus`
 
-Checks: `wine-cachyos` or `wine` binary, `winetricks`, DXVK at `{prefix}/drive_c/windows/system32/d3d9.dll`, marker file, audio driver, and `ydotool`+`ydotoold` for AutoPot/Spammer. Also checks `input` group membership (required for `ro-inputd` to grab evdev).
+Checks: `wine-cachyos` or `wine` binary, `winetricks`, DXVK at `{prefix}/drive_c/windows/system32/d3d9.dll`, marker file, audio driver, acceso a `/dev/uinput` y al grupo `input`.
 
 ### `setup_prefix`
 

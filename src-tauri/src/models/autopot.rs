@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase")]
 pub struct AutopotStatusEvent {
     pub active: bool,
+    pub effective_delay_ms: u64,
     pub cur_hp: u32,
     pub max_hp: u32,
     pub cur_sp: u32,
@@ -19,6 +20,7 @@ impl Default for AutopotStatusEvent {
     fn default() -> Self {
         Self {
             active: false,
+            effective_delay_ms: AutopotConfig::default().delay_ms,
             cur_hp: 0,
             max_hp: 0,
             cur_sp: 0,

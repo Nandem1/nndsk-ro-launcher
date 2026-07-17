@@ -4,8 +4,6 @@ mod state;
 mod tools;
 mod utils;
 
-use std::sync::Arc;
-
 use tauri::{Manager, RunEvent};
 
 use commands::{
@@ -26,10 +24,7 @@ use commands::{
 };
 use state::{GameState, ServerRepository, SettingsRepository, StorageNotices};
 use tools::{
-    autobuff::AutobuffHandle,
-    autopot::AutopotHandle,
-    input::{InputGateway, YdotoolDaemon},
-    spammer::SpammerHandle,
+    autobuff::AutobuffHandle, autopot::AutopotHandle, input::InputGateway, spammer::SpammerHandle,
 };
 use utils::configure_linux_webview_env;
 
@@ -52,7 +47,6 @@ pub fn run() {
             autobuff: AutobuffHandle::new(),
             spammer: SpammerHandle::new(),
             input: InputGateway::new(),
-            ydotoold: Arc::new(YdotoolDaemon::new()),
         })
         .manage(ServerRepository::default())
         .manage(SettingsRepository)
@@ -99,8 +93,8 @@ pub fn run() {
                             state.autobuff.stop(),
                             state.spammer.stop()
                         );
-                        state.ydotoold.shutdown().await;
                     });
+                    state.input.shutdown();
                 }
             }
         });

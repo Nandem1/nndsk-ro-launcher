@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use tauri::{AppHandle, State};
 
 use crate::models::autopot::AutopotStatusEvent;
@@ -23,7 +21,6 @@ pub async fn start_autopot(
         app,
         &state.autopot,
         state.input.clone(),
-        Arc::clone(&state.ydotoold),
         launcher_pid,
         server,
     )

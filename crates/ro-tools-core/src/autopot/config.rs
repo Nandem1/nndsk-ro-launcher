@@ -69,7 +69,7 @@ impl AutopotConfig {
         let mut c = self.clone();
         c.hp_percent = c.hp_percent.clamp(1, 99);
         c.sp_percent = c.sp_percent.clamp(1, 99);
-        c.delay_ms = c.delay_ms.clamp(50, 2000);
+        c.delay_ms = c.delay_ms.clamp(10, 2000);
         c
     }
 

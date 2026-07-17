@@ -63,7 +63,13 @@ impl MemoryReader for ProcMemoryReader {
 
     fn read_u32_slice(&self, address: u32, len: usize) -> Result<Vec<u32>, ToolsError> {
         let mut bytes = vec![0u8; len * 4];
-        read_bytes_at(self.pid, address, &mut bytes, &self.file)?;
+        let read = read_bytes_at(self.pid, address, &mut bytes, &self.file)?;
+        if read != bytes.len() {
+            return Err(ToolsError::MemoryRead {
+                address,
+                message: format!("lectura HP/SP incompleta: {read} de {} bytes", bytes.len()),
+            });
+        }
         Ok(bytes
             .chunks_exact(4)
             .map(|chunk| u32::from_le_bytes(chunk.try_into().expect("exact chunk")))

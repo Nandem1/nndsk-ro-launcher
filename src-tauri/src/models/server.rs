@@ -141,4 +141,22 @@ mod tests {
             assert!(fixture.server.validate().is_err());
         }
     }
+
+    #[test]
+    fn legacy_server_ignores_removed_input_backend() {
+        let server: ServerConfig = serde_json::from_value(serde_json::json!({
+            "id": "legacy",
+            "name": "Legacy RO",
+            "executablePath": "/games/legacy/Ragexe.exe",
+            "patcherPath": null,
+            "winePrefix": null,
+            "runner": null,
+            "combatInputBackend": "legacy"
+        }))
+        .unwrap();
+        assert!(serde_json::to_value(server)
+            .unwrap()
+            .get("combatInputBackend")
+            .is_none());
+    }
 }

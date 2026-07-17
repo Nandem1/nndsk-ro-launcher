@@ -1,4 +1,5 @@
 use crate::error::ToolsError;
+use std::time::Instant;
 
 pub trait MemoryReader: Send + Sync {
     fn read_u32(&self, address: u32) -> Result<u32, ToolsError>;
@@ -24,6 +25,8 @@ pub trait HeldKeyWriter: Send + Sync {
     fn key_up(&self, key: &str) -> Result<(), ToolsError>;
 }
 
-pub trait PointerWriter: Send + Sync {
-    fn click_left(&self) -> Result<(), ToolsError>;
+/// Writes the complete spam sequence as one non-interleavable command.
+pub trait SpamCycleWriter: Send + Sync {
+    /// Returns false when the cycle was deliberately skipped after its deadline.
+    fn spam_cycle(&self, key: &str, deadline: Option<Instant>) -> Result<bool, ToolsError>;
 }

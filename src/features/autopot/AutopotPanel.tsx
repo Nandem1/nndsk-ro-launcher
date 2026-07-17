@@ -69,6 +69,7 @@ export function AutopotPanel() {
   const launching = useLauncherStore((s) => s.status === 'launching')
   const hero = useUiModeStore((s) => s.mode === 'ingame')
   const available = isRunning && !!server
+  const minimumDelayMs = 10
   const hasCharacter = available && !!status.characterName
   const [flashHp, setFlashHp] = useState(false)
   const [flashSp, setFlashSp] = useState(false)
@@ -194,6 +195,30 @@ export function AutopotPanel() {
             onChange={(proactiveMode) => void updateField({ proactiveMode })}
             tone="amber"
           />
+        </div>
+
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-zinc-600 uppercase tracking-wide shrink-0">
+            Lectura
+          </span>
+          <input
+            type="range"
+            min={minimumDelayMs}
+            max={200}
+            step={1}
+            disabled={!server || busy}
+            value={Math.max(config.delayMs, minimumDelayMs)}
+            onChange={(event) =>
+              void updateField({ delayMs: Number(event.target.value) })
+            }
+            className="flex-1 accent-amber-500 disabled:opacity-50"
+          />
+          <span className="text-[10px] text-zinc-500 w-10 text-right shrink-0">
+            {status.active
+              ? status.effectiveDelayMs
+              : Math.max(config.delayMs, minimumDelayMs)}
+            ms
+          </span>
         </div>
 
         <div className="space-y-1">

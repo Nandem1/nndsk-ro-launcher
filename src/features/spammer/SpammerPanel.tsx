@@ -16,6 +16,7 @@ export function SpammerPanel() {
   const launching = useLauncherStore((state) => state.status === 'launching')
   const hero = useUiModeStore((state) => state.mode === 'ingame')
   const available = isRunning && !!server
+  const minimumDelayMs = 10
   const keysLabel = formatSpammerKeys(config.keys)
 
   const statusLabel = (() => {
@@ -92,18 +93,21 @@ export function SpammerPanel() {
           </span>
           <input
             type="range"
-            min={5}
+            min={minimumDelayMs}
             max={50}
             step={1}
             disabled={!server || busy}
-            value={config.delayMs}
+            value={Math.max(config.delayMs, minimumDelayMs)}
             onChange={(event) =>
               void updateField({ delayMs: Number(event.target.value) })
             }
             className="flex-1 accent-amber-500 disabled:opacity-50"
           />
           <span className="text-[10px] text-zinc-500 w-8 text-right shrink-0">
-            {config.delayMs}ms
+            {status.active
+              ? status.effectiveDelayMs
+              : Math.max(config.delayMs, minimumDelayMs)}
+            ms
           </span>
         </div>
 

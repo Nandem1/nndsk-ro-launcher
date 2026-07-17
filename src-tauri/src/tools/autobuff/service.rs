@@ -5,7 +5,7 @@ use tauri::AppHandle;
 use tokio::sync::watch;
 
 use crate::models::autobuff::AutobuffStatusEvent;
-use crate::tools::input::{InputGateway, YdotoolDaemon};
+use crate::tools::input::{InputGateway, InputSource};
 use crate::tools::session::SessionController;
 use crate::utils::emit_tool_log_opt;
 
@@ -58,13 +58,14 @@ impl AutobuffHandle {
         config: AutobuffConfig,
         profile: ClientProfile,
         input: InputGateway,
-        ydotoold: Arc<YdotoolDaemon>,
     ) -> Result<(), String> {
         let memory = ProcMemoryReader::open(pid)
             .map_err(|e| format!("No se pudo abrir memoria PID {pid}: {e}"))?;
         let config = config.clamped();
         let (config_tx, config_rx) = watch::channel(config.clone());
-        let writer = input.writer();
+        let writer = input
+            .writer(InputSource::Autobuff, config.delay_ms)
+            .map_err(|error| error.to_string())?;
         let status_arc = Arc::clone(&self.status);
         emit_tool_log_opt(
             Some(&app),
@@ -85,8 +86,6 @@ impl AutobuffHandle {
                     stop_rx,
                     config_rx,
                     status_arc,
-                    gateway: input,
-                    ydotoold,
                 })
                 .await;
             })

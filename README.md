@@ -18,7 +18,7 @@ Launcher dedicado para **Ragnarok Online** en Linux. Gestiona el WINEPREFIX, dep
 - **dgVoodoo embebido** — instala/desinstala desde una plantilla preconfigurada incluida en el launcher
 - **Runners** — Proton (recomendado) o Wine del sistema, seleccionables desde la UI
 - **AutoPot** — HP/SP automático por lectura de memoria del cliente (perfiles 4RTools)
-- **Spammer** — spam de teclas con trigger por hotkey (F1–F9, 0–9) vía `ro-inputd` + ydotool
+- **Spammer** — spam de teclas con trigger por hotkey (F1–F9, 0–9, A–Z) vía `ro-inputd` + uinput persistente a 10 ms
 - **Audio** — detección PulseAudio/ALSA con avisos si falta el driver adecuado
 - **Logs en tiempo real** — salida de Wine/Proton/DXVK y herramientas (AutoPot, Spammer, input)
 
@@ -33,8 +33,7 @@ Launcher dedicado para **Ragnarok Online** en Linux. Gestiona el WINEPREFIX, dep
 | **Linux x86_64** | Probado en CachyOS/Arch; compatible con otras distros |
 | **Vulkan + drivers GPU** | Necesario para DXVK (AMD/NVIDIA/Intel) |
 | **winetricks** | Setup del prefix |
-| **ydotool + ydotoold** | AutoPot y Spammer (simulación de teclado/ratón) |
-| **grupo `input`** | Requerido para Spammer (`ro-inputd` grabea evdev); el banner de sistema lo indica |
+| **`/dev/uinput` + grupo `input`** | Input de AutoPot/Spammer/AutoBuff y captura evdev de `ro-inputd` |
 
 > En Wayland (Hyprland, etc.) el juego se lanza vía Xwayland automáticamente. La UI del launcher también fuerza backend X11 para WebKit (incluido AppImage).
 
@@ -185,14 +184,15 @@ La instalación es **manual** (botón Instalar) — no se copia automáticamente
 
 ---
 
-## AutoPot y Spammer
+## AutoPot, Spammer y AutoBuff
 
 | Herramienta | Requisitos | Notas |
 |-------------|------------|-------|
-| **AutoPot** | Juego corriendo, ydotool/ydotoold, perfil de memoria | HP/SP por lectura de memoria; perfiles embebidos (compatible 4RTools) |
-| **Spammer** | Juego corriendo, ydotool/ydotoold, grupo `input` | Hotkeys F1–F9, 0–9 y A–Z; `ro-inputd` sidecar bundleado; Alt+tecla pasa el evento sin spam |
-| **AutoBuff** | Juego corriendo, ydotool/ydotoold, perfil de memoria | Reglas de buffs por status ID con actualización de configuración en vivo |
+| **AutoPot** | Juego corriendo, `/dev/uinput`, perfil de memoria | HP/SP por una lectura de memoria; loop estable con mínimo de 10 ms |
+| **Spammer** | Juego corriendo, `/dev/uinput`, grupo `input` | Worker uinput persistente; hotkeys F1–F9, 0–9 y A–Z; Alt+tecla pasa el evento sin spam |
+| **AutoBuff** | Juego corriendo, `/dev/uinput`, perfil de memoria | Reglas de buffs por status ID con actualización de configuración en vivo |
 
+Todas las herramientas comparten un único worker uinput persistente.
 La configuración de las tres herramientas se guarda por servidor en `servers.json`.
 
 ### Migración y recuperación de configuración
