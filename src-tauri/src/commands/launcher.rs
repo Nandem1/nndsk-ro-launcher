@@ -1,5 +1,6 @@
 use tauri::{AppHandle, State};
 
+use crate::models::launch::LaunchValues;
 use crate::models::server::ServerConfig;
 use crate::state::GameState;
 use crate::tools::launcher;
@@ -9,6 +10,8 @@ pub async fn launch_game(
     app: AppHandle,
     state: State<'_, GameState>,
     server: ServerConfig,
+    runner: Option<String>,
+    launch_values: Option<LaunchValues>,
 ) -> Result<(), String> {
     server.validate_executable_available()?;
     let reservation = state.game.begin_launch()?;
@@ -23,6 +26,8 @@ pub async fn launch_game(
             input: &state.input,
         },
         server,
+        runner,
+        launch_values.unwrap_or_default(),
     )
     .await;
     if result.is_err() {

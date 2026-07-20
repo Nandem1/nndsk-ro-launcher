@@ -18,7 +18,18 @@ const healthyStatus: AdvancedDepsStatus = {
   prefixOk: true,
   prefixWarning: null,
   dxvkOk: true,
+  dxvk: true,
   dxvkWarning: null,
+  runnerKind: 'proton',
+  runnerOk: true,
+  runnerWarning: null,
+  prefixPath: '/tmp/ro-launcher-test-prefix',
+  prefixScope: 'isolated',
+  prefixManaged: true,
+  readyToLaunch: true,
+  canSetup: true,
+  canReset: true,
+  checks: [],
 }
 
 describe('resolveDotStatus', () => {

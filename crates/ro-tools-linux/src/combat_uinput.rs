@@ -11,64 +11,45 @@ use ro_tools_core::ToolsError;
 
 use crate::keyboard::key_label_to_keycode;
 
-pub const COMBAT_KEYBOARD_NAME: &str = "ro-launcher-combat-keyboard";
-pub const COMBAT_MOUSE_NAME: &str = "ro-launcher-combat-mouse";
+pub const COMBAT_DEVICE_NAME: &str = "ro-launcher-combat-input";
 
-/// Persistent virtual devices used by the combat-input worker.
-/// The worker is their sole owner, so a complete command cannot be interleaved.
+/// Persistent combined keyboard/mouse device used by the combat-input worker.
+/// Keeping both event classes on one evdev node preserves their emission order.
 pub struct CombatUinput {
-    keyboard: VirtualDevice,
-    mouse: VirtualDevice,
-    keyboard_nodes: Vec<PathBuf>,
-    mouse_nodes: Vec<PathBuf>,
+    device: VirtualDevice,
+    nodes: Vec<PathBuf>,
     pressed_keys: HashSet<KeyCode>,
     mouse_left_pressed: bool,
 }
 
 impl CombatUinput {
     pub fn create() -> Result<Self, ToolsError> {
-        let keys = supported_combat_keys();
-        let mut keyboard = VirtualDevice::builder()
-            .map_err(|error| uinput_error("open", COMBAT_KEYBOARD_NAME, error))?
-            .name(COMBAT_KEYBOARD_NAME)
+        let mut keys = supported_combat_keys();
+        keys.insert(KeyCode::BTN_LEFT);
+        let mouse_axes = supported_pointer_axes();
+        let mut device = VirtualDevice::builder()
+            .map_err(|error| uinput_error("open", COMBAT_DEVICE_NAME, error))?
+            .name(COMBAT_DEVICE_NAME)
             .with_keys(&keys)
-            .map_err(|error| uinput_error("configure keys", COMBAT_KEYBOARD_NAME, error))?
-            .build()
-            .map_err(|error| uinput_error("create", COMBAT_KEYBOARD_NAME, error))?;
-
-        let mouse_buttons = AttributeSet::from_iter([KeyCode::BTN_LEFT]);
-        let mouse_axes =
-            AttributeSet::from_iter([RelativeAxisCode::REL_X, RelativeAxisCode::REL_Y]);
-        let mut mouse = VirtualDevice::builder()
-            .map_err(|error| uinput_error("open", COMBAT_MOUSE_NAME, error))?
-            .name(COMBAT_MOUSE_NAME)
-            .with_keys(&mouse_buttons)
-            .map_err(|error| uinput_error("configure buttons", COMBAT_MOUSE_NAME, error))?
+            .map_err(|error| uinput_error("configure keys/buttons", COMBAT_DEVICE_NAME, error))?
             .with_relative_axes(&mouse_axes)
-            .map_err(|error| uinput_error("configure axes", COMBAT_MOUSE_NAME, error))?
+            .map_err(|error| uinput_error("configure axes", COMBAT_DEVICE_NAME, error))?
             .build()
-            .map_err(|error| uinput_error("create", COMBAT_MOUSE_NAME, error))?;
+            .map_err(|error| uinput_error("create", COMBAT_DEVICE_NAME, error))?;
 
         // This blocks until udev/sysfs has exposed the corresponding event nodes.
-        let keyboard_nodes = enumerate_nodes(&mut keyboard, COMBAT_KEYBOARD_NAME)?;
-        let mouse_nodes = enumerate_nodes(&mut mouse, COMBAT_MOUSE_NAME)?;
+        let nodes = enumerate_nodes(&mut device, COMBAT_DEVICE_NAME)?;
 
         Ok(Self {
-            keyboard,
-            mouse,
-            keyboard_nodes,
-            mouse_nodes,
+            device,
+            nodes,
             pressed_keys: HashSet::new(),
             mouse_left_pressed: false,
         })
     }
 
     pub fn device_summary(&self) -> String {
-        format!(
-            "keyboard={} mouse={}",
-            display_nodes(&self.keyboard_nodes),
-            display_nodes(&self.mouse_nodes)
-        )
+        format!("combined={}", display_nodes(&self.nodes))
     }
 
     pub fn key_event(&mut self, key: &str, value: i32) -> Result<(), ToolsError> {
@@ -77,9 +58,9 @@ impl CombatUinput {
             message: "tecla no soportada por uinput".into(),
         })?;
         let result = self
-            .keyboard
+            .device
             .emit(&[InputEvent::new(EventType::KEY.0, code.0, value)])
-            .map_err(|error| uinput_error("write key", COMBAT_KEYBOARD_NAME, error));
+            .map_err(|error| uinput_error("write key", COMBAT_DEVICE_NAME, error));
         if result.is_ok() {
             update_key_state(&mut self.pressed_keys, code, value);
         }
@@ -88,13 +69,13 @@ impl CombatUinput {
 
     pub fn mouse_left_event(&mut self, value: i32) -> Result<(), ToolsError> {
         let result = self
-            .mouse
+            .device
             .emit(&[InputEvent::new(
                 EventType::KEY.0,
                 KeyCode::BTN_LEFT.0,
                 value,
             )])
-            .map_err(|error| uinput_error("write button", COMBAT_MOUSE_NAME, error));
+            .map_err(|error| uinput_error("write button", COMBAT_DEVICE_NAME, error));
         if result.is_ok() {
             self.mouse_left_pressed = value != 0;
         }
@@ -112,7 +93,7 @@ impl CombatUinput {
             None => {
                 for code in self.pressed_keys.clone() {
                     if self
-                        .keyboard
+                        .device
                         .emit(&[InputEvent::new(EventType::KEY.0, code.0, 0)])
                         .is_ok()
                     {
@@ -200,31 +181,40 @@ fn supported_combat_keys() -> AttributeSet<KeyCode> {
     )
 }
 
+fn supported_pointer_axes() -> AttributeSet<RelativeAxisCode> {
+    AttributeSet::from_iter([RelativeAxisCode::REL_X, RelativeAxisCode::REL_Y])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn combat_device_supports_all_configurable_keys() {
-        let keys = supported_combat_keys();
+        let mut keys = supported_combat_keys();
+        keys.insert(KeyCode::BTN_LEFT);
         for label in ["F1", "F12", "0", "Q", "M"] {
             assert!(
                 keys.contains(key_label_to_keycode(label).unwrap()),
                 "{label}"
             );
         }
+        assert!(keys.contains(KeyCode::BTN_LEFT));
+        let axes = supported_pointer_axes();
+        assert!(axes.contains(RelativeAxisCode::REL_X));
+        assert!(axes.contains(RelativeAxisCode::REL_Y));
     }
 
     #[test]
     fn diagnostics_include_stage_device_and_errno() {
         let message = uinput_error(
             "create",
-            COMBAT_KEYBOARD_NAME,
+            COMBAT_DEVICE_NAME,
             io::Error::from_raw_os_error(libc::EACCES),
         )
         .to_string();
         assert!(message.contains("stage=create"));
-        assert!(message.contains(COMBAT_KEYBOARD_NAME));
+        assert!(message.contains(COMBAT_DEVICE_NAME));
         assert!(message.contains("errno=13"));
     }
 
@@ -237,5 +227,27 @@ mod tests {
 
         update_key_state(&mut pressed, KeyCode::KEY_F1, 0);
         assert!(pressed.is_empty());
+    }
+
+    #[test]
+    #[ignore = "requires Linux /dev/uinput access"]
+    fn linux_combined_device_exposes_keyboard_and_pointer_on_one_node() {
+        let input = CombatUinput::create().unwrap();
+        assert_eq!(input.nodes.len(), 1, "expected one combined evdev node");
+
+        let deadline = Instant::now() + Duration::from_secs(1);
+        let device = loop {
+            match evdev::Device::open(&input.nodes[0]) {
+                Ok(device) => break device,
+                Err(_) if Instant::now() < deadline => thread::sleep(Duration::from_millis(10)),
+                Err(error) => panic!("could not inspect combined evdev node: {error}"),
+            }
+        };
+        let keys = device.supported_keys().unwrap();
+        assert!(keys.contains(KeyCode::KEY_F2));
+        assert!(keys.contains(KeyCode::BTN_LEFT));
+        let axes = device.supported_relative_axes().unwrap();
+        assert!(axes.contains(RelativeAxisCode::REL_X));
+        assert!(axes.contains(RelativeAxisCode::REL_Y));
     }
 }

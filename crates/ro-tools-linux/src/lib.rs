@@ -10,9 +10,12 @@ pub mod wine_process;
 pub use input_perms::{detect_input_permissions, detect_uinput_permissions, InputPermStatus};
 pub use keyboard::{key_label_to_keycode, KeyboardMonitor, KeyboardPassthrough};
 
-pub use combat_uinput::{CombatUinput, COMBAT_KEYBOARD_NAME, COMBAT_MOUSE_NAME};
-pub use proc_memory::{address_in_maps, ProcMemoryReader};
+pub use combat_uinput::{CombatUinput, COMBAT_DEVICE_NAME};
+pub use proc_memory::{
+    address_in_maps, find_first_writable_bytes, scan_writable_u32, ProcMemoryReader,
+};
 pub use resolve_pid::resolve_best_game_pid;
 pub use wine_process::{
-    find_game_processes, normalize_prefix, resolve_game_pid, GameProcessCandidate,
+    capture_process_identity, find_game_processes, find_prefix_processes, normalize_prefix,
+    resolve_game_pid, verify_process_identity, GameProcessCandidate, ProcessIdentity,
 };

@@ -31,6 +31,7 @@ export interface AutopotConfig {
   proactiveMode: boolean
   profileId?: string
   hpBaseOverride?: string
+  nameAddressOverride?: string
 }
 
 export interface AutopotStatusEvent {
@@ -101,6 +102,21 @@ export interface SpammerStatusEvent {
   gearMode?: 'atk' | 'def' | null
 }
 
+export type PrefixMode = 'shared' | 'isolated' | 'custom'
+
+export type LaunchStrategy = 'direct' | 'patcher'
+
+export interface LaunchConfig {
+  strategy: LaunchStrategy
+  gameArgs?: string[]
+  patcherArgs?: string[]
+  /** Override manual para PE protegidos o carga dinámica no visible en imports. */
+  requireWebview2?: boolean
+}
+
+/** Valores efímeros para resolver placeholders de lanzamiento. No persistir. */
+export type LaunchValues = Record<string, string>
+
 export interface ServerConfig {
   id: string
   name: string
@@ -109,7 +125,9 @@ export interface ServerConfig {
   // configs may omit these fields altogether.
   patcherPath?: string | null
   winePrefix?: string | null
+  prefixMode?: PrefixMode | null
   runner?: string | null
+  launch?: LaunchConfig
   autopot?: AutopotConfig
   spammer?: SpammerConfig
   autobuff?: AutobuffConfig
@@ -132,6 +150,25 @@ export interface DependencyStatus {
   prefixWarning: string | null
   dxvkOk: boolean
   dxvkWarning: string | null
+  runnerKind: 'wine' | 'proton' | string
+  runnerOk: boolean
+  runnerWarning: string | null
+  prefixPath: string
+  prefixScope: PrefixMode
+  prefixManaged: boolean
+  readyToLaunch: boolean
+  canSetup: boolean
+  canReset: boolean
+  checks: RuntimeCheck[]
+}
+
+export type RuntimeCheckSeverity = 'ok' | 'warning' | 'error' | 'pending'
+
+export interface RuntimeCheck {
+  id: string
+  severity: RuntimeCheckSeverity
+  message: string
+  remediation: string | null
 }
 
 export type AudioStatus = Pick<
@@ -161,7 +198,18 @@ export type AdvancedDepsStatus = Pick<
   | 'prefixOk'
   | 'prefixWarning'
   | 'dxvkOk'
+  | 'dxvk'
   | 'dxvkWarning'
+  | 'runnerKind'
+  | 'runnerOk'
+  | 'runnerWarning'
+  | 'prefixPath'
+  | 'prefixScope'
+  | 'prefixManaged'
+  | 'readyToLaunch'
+  | 'canSetup'
+  | 'canReset'
+  | 'checks'
 >
 
 export interface ClientProfile {
@@ -170,6 +218,27 @@ export interface ClientProfile {
   exeNames: string[]
   hpBase: number
   nameAddress: number
+}
+
+export interface DetectedMemoryLayout {
+  hpBase: string
+  currentHp: number
+  maxHp: number
+  currentSp: number
+  maxSp: number
+  statusBuffer: string
+}
+
+export interface MemoryScanProgress {
+  pid: number
+  candidateCount: number
+  confirmed?: DetectedMemoryLayout | null
+}
+
+export interface DetectedNameAddress {
+  pid: number
+  characterName: string
+  nameAddress: string
 }
 
 export interface RunnerInfo {
@@ -196,11 +265,23 @@ export interface DgVoodooStatus {
   issues: string[]
 }
 
+export interface ClientDiagnostics {
+  architecture: string | null
+  graphicsApis: string[]
+  managedPatcher: boolean
+  webview2Required: boolean
+  peAnalysisConclusive: boolean
+  gepardPresent: boolean
+  gameguardPresent: boolean
+  warnings: string[]
+}
+
 export interface ServerToolsStatus {
   gameDir: string
   openSetup: ToolInfo
   patcher: ToolInfo
   dgvoodoo: DgVoodooStatus
+  diagnostics: ClientDiagnostics
 }
 
 export interface InstallDgVoodooResult {

@@ -3,7 +3,7 @@ use tauri::AppHandle;
 use tokio::process::Command;
 
 use crate::utils::process::run_logged_command_ok;
-use crate::utils::{app_data_dir, apply_prefix_env, emit_log};
+use crate::utils::{app_data_dir, emit_log, ResolvedRunner};
 
 const GECKO_VERSION: &str = "2.47.4";
 const GECKO_BASE_URL: &str = "https://dl.winehq.org/wine/wine-gecko";
@@ -116,11 +116,17 @@ async fn download_file(url: &str, dest: &Path) -> Result<(), String> {
     Ok(())
 }
 
-pub async fn install_gecko(
+pub async fn install_gecko_for_runner(
     app: &AppHandle,
     prefix_path: &str,
-    wine_bin: &str,
+    runner: &ResolvedRunner,
 ) -> Result<(), String> {
+    // Proton sincroniza Gecko desde su default_pfx. Instalar los MSI de Wine encima puede
+    // reemplazar archivos administrados por Proton y romper upgrades posteriores.
+    if runner.is_proton() {
+        return Ok(());
+    }
+
     if check_gecko_installed(prefix_path) {
         return Ok(());
     }
@@ -131,9 +137,7 @@ pub async fn install_gecko(
 
     for msi in msis {
         let msi_str = msi.to_string_lossy();
-        let mut cmd = Command::new(wine_bin);
-        cmd.args(["msiexec", "/i", msi_str.as_ref(), "/qn"]);
-        apply_prefix_env(&mut cmd, prefix_path);
+        let cmd = runner.builtin_command(prefix_path, "msiexec", ["/i", msi_str.as_ref(), "/qn"]);
         run_logged_command_ok(app, cmd, &format!("wine msiexec {msi_str}")).await?;
     }
 

@@ -3,8 +3,8 @@ use std::path::Path;
 use tauri::AppHandle;
 use tokio::process::Command;
 
+use crate::utils::emit_log_opt;
 use crate::utils::ResolvedRunner;
-use crate::utils::{apply_prefix_env, apply_runner_env, emit_log_opt};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -127,13 +127,12 @@ pub fn detect_audio_backends(current_driver: Option<AudioDriver>) -> AudioBacken
 }
 
 /// Campos de audio para [`DependencyStatus`]: ok, driver serializado y aviso opcional.
-pub async fn dependency_audio_fields(
+pub fn dependency_audio_fields(
     prefix_path: &str,
     prefix_configured: bool,
-    runner: &ResolvedRunner,
 ) -> (bool, String, Option<String>, String) {
     let current_driver = if prefix_configured {
-        read_current_driver(prefix_path, runner).await
+        read_current_driver_from_registry(prefix_path)
     } else {
         None
     };
@@ -153,14 +152,39 @@ pub async fn dependency_audio_fields(
     )
 }
 
+fn read_current_driver_from_registry(prefix_path: &str) -> Option<AudioDriver> {
+    let registry = std::fs::read_to_string(Path::new(prefix_path).join("user.reg")).ok()?;
+    let mut in_drivers = false;
+    for line in registry.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') {
+            in_drivers = trimmed.starts_with(r"[Software\\Wine\\Drivers]");
+            continue;
+        }
+        if !in_drivers {
+            continue;
+        }
+        let Some(value) = trimmed.strip_prefix(r#""Audio"="#) else {
+            continue;
+        };
+        let value = value.trim_matches('"');
+        return match value.to_ascii_lowercase().as_str() {
+            "pulse" => Some(AudioDriver::Pulse),
+            "alsa" => Some(AudioDriver::Alsa),
+            _ => None,
+        };
+    }
+    None
+}
+
 pub fn is_mmdevapi_audio_error(line: &str) -> bool {
     line.contains("err:mmdevapi")
         && (line.contains("load_driver") || line.contains("DllGetClassObject"))
 }
 
 pub fn mmdevapi_recovery_hint() -> &'static str {
-    "Fallo de audio detectado. El launcher intentará usar ALSA en el próximo lanzamiento. \
-     Si persiste: sudo pacman -S lib32-libpulse lib32-alsa-lib"
+    "Fallo de audio detectado. Revisa el driver mostrado en Avanzado. \
+     En Arch/CachyOS instala las bibliotecas de 32 bits: sudo pacman -S lib32-libpulse lib32-alsa-lib"
 }
 
 fn parse_driver_from_reg_output(output: &str) -> Option<AudioDriver> {
@@ -180,11 +204,7 @@ fn parse_driver_from_reg_output(output: &str) -> Option<AudioDriver> {
 }
 
 fn wine_reg_command(runner: &ResolvedRunner, prefix_path: &str, args: &[&str]) -> Command {
-    let mut cmd = Command::new(&runner.wine_bin);
-    cmd.args(args);
-    apply_prefix_env(&mut cmd, prefix_path);
-    apply_runner_env(&mut cmd, runner.ld_library_path.as_deref());
-    cmd
+    runner.builtin_command(prefix_path, "reg", args.iter().copied())
 }
 
 pub async fn read_current_driver(
@@ -194,7 +214,7 @@ pub async fn read_current_driver(
     let output = wine_reg_command(
         runner,
         prefix_path,
-        &["reg", "query", r"HKCU\Software\Wine\Drivers", "/v", "Audio"],
+        &["query", r"HKCU\Software\Wine\Drivers", "/v", "Audio"],
     )
     .stdout(std::process::Stdio::piped())
     .stderr(std::process::Stdio::null())
@@ -221,7 +241,6 @@ async fn set_audio_driver(
         runner,
         prefix_path,
         &[
-            "reg",
             "add",
             r"HKCU\Software\Wine\Drivers",
             "/v",
@@ -345,6 +364,24 @@ mod tests {
         let status = detect_audio_backends(None);
         assert!(!status.ok);
         assert!(status.warning.is_some());
+    }
+
+    #[test]
+    fn parses_audio_driver_from_user_registry_without_running_wine() {
+        let dir =
+            std::env::temp_dir().join(format!("ro-launcher-audio-registry-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("user.reg"),
+            "WINE REGISTRY Version 2\n\n[Software\\\\Wine\\\\Drivers] 1\n\"Audio\"=\"pulse\"\n",
+        )
+        .unwrap();
+        assert_eq!(
+            read_current_driver_from_registry(dir.to_str().unwrap()),
+            Some(AudioDriver::Pulse)
+        );
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

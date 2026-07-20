@@ -38,33 +38,38 @@ pub fn resolve_profile(
     exe_path: &str,
     config: &AutopotConfig,
 ) -> ClientProfile {
-    if let Some(override_hex) = &config.hp_base_override {
-        if let Ok(hp_base) = parse_hex(override_hex) {
-            let default = default_profile();
-            return ClientProfile {
-                hp_base,
-                name_address: default.name_address,
-                ..default
-            };
-        }
-    }
-
-    if let Some(profile_id) = &config.profile_id {
-        if let Some(found) = profiles.iter().find(|p| p.id == *profile_id) {
-            return found.clone();
-        }
-    }
-
     let exe_name = Path::new(exe_path)
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or(exe_path);
 
-    if let Some(found) = profiles.iter().find(|p| p.matches_exe(exe_name)) {
-        return found.clone();
-    }
+    let mut resolved = config
+        .profile_id
+        .as_ref()
+        .and_then(|profile_id| profiles.iter().find(|profile| profile.id == *profile_id))
+        .or_else(|| {
+            profiles
+                .iter()
+                .find(|profile| profile.matches_exe(exe_name))
+        })
+        .cloned()
+        .unwrap_or_else(default_profile);
 
-    default_profile()
+    if let Some(hp_base) = config
+        .hp_base_override
+        .as_deref()
+        .and_then(|address| parse_hex(address).ok())
+    {
+        resolved.hp_base = hp_base;
+    }
+    if let Some(name_address) = config
+        .name_address_override
+        .as_deref()
+        .and_then(|address| parse_hex(address).ok())
+    {
+        resolved.name_address = name_address;
+    }
+    resolved
 }
 
 pub fn parse_hex(value: &str) -> Result<u32, String> {
@@ -92,6 +97,29 @@ mod tests {
 
         let config = AutopotConfig::default();
         let resolved = resolve_profile(&profiles, "/games/HoneyRO.exe", &config);
+        assert_eq!(resolved.id, "test");
+    }
+
+    #[test]
+    fn applies_hp_and_name_overrides_to_the_selected_profile() {
+        let profiles = vec![ClientProfile {
+            id: "test".into(),
+            label: "Test".into(),
+            exe_names: vec!["Client.exe".into()],
+            hp_base: 0x1000,
+            name_address: 0x2000,
+        }];
+        let config = AutopotConfig {
+            profile_id: Some("test".into()),
+            hp_base_override: Some("0x3000".into()),
+            name_address_override: Some("0x4000".into()),
+            ..Default::default()
+        };
+
+        let resolved = resolve_profile(&profiles, "/games/Client.exe", &config);
+
+        assert_eq!(resolved.hp_base, 0x3000);
+        assert_eq!(resolved.name_address, 0x4000);
         assert_eq!(resolved.id, "test");
     }
 }

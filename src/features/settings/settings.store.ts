@@ -3,33 +3,47 @@ import { api } from '../../shared/api'
 import { runSafely } from '../../shared/async'
 import type {
   AdvancedDepsStatus,
+  DependencyStatus,
   RunnerInfo,
+  ServerConfig,
   StorageNotice,
 } from '../../shared/types'
 import { advancedStatusFromDeps } from './advanced.logic'
 import { resolveRunnerAfterLoad } from './settings.logic'
+import { runtimeStatusKey } from '../../shared/resolveRunner'
 
 interface SettingsState {
   runners: RunnerInfo[]
   selectedRunner: string
   advancedStatus: AdvancedDepsStatus | null
-  prefixConfigured: boolean
+  advancedStatusKey: string | null
   loading: boolean
+  savingRunner: boolean
   error: string | null
   notice: StorageNotice | null
   init: () => Promise<boolean>
   loadSettings: () => Promise<void>
   loadRunners: () => Promise<void>
-  loadDepsStatus: (runner: string) => Promise<void>
+  loadDepsStatus: (
+    runner: string,
+    server?: ServerConfig | null,
+  ) => Promise<void>
+  applyDepsStatus: (status: DependencyStatus, key: string) => void
   setRunner: (path: string) => Promise<void>
 }
+
+let depsRequestId = 0
+let runnerSaveRequestId = 0
+let runnerSaveTail: Promise<void> = Promise.resolve()
+let lastPersistedRunner = ''
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
   runners: [],
   selectedRunner: '',
   advancedStatus: null,
-  prefixConfigured: false,
+  advancedStatusKey: null,
   loading: true,
+  savingRunner: false,
   error: null,
   notice: null,
 
@@ -45,6 +59,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   loadSettings: async () => {
     const settings = await api.loadSettings()
+    lastPersistedRunner = settings.defaultRunner
     set({ selectedRunner: settings.defaultRunner })
   },
 
@@ -63,11 +78,12 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         set({ error: result.error })
         throw new Error(result.error)
       }
+      lastPersistedRunner = resolution.path
       set({
         notice: {
           source: 'settings',
           kind: 'migrated',
-          message: 'El runner predeterminado fue migrado al Proton recomendado',
+          message: 'El runtime fue migrado al entorno Ragnarok administrado',
         },
       })
     }
@@ -76,24 +92,47 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     await get().loadDepsStatus(resolution.path)
   },
 
-  loadDepsStatus: async (runner: string) => {
-    const result = await runSafely(() => api.checkDependencies(runner))
+  loadDepsStatus: async (runner: string, server = null) => {
+    const requestId = ++depsRequestId
+    const key = runtimeStatusKey(server, runner)
+    set({ advancedStatus: null, advancedStatusKey: null })
+    const result = await runSafely(() =>
+      api.checkDependencies(server, runner || null),
+    )
+    if (requestId !== depsRequestId) return
     set({
       advancedStatus: result.ok ? advancedStatusFromDeps(result.value) : null,
-      prefixConfigured: result.ok ? result.value.prefixConfigured : false,
+      advancedStatusKey: result.ok ? key : null,
+    })
+  },
+
+  applyDepsStatus: (status, key) => {
+    ++depsRequestId
+    set({
+      advancedStatus: advancedStatusFromDeps(status),
+      advancedStatusKey: key,
     })
   },
 
   setRunner: async (path) => {
-    const previous = get().selectedRunner
-    const result = await runSafely(() =>
-      api.saveSettings({ defaultRunner: path }),
-    )
-    if (!result.ok) {
-      set({ selectedRunner: previous, error: result.error })
-      return
+    const requestId = ++runnerSaveRequestId
+    set({ savingRunner: true, error: null })
+
+    const save = async () => {
+      const result = await runSafely(() =>
+        api.saveSettings({ defaultRunner: path }),
+      )
+      if (result.ok) lastPersistedRunner = path
+      if (requestId !== runnerSaveRequestId) return
+
+      set({
+        selectedRunner: result.ok ? path : lastPersistedRunner,
+        savingRunner: false,
+        error: result.ok ? null : result.error,
+      })
     }
-    set({ selectedRunner: path, error: null })
-    await get().loadDepsStatus(path)
+    const queued = runnerSaveTail.then(save, save)
+    runnerSaveTail = queued.catch(() => undefined)
+    await queued
   },
 }))

@@ -1,4 +1,3 @@
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 pub fn find_file_case_insensitive(dir: &Path, filename: &str) -> Option<PathBuf> {
@@ -50,12 +49,4 @@ pub fn file_label(path: &Path) -> String {
         .and_then(|n| n.to_str())
         .unwrap_or("desconocido")
         .to_string()
-}
-
-pub fn ensure_dir_writable(dir: &Path) {
-    if let Ok(meta) = std::fs::metadata(dir) {
-        let mut perms = meta.permissions();
-        perms.set_mode(perms.mode() | 0o700);
-        let _ = std::fs::set_permissions(dir, perms);
-    }
 }

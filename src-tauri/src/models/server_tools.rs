@@ -22,6 +22,19 @@ pub struct DgVoodooStatus {
     pub issues: Vec<String>,
 }
 
+#[derive(Serialize, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientDiagnostics {
+    pub architecture: Option<String>,
+    pub graphics_apis: Vec<String>,
+    pub managed_patcher: bool,
+    pub webview2_required: bool,
+    pub pe_analysis_conclusive: bool,
+    pub gepard_present: bool,
+    pub gameguard_present: bool,
+    pub warnings: Vec<String>,
+}
+
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct ServerToolsStatus {
@@ -29,6 +42,7 @@ pub struct ServerToolsStatus {
     pub open_setup: ToolInfo,
     pub patcher: ToolInfo,
     pub dgvoodoo: DgVoodooStatus,
+    pub diagnostics: ClientDiagnostics,
 }
 
 #[derive(Serialize, Clone)]

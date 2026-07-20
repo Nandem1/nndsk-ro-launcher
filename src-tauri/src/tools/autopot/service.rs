@@ -12,10 +12,13 @@ use crate::tools::input::{InputGateway, InputSource};
 use crate::tools::session::SessionController;
 use crate::utils::emit_tool_log_opt;
 
+use super::scanner::{DetectedNameAddress, MemoryScanProgress, MemoryScannerHandle};
+
 pub struct AutopotHandle {
     session: SessionController,
     config_tx: Arc<Mutex<Option<watch::Sender<AutopotConfig>>>>,
     status: Arc<Mutex<AutopotStatusEvent>>,
+    scanner: MemoryScannerHandle,
 }
 
 impl Clone for AutopotHandle {
@@ -24,6 +27,7 @@ impl Clone for AutopotHandle {
             session: self.session.clone(),
             config_tx: Arc::clone(&self.config_tx),
             status: Arc::clone(&self.status),
+            scanner: self.scanner.clone(),
         }
     }
 }
@@ -34,6 +38,7 @@ impl AutopotHandle {
             session: SessionController::new("AutoPot"),
             config_tx: Arc::new(Mutex::new(None)),
             status: Arc::new(Mutex::new(AutopotStatusEvent::default())),
+            scanner: MemoryScannerHandle::new(),
         }
     }
 
@@ -52,11 +57,36 @@ impl AutopotHandle {
     }
 
     pub async fn stop(&self) -> Result<(), String> {
+        self.scanner.cancel();
         let result = self.session.stop().await;
         *self.config_tx.lock().unwrap() = None;
         let mut status = self.status.lock().unwrap();
         status.active = false;
         result
+    }
+
+    pub async fn begin_memory_scan(
+        &self,
+        pid: u32,
+        current_hp: u32,
+    ) -> Result<MemoryScanProgress, String> {
+        self.scanner.begin(pid, current_hp).await
+    }
+
+    pub async fn refine_memory_scan(&self, current_hp: u32) -> Result<MemoryScanProgress, String> {
+        self.scanner.refine(current_hp).await
+    }
+
+    pub fn cancel_memory_scan(&self) {
+        self.scanner.cancel();
+    }
+
+    pub async fn find_name_address(
+        &self,
+        pid: u32,
+        character_name: String,
+    ) -> Result<DetectedNameAddress, String> {
+        self.scanner.find_name(pid, character_name).await
     }
 
     pub async fn start(
@@ -67,6 +97,7 @@ impl AutopotHandle {
         profile: ClientProfile,
         input: InputGateway,
     ) -> Result<(), String> {
+        self.scanner.cancel();
         let memory = ProcMemoryReader::open(pid)
             .map_err(|e| format!("No se pudo abrir memoria PID {pid}: {e}"))?;
 

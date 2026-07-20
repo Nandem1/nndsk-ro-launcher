@@ -1,18 +1,29 @@
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use ro_tools_core::{HeldKeyWriter, SpammerConfig, SpammerEngine};
+use ro_tools_core::{SpammerConfig, SpammerEngine};
 use tauri::AppHandle;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::watch;
-use tokio::time::{interval, MissedTickBehavior};
+use tokio::task::JoinSet;
+use tokio::time::{interval, sleep, Instant as TokioInstant, MissedTickBehavior};
 
 use super::gear::{self, GearMode};
 use crate::models::spammer::SpammerStatusEvent;
-use crate::tools::input::{emit_status_if_changed, InputGateway, InputSource};
+use crate::tools::input::{emit_status_if_changed, GatewayWriter, InputGateway, InputSource};
 use crate::utils::{emit_tool_log_opt, EVENT_SPAMMER_STATUS};
 
 const INPUTD_READY_TIMEOUT_SECS: u64 = 5;
+
+struct SpamReleaseGuard {
+    writer: GatewayWriter,
+}
+
+impl Drop for SpamReleaseGuard {
+    fn drop(&mut self) {
+        let _ = self.writer.release_spam();
+    }
+}
 
 #[derive(Debug)]
 enum InputdMsg {
@@ -140,8 +151,15 @@ pub async fn run(
     );
 
     let cleanup_writer = writer.clone();
-    let mut engine = SpammerEngine::new(writer, config.clone());
-    let mut poll = spammer_poll_ticker(effective_delay_ms);
+    let _release_guard = SpamReleaseGuard {
+        writer: cleanup_writer.clone(),
+    };
+    let cycle_writer = writer;
+    let mut cycle_tasks = JoinSet::new();
+    let cycle_delay = Duration::from_millis(effective_delay_ms);
+    let cycle_sleep = sleep(Duration::ZERO);
+    tokio::pin!(cycle_sleep);
+    let mut cycle_armed = false;
     let mut metrics_ticker = interval(Duration::from_secs(10));
     metrics_ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
     metrics_ticker.tick().await;
@@ -161,14 +179,24 @@ pub async fn run(
 
     'main: loop {
         tokio::select! {
+            // A physical release or stop must win over a click whose timer is also ready.
+            biased;
+            changed = stop_rx.changed() => {
+                if changed.is_err() || *stop_rx.borrow() {
+                    break 'main;
+                }
+            }
             line_result = lines.next_line() => {
                 match line_result {
                     Ok(Some(line)) => match parse_line(&line) {
                         Some(InputdMsg::Ready) => {
                             ready_received = true;
                             emit_tool_log_opt(Some(&app), "[Spammer] ro-inputd listo — grab activo");
-                            for key in &config.keys {
-                                let _ = cleanup_writer.key_up(key);
+                            if let Err(error) = cleanup_writer.release_spam() {
+                                let msg = format!("no se pudo limpiar la tecla del spammer: {error}");
+                                emit_tool_log_opt(Some(&app), format!("[Spammer] ERROR input: {msg}"));
+                                terminal_error = Some(msg);
+                                break 'main;
                             }
                             emit_status_if_changed(
                                 &app,
@@ -178,22 +206,23 @@ pub async fn run(
                             );
                         }
                         Some(InputdMsg::TriggerHeld { key, held }) if ready_received => {
+                            let previous_active_key = active_key.clone();
                             let was_held = held_keys.iter().any(|k| k == &key);
 
                             if held {
                                 if !was_held {
                                     held_keys.push(key.clone());
                                 }
-                                let was_active = !active_key.is_empty();
                                 active_key = key.clone();
-                                if !was_active {
+                                if previous_active_key.is_empty() {
                                     cycle_count = 0;
                                     last_log_cycle = 0;
                                     emit_tool_log_opt(
                                         Some(&app),
                                         format!("[Spammer] Spam activo ({key})"),
                                     );
-                                    poll.reset_immediately();
+                                    cycle_sleep.as_mut().reset(TokioInstant::now());
+                                    cycle_armed = true;
                                 }
                             } else {
                                 held_keys.retain(|k| k != &key);
@@ -208,12 +237,52 @@ pub async fn run(
                                 }
                             }
 
+                            if active_key != previous_active_key && !previous_active_key.is_empty() {
+                                if let Err(error) = cleanup_writer.release_spam() {
+                                    let msg = format!("no se pudo soltar la tecla del spammer: {error}");
+                                    emit_tool_log_opt(Some(&app), format!("[Spammer] ERROR input: {msg}"));
+                                    terminal_error = Some(msg);
+                                    break 'main;
+                                }
+                            }
+                            if active_key.is_empty() {
+                                cycle_armed = false;
+                            }
+
+                            if active_key != previous_active_key {
+                                emit_status_if_changed(
+                                    &app,
+                                    &status_arc,
+                                    EVENT_SPAMMER_STATUS,
+                                    build_status(
+                                        &config,
+                                        effective_delay_ms,
+                                        &active_key,
+                                        cycle_count,
+                                        None,
+                                        (true, true),
+                                        gear_mode,
+                                    ),
+                                );
+                            }
+
                             // Gear switch: cada regla es edge-triggered por su propia tecla.
                             // Press fresco → equipa ATK; release de una tecla presionada → DEF.
                             let fresh_press = held && !was_held;
                             let fresh_release = !held && was_held;
                             if config.gear_switch.enabled && (fresh_press || fresh_release) {
                                 if let Some(rule) = config.gear_switch.rule_for(&key) {
+                                    // Gear may block for multiple key presses. Do not leave the
+                                    // synthetic skill held throughout that operation.
+                                    if let Err(error) = cleanup_writer.release_spam() {
+                                        let msg = format!("no se pudo pausar el spammer para gear: {error}");
+                                        emit_tool_log_opt(Some(&app), format!("[Spammer] ERROR input: {msg}"));
+                                        terminal_error = Some(msg);
+                                        break 'main;
+                                    }
+                                    // Keep the existing deadline: Gear must not create an early
+                                    // click; this select branch cannot poll it during the await.
+
                                     let (keys, mode, label) = if fresh_press {
                                         (rule.atk_keys.clone(), GearMode::Atk, "ATK")
                                     } else {
@@ -262,6 +331,23 @@ pub async fn run(
                                     }
                                 }
                             }
+
+                            if config.gear_switch.enabled && (fresh_press || fresh_release) {
+                                emit_status_if_changed(
+                                    &app,
+                                    &status_arc,
+                                    EVENT_SPAMMER_STATUS,
+                                    build_status(
+                                        &config,
+                                        effective_delay_ms,
+                                        &active_key,
+                                        cycle_count,
+                                        None,
+                                        (true, true),
+                                        gear_mode,
+                                    ),
+                                );
+                            }
                         }
                         Some(InputdMsg::Fatal(msg)) => {
                             emit_tool_log_opt(Some(&app), format!("[Spammer] Fatal ro-inputd: {msg}"));
@@ -304,48 +390,87 @@ pub async fn run(
                     }
                 }
             }
-            scheduled = poll.tick(), if ready_received => {
+            _ = &mut cycle_sleep, if ready_received && cycle_armed => {
+                cycle_armed = false;
                 if !active_key.is_empty() {
                     let tick_key = active_key.clone();
                     let log_key = tick_key.clone();
-                    let deadline = scheduled.into_std() + Duration::from_millis(effective_delay_ms);
-                    let tick_result = engine
-                        .tick_with_deadline(&tick_key, Some(deadline))
-                        .map_err(|error| error.to_string());
-
-                    match tick_result {
-                        Ok(tick) if tick.cycled => {
-                            cycle_count += 1;
-                            let should_log = cycle_count == 1
-                                || cycle_count.saturating_sub(last_log_cycle) >= 100;
-                            if should_log {
-                                last_log_cycle = cycle_count;
-                                emit_tool_log_opt(
-                                    Some(&app),
-                                    format!("[Spammer] cycle #{cycle_count} {log_key} + click"),
-                                );
-                            }
-                        }
-                        Err(err_msg) => {
-                            emit_status_if_changed(
-                                &app,
-                                &status_arc,
-                                EVENT_SPAMMER_STATUS,
-                                build_status(
-                                    &config,
-                                    effective_delay_ms,
-                                    &active_key,
-                                    cycle_count,
-                                    Some(err_msg.clone()),
-                                    (true, true),
-                                    gear_mode,
-                                ),
-                            );
-                            terminal_error = Some(err_msg);
-                            break 'main;
-                        }
-                        _ => {}
+                    let tick_writer = cycle_writer.clone();
+                    let tick_config = config.clone();
+                    cycle_tasks.spawn_blocking(move || {
+                        let mut engine = SpammerEngine::new(tick_writer, tick_config);
+                        let tick_result = engine
+                            .tick_with_deadline(&tick_key, None)
+                            .map_err(|error| error.to_string());
+                        (log_key, tick_result)
+                    });
+                }
+            }
+            cycle_result = cycle_tasks.join_next(), if !cycle_tasks.is_empty() => {
+                let completed_at = TokioInstant::now();
+                let (log_key, tick_result) = match cycle_result {
+                    Some(Ok(result)) => result,
+                    Some(Err(error)) => {
+                        let err_msg = format!("worker del ciclo terminó con error: {error}");
+                        emit_status_if_changed(
+                            &app,
+                            &status_arc,
+                            EVENT_SPAMMER_STATUS,
+                            build_status(
+                                &config,
+                                effective_delay_ms,
+                                &active_key,
+                                cycle_count,
+                                Some(err_msg.clone()),
+                                (true, true),
+                                gear_mode,
+                            ),
+                        );
+                        terminal_error = Some(err_msg);
+                        break 'main;
                     }
+                    None => continue 'main,
+                };
+
+                match tick_result {
+                    Ok(tick) if tick.cycled => {
+                        cycle_count += 1;
+                        let should_log = cycle_count == 1
+                            || cycle_count.saturating_sub(last_log_cycle) >= 100;
+                        if should_log {
+                            last_log_cycle = cycle_count;
+                            emit_tool_log_opt(
+                                Some(&app),
+                                format!("[Spammer] cycle #{cycle_count} {log_key} + click"),
+                            );
+                        }
+                    }
+                    Err(err_msg) => {
+                        emit_status_if_changed(
+                            &app,
+                            &status_arc,
+                            EVENT_SPAMMER_STATUS,
+                            build_status(
+                                &config,
+                                effective_delay_ms,
+                                &active_key,
+                                cycle_count,
+                                Some(err_msg.clone()),
+                                (true, true),
+                                gear_mode,
+                            ),
+                        );
+                        terminal_error = Some(err_msg);
+                        break 'main;
+                    }
+                    _ => {}
+                }
+
+                if !active_key.is_empty() {
+                    cycle_sleep
+                        .as_mut()
+                        .reset(next_cycle_deadline(completed_at, cycle_delay));
+                    cycle_armed = true;
                 }
 
                 if last_status_emit.elapsed() >= Duration::from_millis(250) {
@@ -393,13 +518,16 @@ pub async fn run(
                 );
                 break 'main;
             }
-            changed = stop_rx.changed() => {
-                if changed.is_ok() && *stop_rx.borrow() {
-                    break 'main;
-                }
-            }
         }
     }
+
+    if let Err(error) = cleanup_writer.release_spam() {
+        let msg = format!("no se pudo liberar el spammer al detenerse: {error}");
+        emit_tool_log_opt(Some(&app), format!("[Spammer] ERROR input: {msg}"));
+        terminal_error.get_or_insert(msg);
+    }
+    cycle_tasks.abort_all();
+    while cycle_tasks.join_next().await.is_some() {}
 
     let _ = stdin.write_all(b"{\"type\":\"stop\"}\n").await;
     let _ = stdin.flush().await;
@@ -431,7 +559,7 @@ fn log_metrics(
     final_window: bool,
 ) {
     let line = format!(
-        "{} effective_delay_ms={effective_delay_ms}",
+        "{} post_delay_ms={effective_delay_ms}",
         gateway
             .metrics(InputSource::Spammer)
             .log_line(InputSource::Spammer, final_window)
@@ -439,10 +567,8 @@ fn log_metrics(
     emit_tool_log_opt(Some(app), line);
 }
 
-fn spammer_poll_ticker(effective_delay_ms: u64) -> tokio::time::Interval {
-    let mut ticker = interval(Duration::from_millis(effective_delay_ms));
-    ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
-    ticker
+fn next_cycle_deadline(completed_at: TokioInstant, delay: Duration) -> TokioInstant {
+    completed_at + delay
 }
 
 #[cfg(test)]
@@ -481,5 +607,30 @@ mod tests {
         assert!(parse_line(r#"{"type":"shutdown"}"#).is_none());
         assert!(parse_line(r#"{"type":"trigger"}"#).is_none());
         assert!(parse_line(r#"{"type":"trigger","held":true}"#).is_none());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn delayed_cycle_rearms_a_full_delay_without_catch_up() {
+        let delay = Duration::from_millis(10);
+        let cycle_sleep = sleep(Duration::ZERO);
+        tokio::pin!(cycle_sleep);
+
+        cycle_sleep
+            .as_mut()
+            .reset(next_cycle_deadline(TokioInstant::now(), delay));
+        tokio::time::advance(delay).await;
+        assert!(cycle_sleep.is_elapsed());
+
+        tokio::time::advance(Duration::from_millis(50)).await;
+        let delayed_completion = TokioInstant::now();
+        cycle_sleep
+            .as_mut()
+            .reset(next_cycle_deadline(delayed_completion, delay));
+        assert!(!cycle_sleep.is_elapsed());
+
+        tokio::time::advance(delay - Duration::from_millis(1)).await;
+        assert!(!cycle_sleep.is_elapsed());
+        tokio::time::advance(Duration::from_millis(1)).await;
+        assert!(cycle_sleep.is_elapsed());
     }
 }

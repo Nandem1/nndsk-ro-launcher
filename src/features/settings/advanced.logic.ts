@@ -32,12 +32,24 @@ export function advancedStatusFromDeps(
     prefixOk: deps.prefixOk,
     prefixWarning: deps.prefixWarning,
     dxvkOk: deps.dxvkOk,
+    dxvk: deps.dxvk,
     dxvkWarning: deps.dxvkWarning,
+    runnerKind: deps.runnerKind,
+    runnerOk: deps.runnerOk,
+    runnerWarning: deps.runnerWarning,
+    prefixPath: deps.prefixPath,
+    prefixScope: deps.prefixScope,
+    prefixManaged: deps.prefixManaged,
+    readyToLaunch: deps.readyToLaunch,
+    canSetup: deps.canSetup,
+    canReset: deps.canReset,
+    checks: deps.checks,
   }
 }
 
 export function advancedHasIssue(status: AdvancedDepsStatus): boolean {
   return (
+    resolveDotStatus(status.runnerOk, status.runnerWarning) !== 'ok' ||
     resolveAudioDotStatus(status.audioOk, status.audioWarning) !== 'ok' ||
     resolveDotStatus(status.prefixOk, status.prefixWarning) !== 'ok' ||
     resolveDotStatus(status.uinputInputOk, status.uinputInputWarning) !==

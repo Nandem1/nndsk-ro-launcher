@@ -9,8 +9,9 @@ use tauri::{Manager, RunEvent};
 use commands::{
     autobuff::{get_autobuff_status, start_autobuff, stop_autobuff, update_autobuff_config},
     autopot::{
-        get_autopot_status, list_client_profiles, start_autopot, stop_autopot,
-        update_autopot_config,
+        begin_autopot_memory_scan, cancel_autopot_memory_scan, find_autopot_name_address,
+        get_autopot_status, list_client_profiles, refine_autopot_memory_scan, start_autopot,
+        stop_autopot, update_autopot_config,
     },
     deps::check_dependencies,
     launcher::{launch_game, stop_game},
@@ -73,6 +74,10 @@ pub fn run() {
             update_autopot_config,
             get_autopot_status,
             list_client_profiles,
+            begin_autopot_memory_scan,
+            refine_autopot_memory_scan,
+            cancel_autopot_memory_scan,
+            find_autopot_name_address,
             start_autobuff,
             stop_autobuff,
             update_autobuff_config,

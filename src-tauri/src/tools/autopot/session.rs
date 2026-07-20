@@ -4,7 +4,7 @@ use crate::models::server::ServerConfig;
 use crate::tools::autopot::{load_profiles, resolve_profile, AutopotHandle};
 use crate::tools::game_pid::resolve_game_pid_with_retry;
 use crate::tools::input::InputGateway;
-use crate::utils::{effective_prefix, emit_tool_log_opt};
+use crate::utils::{emit_tool_log_opt, resolve_server_prefix};
 
 /// Orquesta arranque de AutoPot: resuelve PID, valida input y delega al servicio.
 pub async fn start_session(
@@ -14,7 +14,7 @@ pub async fn start_session(
     launcher_pid: u32,
     server: ServerConfig,
 ) -> Result<(), String> {
-    let prefix = effective_prefix(server.wine_prefix.clone());
+    let prefix = resolve_server_prefix(Some(&server))?.path;
     let profiles = load_profiles();
     let profile = resolve_profile(&profiles, &server.executable_path, &server.autopot);
 

@@ -11,7 +11,6 @@ import { AutopotPanel } from '../features/autopot/AutopotPanel'
 import { SpammerPanel } from '../features/spammer/SpammerPanel'
 import { AutobuffPanel } from '../features/autobuff/AutobuffPanel'
 import { UnifiedLogPanel } from '../features/logs/LogPanels'
-import { RunnerSelector } from '../features/settings/RunnerSelector'
 import { AdvancedSettings } from '../features/settings/AdvancedSettings'
 import { PrefixResetButton } from '../features/settings/PrefixResetButton'
 import { useLauncherEvents } from '../features/launcher/useLauncherEvents'
@@ -22,6 +21,7 @@ import { useUiModeTransition } from './useUiModeTransition'
 import { useTransformLayoutTransition } from './useTransformLayoutTransition'
 import { StartupNotice } from './StartupNotice'
 import { MaintenanceNotice } from './MaintenanceNotice'
+import { useSelectedRuntimeStatus } from '../features/settings/useSelectedRuntimeStatus'
 
 const RAIL_EXPANDED_PX = 300
 const RAIL_COLLAPSED_PX = 64
@@ -31,6 +31,7 @@ export function App() {
     useAppInit()
   useLauncherEvents()
   useUiModeTransition()
+  useSelectedRuntimeStatus()
 
   const mode = useUiModeStore((s) => s.mode)
   const railPeek = useUiModeStore((s) => s.railPeek)
@@ -83,7 +84,6 @@ export function App() {
               )}
               <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-2.5 pr-0.5">
                 <ServerList />
-                <RunnerSelector />
                 <AdvancedSettings />
               </div>
               <div className="shrink-0 pb-2.5">

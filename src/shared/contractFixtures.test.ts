@@ -11,6 +11,9 @@ describe('shared Rust/TypeScript contract fixtures', () => {
     expect(
       validateServerConfig(fixtures.validServer as ServerConfig),
     ).toBeNull()
+    for (const server of fixtures.validLaunchServers) {
+      expect(validateServerConfig(server as ServerConfig)).toBeNull()
+    }
     for (const fixture of fixtures.invalidServers) {
       expect(
         validateServerConfig(fixture.server as ServerConfig),

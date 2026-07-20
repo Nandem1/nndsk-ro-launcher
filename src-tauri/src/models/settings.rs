@@ -11,7 +11,7 @@ pub struct AppSettings {
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
-            default_runner: default_system_wine().to_string(),
+            default_runner: default_system_wine(),
         }
     }
 }

@@ -46,6 +46,9 @@ pub struct AutopotConfig {
     /// Optional manual HP base override (hex string, e.g. "0x10DCE10")
     #[serde(default)]
     pub hp_base_override: Option<String>,
+    /// Optional manual character-name address override (hex string).
+    #[serde(default)]
+    pub name_address_override: Option<String>,
 }
 
 impl Default for AutopotConfig {
@@ -60,6 +63,7 @@ impl Default for AutopotConfig {
             proactive_mode: false,
             profile_id: None,
             hp_base_override: None,
+            name_address_override: None,
         }
     }
 }
@@ -89,6 +93,9 @@ impl AutopotConfig {
             ));
         }
         if let Some(address) = &self.hp_base_override {
+            parse_hex(address).map_err(ToolsError::Other)?;
+        }
+        if let Some(address) = &self.name_address_override {
             parse_hex(address).map_err(ToolsError::Other)?;
         }
         Ok(())

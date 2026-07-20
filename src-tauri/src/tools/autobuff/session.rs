@@ -3,7 +3,7 @@ use crate::models::server::ServerConfig;
 use crate::tools::autopot::{load_profiles, resolve_profile};
 use crate::tools::game_pid::resolve_game_pid_with_retry;
 use crate::tools::input::InputGateway;
-use crate::utils::{effective_prefix, emit_tool_log_opt};
+use crate::utils::{emit_tool_log_opt, resolve_server_prefix};
 use tauri::AppHandle;
 
 pub async fn start_session(
@@ -14,7 +14,7 @@ pub async fn start_session(
     server: ServerConfig,
 ) -> Result<(), String> {
     let profile = resolve_profile(&load_profiles(), &server.executable_path, &server.autopot);
-    let prefix = effective_prefix(server.wine_prefix.clone());
+    let prefix = resolve_server_prefix(Some(&server))?.path;
     let (pid, detail) = resolve_game_pid_with_retry(
         &app,
         "AutoBuff",

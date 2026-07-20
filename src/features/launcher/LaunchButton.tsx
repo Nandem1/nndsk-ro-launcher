@@ -1,20 +1,43 @@
+import { useEffect, useState } from 'react'
 import { Hammer, Play, RotateCcw } from 'lucide-react'
+import { requiredLaunchFields } from '../../shared/contracts'
+import { launchConfigKey } from '../../shared/resolveRunner'
 import { Button, type ButtonVariant } from '../../shared/ui/Button'
 import { useLaunchGame } from './useLaunchGame'
 import { useSelectedServer } from '../servers/useSelectedServer'
 import { useSettingsStore } from '../settings/settings.store'
+import { useCurrentAdvancedStatus } from '../settings/useSelectedRuntimeStatus'
+import { LaunchFieldsModal } from './LaunchFieldsModal'
 
 export function LaunchButton() {
   const server = useSelectedServer()
-  const prefixConfigured = useSettingsStore((s) => s.prefixConfigured)
-  const { status, setupProgress, error, isBusy, handleLaunch, handleStop } =
-    useLaunchGame(server)
+  const [showLaunchFields, setShowLaunchFields] = useState(false)
+  const savingRunner = useSettingsStore((s) => s.savingRunner)
+  const selectedRunner = useSettingsStore((s) => s.selectedRunner)
+  const advancedStatus = useCurrentAdvancedStatus()
+  const {
+    status,
+    setupProgress,
+    error,
+    isBusy,
+    handleLaunch,
+    handlePrepareEnvironment,
+    handleStop,
+  } = useLaunchGame(server)
 
-  const isDisabled = !server || isBusy
-  const buildMode = status === 'idle' && !prefixConfigured
+  const serverLaunchKey = server ? launchConfigKey(server, selectedRunner) : ''
+  useEffect(() => setShowLaunchFields(false), [serverLaunchKey])
+
+  const isDisabled = !server || isBusy || savingRunner
+  const buildMode = status === 'idle' && !advancedStatus?.readyToLaunch
 
   const labels: Record<typeof status, string> = {
-    idle: buildMode ? 'Construir entorno' : 'Jugar',
+    idle: buildMode
+      ? advancedStatus?.canSetup === false
+        ? 'Revisar entorno'
+        : 'Preparar entorno'
+      : 'Jugar',
+    checking: 'Comprobando...',
     'setting-up': 'Configurando...',
     launching: 'Iniciando...',
     running: 'Jugando...',
@@ -61,7 +84,24 @@ export function LaunchButton() {
         variant={variant}
         size="lg"
         block
-        onClick={handleLaunch}
+        onClick={() => {
+          void (async () => {
+            let fields: string[]
+            try {
+              fields = requiredLaunchFields(server?.launch)
+            } catch {
+              await handleLaunch()
+              return
+            }
+            if (!fields.length) {
+              await handleLaunch()
+              return
+            }
+            if (await handlePrepareEnvironment()) {
+              setShowLaunchFields(true)
+            }
+          })()
+        }}
         disabled={isDisabled}
         className={status === 'running' ? 'cursor-default' : ''}
       >
@@ -82,6 +122,17 @@ export function LaunchButton() {
         <p className="text-red-400 text-[11px] text-center px-2 leading-relaxed">
           {error}
         </p>
+      )}
+      {showLaunchFields && server && (
+        <LaunchFieldsModal
+          serverName={server.name}
+          fields={requiredLaunchFields(server.launch)}
+          onCancel={() => setShowLaunchFields(false)}
+          onSubmit={(values) => {
+            setShowLaunchFields(false)
+            void handleLaunch(values, true)
+          }}
+        />
       )}
     </div>
   )

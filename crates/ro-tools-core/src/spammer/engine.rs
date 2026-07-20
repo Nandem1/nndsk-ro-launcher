@@ -30,10 +30,14 @@ impl<I: SpamCycleWriter> SpammerEngine<I> {
         &self.config
     }
 
-    /// Ciclo IPC-mode: KEYDOWN → click → KEYUP.
-    /// El grab lo hace ro-inputd; cada ciclo es un press discreto independiente del estado físico.
+    /// Ciclo IPC-mode atómico con una activación fresca y exactamente un click.
+    /// El backend conserva/rearma la tecla; `release` cierra el estado al detenerse.
     pub fn tick(&mut self, key: &str) -> Result<SpammerTick, ToolsError> {
         self.tick_with_deadline(key, None)
+    }
+
+    pub fn release(&mut self) -> Result<(), ToolsError> {
+        self.input.release_spam()
     }
 
     pub fn tick_with_deadline(
@@ -67,10 +71,13 @@ mod tests {
 
     impl SpamCycleWriter for MockInput {
         fn spam_cycle(&self, key: &str, _deadline: Option<Instant>) -> Result<bool, ToolsError> {
-            self.log.lock().unwrap().push(format!("down:{key}"));
-            self.log.lock().unwrap().push("click".into());
-            self.log.lock().unwrap().push(format!("up:{key}"));
+            self.log.lock().unwrap().push(format!("cycle:{key}"));
             Ok(true)
+        }
+
+        fn release_spam(&self) -> Result<(), ToolsError> {
+            self.log.lock().unwrap().push("release".into());
+            Ok(())
         }
     }
 
@@ -91,9 +98,10 @@ mod tests {
 
         let tick = engine.tick("F2").unwrap();
         assert!(tick.cycled);
+        engine.release().unwrap();
 
         let log = engine.input.log.lock().unwrap();
-        assert_eq!(log.as_slice(), &["down:F2", "click", "up:F2"]);
+        assert_eq!(log.as_slice(), &["cycle:F2", "release"]);
     }
 
     #[test]
@@ -115,6 +123,6 @@ mod tests {
         assert!(engine.tick("Q").unwrap().cycled);
 
         let log = engine.input.log.lock().unwrap();
-        assert_eq!(log.as_slice(), &["down:Q", "click", "up:Q"]);
+        assert_eq!(log.as_slice(), &["cycle:Q"]);
     }
 }

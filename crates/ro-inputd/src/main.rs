@@ -481,6 +481,7 @@ mod tests {
             "USB Mouse",
             "Logitech G502 HERO GAMING MOUSE",
             "HDA Intel MIC",
+            "ro-launcher-combat-input",
         ];
         for name in &bad_names {
             let lower = name.to_lowercase();

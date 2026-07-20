@@ -7,7 +7,10 @@ import type {
   AutobuffStatusEvent,
   ClientProfile,
   DependencyStatus,
+  DetectedNameAddress,
   InstallDgVoodooResult,
+  LaunchValues,
+  MemoryScanProgress,
   RunnerInfo,
   ServerConfig,
   ServerToolsStatus,
@@ -28,16 +31,24 @@ function assertValid(error: string | null): void {
 }
 
 export const api = {
-  checkDependencies: (runner: string | null) =>
-    invoke<DependencyStatus>('check_dependencies', { runner }),
+  checkDependencies: (
+    server: ServerConfig | null,
+    runner: string | null = null,
+  ) => invoke<DependencyStatus>('check_dependencies', { server, runner }),
 
-  setupPrefix: () => invoke<void>('setup_prefix'),
+  setupPrefix: (server: ServerConfig | null, runner: string | null = null) =>
+    invoke<void>('setup_prefix', { server, runner }),
 
-  resetPrefix: () => invoke<void>('reset_prefix'),
+  resetPrefix: (server: ServerConfig | null, runner: string | null = null) =>
+    invoke<void>('reset_prefix', { server, runner }),
 
-  launchGame: (server: ServerConfig) => {
+  launchGame: (
+    server: ServerConfig,
+    launchValues: LaunchValues = {},
+    runner: string | null = null,
+  ) => {
     assertValid(validateServerConfig(server))
-    return invoke<void>('launch_game', { server })
+    return invoke<void>('launch_game', { server, runner, launchValues })
   },
 
   stopGame: () => invoke<void>('stop_game'),
@@ -75,9 +86,13 @@ export const api = {
     return invoke<UninstallDgVoodooResult>('uninstall_dgvoodoo', { server })
   },
 
-  launchServerTool: (server: ServerConfig, tool: ToolKind) => {
+  launchServerTool: (
+    server: ServerConfig,
+    tool: ToolKind,
+    runner: string | null = null,
+  ) => {
     assertValid(validateServerConfig(server))
-    return invoke<void>('launch_server_tool', { server, tool })
+    return invoke<void>('launch_server_tool', { server, tool, runner })
   },
 
   startAutopot: (server: ServerConfig) => {
@@ -105,6 +120,19 @@ export const api = {
   getAutobuffStatus: () => invoke<AutobuffStatusEvent>('get_autobuff_status'),
 
   listClientProfiles: () => invoke<ClientProfile[]>('list_client_profiles'),
+
+  beginAutopotMemoryScan: (currentHp: number) =>
+    invoke<MemoryScanProgress>('begin_autopot_memory_scan', { currentHp }),
+
+  refineAutopotMemoryScan: (currentHp: number) =>
+    invoke<MemoryScanProgress>('refine_autopot_memory_scan', { currentHp }),
+
+  cancelAutopotMemoryScan: () => invoke<void>('cancel_autopot_memory_scan'),
+
+  findAutopotNameAddress: (characterName: string) =>
+    invoke<DetectedNameAddress>('find_autopot_name_address', {
+      characterName,
+    }),
 
   startSpammer: (server: ServerConfig) => {
     assertValid(validateServerConfig(server))

@@ -6,6 +6,7 @@ import { Panel, resolveToolTone } from '../../shared/ui/Panel'
 import { ToggleSwitch } from '../../shared/ui/ToggleSwitch'
 import { formatSpammerKeys } from './spammer.logic'
 import { GearSwitchEditor } from './GearSwitchEditor'
+import { SpammerDelayControl } from './SpammerDelayControl'
 import { SpammerKeyboard } from './SpammerKeyboard'
 import { useSpammer } from './useSpammer'
 
@@ -16,7 +17,6 @@ export function SpammerPanel() {
   const launching = useLauncherStore((state) => state.status === 'launching')
   const hero = useUiModeStore((state) => state.mode === 'ingame')
   const available = isRunning && !!server
-  const minimumDelayMs = 10
   const keysLabel = formatSpammerKeys(config.keys)
 
   const statusLabel = (() => {
@@ -87,29 +87,12 @@ export function SpammerPanel() {
           onKeysChange={(keys) => void updateField({ keys })}
         />
 
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] text-zinc-600 uppercase tracking-wide shrink-0">
-            Delay
-          </span>
-          <input
-            type="range"
-            min={minimumDelayMs}
-            max={50}
-            step={1}
-            disabled={!server || busy}
-            value={Math.max(config.delayMs, minimumDelayMs)}
-            onChange={(event) =>
-              void updateField({ delayMs: Number(event.target.value) })
-            }
-            className="flex-1 accent-amber-500 disabled:opacity-50"
-          />
-          <span className="text-[10px] text-zinc-500 w-8 text-right shrink-0">
-            {status.active
-              ? status.effectiveDelayMs
-              : Math.max(config.delayMs, minimumDelayMs)}
-            ms
-          </span>
-        </div>
+        <SpammerDelayControl
+          key={server?.id ?? 'no-server'}
+          configuredDelayMs={config.delayMs}
+          disabled={!server || busy}
+          onCommit={(delayMs) => updateField({ delayMs })}
+        />
 
         <GearSwitchEditor
           spammerKeys={config.keys}

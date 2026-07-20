@@ -6,7 +6,7 @@ import {
   resolveAudioDotStatus,
   resolveDotStatus,
 } from './advanced.logic'
-import { useSettingsStore } from './settings.store'
+import { useCurrentAdvancedStatus } from './useSelectedRuntimeStatus'
 
 function StatusLine({
   dotStatus,
@@ -33,7 +33,7 @@ function StatusLine({
 }
 
 export function AdvancedSettings() {
-  const advancedStatus = useSettingsStore((s) => s.advancedStatus)
+  const advancedStatus = useCurrentAdvancedStatus()
 
   if (!advancedStatus) return null
 
@@ -50,6 +50,15 @@ export function AdvancedSettings() {
 
   const lines = [
     {
+      key: 'runner',
+      dot: resolveDotStatus(
+        advancedStatus.runnerOk,
+        advancedStatus.runnerWarning,
+      ),
+      label: `Runner · ${advancedStatus.runnerKind}`,
+      hint: advancedStatus.runnerWarning,
+    },
+    {
       key: 'audio',
       dot: audioDot,
       label: audioLabel,
@@ -62,14 +71,16 @@ export function AdvancedSettings() {
         advancedStatus.prefixWarning,
       ),
       label: advancedStatus.prefixOk
-        ? 'Prefix · configurado'
-        : 'Prefix · sin configurar',
-      hint: advancedStatus.prefixWarning,
+        ? `Entorno ${advancedStatus.prefixScope} · listo`
+        : `Entorno ${advancedStatus.prefixScope} · pendiente`,
+      hint:
+        advancedStatus.prefixWarning ??
+        `${advancedStatus.prefixManaged ? 'Administrado' : 'Externo'} · ${advancedStatus.prefixPath}`,
     },
     {
       key: 'dxvk',
       dot: resolveDotStatus(advancedStatus.dxvkOk, advancedStatus.dxvkWarning),
-      label: advancedStatus.dxvkOk ? 'DXVK · instalado' : 'DXVK · pendiente',
+      label: advancedStatus.dxvk ? 'DXVK · instalado' : 'DXVK · pendiente',
       hint: advancedStatus.dxvkWarning,
     },
     {

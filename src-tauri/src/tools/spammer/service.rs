@@ -60,7 +60,7 @@ impl SpammerHandle {
         emit_tool_log_opt(
             Some(&app),
             format!(
-                "[Spammer] Standby {} + click backend=uinput delay efectivo={}ms — mantén la tecla en el juego",
+                "[Spammer] Standby {} + click backend=uinput pausa post-ciclo={}ms — mantén la tecla en el juego",
                 config.keys.join(","),
                 effective_delay_ms,
             ),

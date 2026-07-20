@@ -7,6 +7,36 @@
     "winePrefix": null,
     "runner": null
   },
+  "validLaunchServers": [
+    {
+      "id": "direct-isolated",
+      "name": "Direct Isolated RO",
+      "executablePath": "/games/direct/Ragexe.exe",
+      "prefixMode": "isolated",
+      "launch": {
+        "strategy": "direct",
+        "gameArgs": ["-t:${password}", "${userId}", "40.160.233.207", "-1rag1"]
+      }
+    },
+    {
+      "id": "patcher-shared",
+      "name": "Patcher RO",
+      "executablePath": "/games/patcher/Ragexe.exe",
+      "patcherPath": "/games/patcher/Launcher.exe",
+      "prefixMode": "shared",
+      "launch": {
+        "strategy": "patcher",
+        "patcherArgs": ["--channel", "stable"]
+      }
+    },
+    {
+      "id": "custom-prefix",
+      "name": "Custom Prefix RO",
+      "executablePath": "/games/custom/Ragexe.exe",
+      "winePrefix": "/prefixes/custom-ro",
+      "prefixMode": "custom"
+    }
+  ],
   "invalidServers": [
     {
       "case": "empty-name",
@@ -22,6 +52,60 @@
         "id": "fixture-server",
         "name": "Fixture RO",
         "executablePath": "/games/fixture/client.bin"
+      }
+    },
+    {
+      "case": "custom-prefix-without-path",
+      "server": {
+        "id": "fixture-server",
+        "name": "Fixture RO",
+        "executablePath": "/games/fixture/Ragexe.exe",
+        "prefixMode": "custom"
+      }
+    },
+    {
+      "case": "shared-prefix-with-custom-path",
+      "server": {
+        "id": "fixture-server",
+        "name": "Fixture RO",
+        "executablePath": "/games/fixture/Ragexe.exe",
+        "prefixMode": "shared",
+        "winePrefix": "/prefixes/ambiguous"
+      }
+    },
+    {
+      "case": "patcher-strategy-without-patcher",
+      "server": {
+        "id": "fixture-server",
+        "name": "Fixture RO",
+        "executablePath": "/games/fixture/Ragexe.exe",
+        "launch": {
+          "strategy": "patcher"
+        }
+      }
+    },
+    {
+      "case": "invalid-launch-field",
+      "server": {
+        "id": "fixture-server",
+        "name": "Fixture RO",
+        "executablePath": "/games/fixture/Ragexe.exe",
+        "launch": {
+          "strategy": "direct",
+          "gameArgs": ["${1password}"]
+        }
+      }
+    },
+    {
+      "case": "nul-launch-argument",
+      "server": {
+        "id": "fixture-server",
+        "name": "Fixture RO",
+        "executablePath": "/games/fixture/Ragexe.exe",
+        "launch": {
+          "strategy": "direct",
+          "gameArgs": ["bad\u0000argument"]
+        }
       }
     }
   ],

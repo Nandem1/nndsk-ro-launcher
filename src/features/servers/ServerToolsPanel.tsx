@@ -5,11 +5,11 @@ import { StatusDot } from '../../shared/ui/StatusDot'
 import { buttonClasses } from '../../shared/ui/Button'
 import { useSelectedServer } from './useSelectedServer'
 import { useServerTools } from './useServerTools'
-import { useSettingsStore } from '../settings/settings.store'
+import { useCurrentAdvancedStatus } from '../settings/useSelectedRuntimeStatus'
 
 export function ServerToolsPanel() {
   const server = useSelectedServer()
-  const prefixConfigured = useSettingsStore((s) => s.prefixConfigured)
+  const prefixConfigured = useCurrentAdvancedStatus()?.readyToLaunch ?? false
   const {
     status,
     loading,
@@ -17,6 +17,7 @@ export function ServerToolsPanel() {
     opening,
     installingDgVoodoo,
     uninstallingDgVoodoo,
+    busy,
     refresh,
     handleInstallDgVoodoo,
     handleUninstallDgVoodoo,
@@ -38,7 +39,7 @@ export function ServerToolsPanel() {
   }
 
   const dg = status?.dgvoodoo
-  const dgvoodooNeedsInstall = dg && !dg.configured && dg.canAutoInstall
+  const dgvoodooNeedsInstall = dg && dg.needsInstall && dg.canAutoInstall
 
   return (
     <Panel
@@ -49,7 +50,7 @@ export function ServerToolsPanel() {
         <button
           type="button"
           onClick={refresh}
-          disabled={loading}
+          disabled={busy}
           className="text-zinc-600 hover:text-zinc-400 transition-colors disabled:opacity-40"
           title="Volver a escanear"
         >
@@ -60,17 +61,33 @@ export function ServerToolsPanel() {
       {error && <p className="text-[10px] text-red-400 mb-1.5">{error}</p>}
 
       {status && (
-        <ToolsGrid
-          status={status}
-          prefixConfigured={prefixConfigured}
-          dgvoodooNeedsInstall={!!dgvoodooNeedsInstall}
-          opening={opening}
-          installingDgVoodoo={installingDgVoodoo}
-          uninstallingDgVoodoo={uninstallingDgVoodoo}
-          onOpen={handleOpen}
-          onInstallDgVoodoo={handleInstallDgVoodoo}
-          onUninstallDgVoodoo={handleUninstallDgVoodoo}
-        />
+        <>
+          <ToolsGrid
+            status={status}
+            prefixConfigured={prefixConfigured}
+            dgvoodooNeedsInstall={!!dgvoodooNeedsInstall}
+            opening={opening}
+            installingDgVoodoo={installingDgVoodoo}
+            uninstallingDgVoodoo={uninstallingDgVoodoo}
+            busy={busy}
+            onOpen={handleOpen}
+            onInstallDgVoodoo={handleInstallDgVoodoo}
+            onUninstallDgVoodoo={handleUninstallDgVoodoo}
+          />
+          <ClientDiagnostics status={status} />
+          {!!status.dgvoodoo.issues.length && (
+            <div className="mt-2 rounded-lg border border-amber-500/10 bg-amber-500/5 px-2.5 py-2">
+              {status.dgvoodoo.issues.map((issue) => (
+                <p
+                  key={issue}
+                  className="text-[10px] leading-snug text-amber-400/80"
+                >
+                  {issue}
+                </p>
+              ))}
+            </div>
+          )}
+        </>
       )}
 
       {loading && !status && (
@@ -82,6 +99,36 @@ export function ServerToolsPanel() {
   )
 }
 
+function ClientDiagnostics({ status }: { status: ServerToolsStatus }) {
+  const diagnostics = status.diagnostics
+  if (
+    !diagnostics.architecture &&
+    diagnostics.graphicsApis.length === 0 &&
+    diagnostics.warnings.length === 0
+  ) {
+    return null
+  }
+
+  return (
+    <div className="mt-2 rounded-lg border border-white/[0.04] bg-zinc-950/30 px-2.5 py-2">
+      <p className="text-[10px] text-zinc-500">
+        Cliente {diagnostics.architecture ?? 'PE'}
+        {diagnostics.graphicsApis.length
+          ? ` · ${diagnostics.graphicsApis.join(' + ')}`
+          : ''}
+      </p>
+      {diagnostics.warnings.map((warning) => (
+        <p
+          key={warning}
+          className="mt-1 text-[10px] leading-snug text-amber-400/80"
+        >
+          {warning}
+        </p>
+      ))}
+    </div>
+  )
+}
+
 interface ToolsGridProps {
   status: ServerToolsStatus
   prefixConfigured: boolean
@@ -89,6 +136,7 @@ interface ToolsGridProps {
   opening: ToolKind | null
   installingDgVoodoo: boolean
   uninstallingDgVoodoo: boolean
+  busy: boolean
   onOpen: (tool: ToolKind) => void
   onInstallDgVoodoo: () => void
   onUninstallDgVoodoo: () => void
@@ -185,6 +233,7 @@ function ToolsGrid({
   opening,
   installingDgVoodoo,
   uninstallingDgVoodoo,
+  busy,
   onOpen,
   onInstallDgVoodoo,
   onUninstallDgVoodoo,
@@ -201,7 +250,7 @@ function ToolsGrid({
           dotOk={tool.found}
           onAction={tool.found ? () => onOpen(kind) : undefined}
           actionLabel="Abrir"
-          actionBusy={opening === kind}
+          actionBusy={busy || opening === kind}
           actionDisabled={!tool.found || !prefixConfigured}
         />
       ))}
@@ -216,16 +265,23 @@ function ToolsGrid({
               ? () => onOpen('dgvoodoo')
               : undefined
         }
-        actionLabel={dgvoodooNeedsInstall ? 'Instalar' : 'Config'}
+        actionLabel={
+          dgvoodooNeedsInstall
+            ? dg.canUninstall
+              ? 'Reparar'
+              : 'Instalar'
+            : 'Config'
+        }
         actionBusy={
-          dgvoodooNeedsInstall ? installingDgVoodoo : opening === 'dgvoodoo'
+          busy ||
+          (dgvoodooNeedsInstall ? installingDgVoodoo : opening === 'dgvoodoo')
         }
         actionDisabled={
           !dgvoodooNeedsInstall && dg.cpl.found && !prefixConfigured
         }
         onSecondary={dg.canUninstall ? onUninstallDgVoodoo : undefined}
         secondaryLabel="Quitar"
-        secondaryBusy={uninstallingDgVoodoo}
+        secondaryBusy={busy || uninstallingDgVoodoo}
       />
     </div>
   )

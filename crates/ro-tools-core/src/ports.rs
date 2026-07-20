@@ -25,8 +25,13 @@ pub trait HeldKeyWriter: Send + Sync {
     fn key_up(&self, key: &str) -> Result<(), ToolsError>;
 }
 
-/// Writes the complete spam sequence as one non-interleavable command.
+/// Writes stateful spam input as non-interleavable commands.
 pub trait SpamCycleWriter: Send + Sync {
+    /// Emits one fresh key activation and exactly one click. The backend may keep
+    /// the skill key down until the next cycle so the click cannot outlive it.
     /// Returns false when the cycle was deliberately skipped after its deadline.
     fn spam_cycle(&self, key: &str, deadline: Option<Instant>) -> Result<bool, ToolsError>;
+
+    /// Releases any key retained by the spammer. Must be safe to call repeatedly.
+    fn release_spam(&self) -> Result<(), ToolsError>;
 }

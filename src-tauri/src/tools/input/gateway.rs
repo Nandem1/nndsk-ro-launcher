@@ -32,7 +32,7 @@ impl InputGateway {
             .await
             .map_err(|error| {
                 ToolsError::Other(format!(
-                    "uinput stage=join preparation device=both errno=none: {error}"
+                    "uinput stage=join preparation device=combined errno=none: {error}"
                 ))
             })?
     }
@@ -81,5 +81,9 @@ impl SpamCycleWriter for UinputWriter {
         deadline: Option<std::time::Instant>,
     ) -> Result<bool, ToolsError> {
         UinputWriter::spam_cycle(self, key, deadline)
+    }
+
+    fn release_spam(&self) -> Result<(), ToolsError> {
+        UinputWriter::release_spam(self)
     }
 }

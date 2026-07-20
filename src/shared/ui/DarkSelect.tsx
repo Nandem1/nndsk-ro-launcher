@@ -67,6 +67,7 @@ export function DarkSelect({
   placeholder = 'Seleccionar...',
 }: Props) {
   const [open, setOpen] = useState(false)
+  const [activeIndex, setActiveIndex] = useState(-1)
   const [menuPosition, setMenuPosition] = useState<MenuPosition | null>(null)
   const rootRef = useRef<HTMLDivElement>(null)
   const menuRef = useRef<HTMLUListElement>(null)
@@ -86,6 +87,15 @@ export function DarkSelect({
     }
     updateMenuPosition()
   }, [open, options.length, updateMenuPosition])
+
+  useEffect(() => {
+    if (!open || !menuPosition || activeIndex < 0) return
+    const option =
+      menuRef.current?.querySelectorAll<HTMLElement>('[role="option"]')[
+        activeIndex
+      ]
+    option?.focus()
+  }, [activeIndex, menuPosition, open])
 
   useEffect(() => {
     if (!open) return
@@ -114,12 +124,56 @@ export function DarkSelect({
     }
   }, [open, updateMenuPosition])
 
+  const openMenu = (preferredIndex?: number) => {
+    if (disabled || options.length === 0) return
+    const selectedIndex = options.findIndex((option) => option.value === value)
+    setActiveIndex(preferredIndex ?? (selectedIndex >= 0 ? selectedIndex : 0))
+    setOpen(true)
+  }
+
+  const chooseOption = (index: number) => {
+    const option = options[index]
+    if (!option) return
+    onChange(option.value)
+    setOpen(false)
+    triggerRef.current?.focus()
+  }
+
+  const handleMenuKeyDown = (event: React.KeyboardEvent) => {
+    if (!open) return
+    if (
+      ['ArrowDown', 'ArrowUp', 'Home', 'End', 'Enter', ' ', 'Escape'].includes(
+        event.key,
+      )
+    ) {
+      event.preventDefault()
+      event.stopPropagation()
+    }
+    if (event.key === 'Escape') {
+      setOpen(false)
+      triggerRef.current?.focus()
+    } else if (event.key === 'ArrowDown') {
+      setActiveIndex((index) => (index + 1) % options.length)
+    } else if (event.key === 'ArrowUp') {
+      setActiveIndex((index) => (index - 1 + options.length) % options.length)
+    } else if (event.key === 'Home') {
+      setActiveIndex(0)
+    } else if (event.key === 'End') {
+      setActiveIndex(options.length - 1)
+    } else if (event.key === 'Enter' || event.key === ' ') {
+      chooseOption(activeIndex)
+    } else if (event.key === 'Tab') {
+      setOpen(false)
+    }
+  }
+
   const menu =
     open && menuPosition
       ? createPortal(
           <ul
             ref={menuRef}
             role="listbox"
+            onKeyDown={handleMenuKeyDown}
             style={{
               position: 'fixed',
               top: menuPosition.top,
@@ -131,16 +185,17 @@ export function DarkSelect({
               menuPosition.openUp ? 'origin-bottom' : 'origin-top'
             }`}
           >
-            {options.map((option) => {
+            {options.map((option, index) => {
               const isSelected = option.value === value
               return (
-                <li key={option.value} role="option" aria-selected={isSelected}>
+                <li key={option.value} role="presentation">
                   <button
                     type="button"
-                    onClick={() => {
-                      onChange(option.value)
-                      setOpen(false)
-                    }}
+                    role="option"
+                    aria-selected={isSelected}
+                    tabIndex={index === activeIndex ? 0 : -1}
+                    onMouseMove={() => setActiveIndex(index)}
+                    onClick={() => chooseOption(index)}
                     className={`w-full text-left transition-colors truncate ${compact ? 'px-2 py-1.5 text-[11px]' : 'px-3 py-2 text-sm'}
                       ${
                         isSelected
@@ -166,7 +221,16 @@ export function DarkSelect({
         disabled={disabled}
         aria-haspopup="listbox"
         aria-expanded={open}
-        onClick={() => !disabled && setOpen((v) => !v)}
+        onClick={() => {
+          if (open) setOpen(false)
+          else openMenu()
+        }}
+        onKeyDown={(event) => {
+          if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault()
+            openMenu(event.key === 'ArrowUp' ? options.length - 1 : undefined)
+          }
+        }}
         className={`w-full flex items-center justify-between border text-left focus:outline-none focus:border-amber-500/60 focus:ring-1 focus:ring-amber-500/20
           transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed
           ${

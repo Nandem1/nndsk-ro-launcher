@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { FlaskConical } from 'lucide-react'
+import { FlaskConical, Search } from 'lucide-react'
 import { DEFAULT_AUTOPOT_CONFIG, POT_KEYS } from '../../shared/constants'
 
 const POT_KEY_OPTIONS = POT_KEYS.map((key) => ({ value: key, label: key }))
+const DETECTED_PROFILE_VALUE = '__detected_memory__'
 import { Panel, resolveToolTone } from '../../shared/ui/Panel'
 import { DarkSelect } from '../../shared/ui/DarkSelect'
 import { ToggleSwitch } from '../../shared/ui/ToggleSwitch'
@@ -13,6 +14,7 @@ import { statPercent } from './autopot.logic'
 import { useAutopot } from './useAutopot'
 import { api } from '../../shared/api'
 import type { ClientProfile } from '../../shared/types'
+import { MemoryScannerModal } from './MemoryScannerModal'
 
 function StatBar({
   cur,
@@ -76,6 +78,9 @@ export function AutopotPanel() {
   const prevHp = useRef(0)
   const prevSp = useRef(0)
   const [profiles, setProfiles] = useState<ClientProfile[]>([])
+  const [showMemoryScanner, setShowMemoryScanner] = useState(false)
+  const hasMemoryOverride =
+    !!config.hpBaseOverride || !!config.nameAddressOverride
 
   useEffect(() => {
     void api.listClientProfiles().then(setProfiles).catch(console.error)
@@ -222,17 +227,45 @@ export function AutopotPanel() {
         </div>
 
         <div className="space-y-1">
-          <span className="text-[10px] text-zinc-600 uppercase tracking-wide">
-            Perfil de memoria
-          </span>
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[10px] text-zinc-600 uppercase tracking-wide">
+              Perfil de memoria
+            </span>
+            <button
+              type="button"
+              disabled={!available || status.active || busy}
+              onClick={() => setShowMemoryScanner(true)}
+              className="inline-flex items-center gap-1 text-[10px] text-amber-500/80 hover:text-amber-300 disabled:text-zinc-700"
+            >
+              <Search className="h-3 w-3" aria-hidden />
+              Encontrar
+            </button>
+          </div>
           <DarkSelect
             compact
-            value={config.profileId ?? ''}
-            disabled={!server}
-            onChange={(val) =>
-              void updateField({ profileId: val || undefined })
+            value={
+              hasMemoryOverride
+                ? DETECTED_PROFILE_VALUE
+                : (config.profileId ?? '')
             }
+            disabled={!server}
+            onChange={(val) => {
+              if (val === DETECTED_PROFILE_VALUE) return
+              void updateField({
+                profileId: val || undefined,
+                hpBaseOverride: undefined,
+                nameAddressOverride: undefined,
+              })
+            }}
             options={[
+              ...(hasMemoryOverride
+                ? [
+                    {
+                      value: DETECTED_PROFILE_VALUE,
+                      label: `Detectado · ${config.hpBaseOverride ?? 'nombre'}`,
+                    },
+                  ]
+                : []),
               { value: '', label: 'Auto' },
               ...profiles.map((p) => ({ value: p.id, label: p.label })),
             ]}
@@ -326,6 +359,20 @@ export function AutopotPanel() {
           ) : null}
         </p>
       </div>
+      {showMemoryScanner && server && (
+        <MemoryScannerModal
+          serverName={server.name}
+          existingHpBase={config.hpBaseOverride}
+          onCancel={() => setShowMemoryScanner(false)}
+          onConfirm={async (hpBaseOverride, nameAddressOverride) => {
+            await updateField({
+              hpBaseOverride,
+              nameAddressOverride,
+              profileId: undefined,
+            })
+          }}
+        />
+      )}
     </Panel>
   )
 }

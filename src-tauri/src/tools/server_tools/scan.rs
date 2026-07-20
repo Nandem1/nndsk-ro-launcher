@@ -1,10 +1,12 @@
 use std::path::{Path, PathBuf};
 
-use ro_tools_core::dgvoodoo::{validate_conf, REQUIRED_FILES, TEMPLATE_FILES};
+use ro_tools_core::dgvoodoo::{validate_conf, TEMPLATE_FILES};
 
 use crate::models::server::ServerConfig;
 use crate::models::server_tools::{DgVoodooStatus, ServerToolsStatus, ToolInfo};
 use crate::utils::{file_label, find_file_case_insensitive, find_matching_exe, normalize_token};
+
+use super::pe;
 
 pub fn scan_game_dir(
     game_dir: &str,
@@ -19,12 +21,14 @@ pub fn scan_game_dir(
     let open_setup = detect_open_setup(dir);
     let patcher = detect_patcher(dir, server);
     let dgvoodoo = detect_dgvoodoo(dir, can_auto_install);
+    let diagnostics = pe::inspect_client(server, dir, &patcher);
 
     Ok(ServerToolsStatus {
         game_dir: game_dir.to_string(),
         open_setup,
         patcher,
         dgvoodoo,
+        diagnostics,
     })
 }
 
@@ -134,18 +138,21 @@ pub fn detect_dgvoodoo(dir: &Path, can_auto_install: bool) -> DgVoodooStatus {
         issues.push("Falta dgVoodoo.conf".to_string());
     }
     if let Some(conf_path) = &conf.path {
-        if let Ok(content) = std::fs::read_to_string(conf_path) {
-            validate_conf(&content, &mut issues);
+        match std::fs::read_to_string(conf_path) {
+            Ok(content) => validate_conf(&content, &mut issues),
+            Err(error) => issues.push(format!("No se pudo leer dgVoodoo.conf: {error}")),
         }
+    }
+    if let Some(issue) = super::dgvoodoo::install_manifest_issue(dir) {
+        issues.push(issue);
     }
 
     let configured = d3dimm_dll.found && ddraw_dll.found && conf.found && issues.is_empty();
-    let needs_install = !REQUIRED_FILES
-        .iter()
-        .all(|file| find_file_case_insensitive(dir, file).is_some());
-    let can_uninstall = TEMPLATE_FILES
-        .iter()
-        .any(|file| find_file_case_insensitive(dir, file).is_some());
+    let needs_install = !configured
+        || !TEMPLATE_FILES
+            .iter()
+            .all(|file| find_file_case_insensitive(dir, file).is_some());
+    let can_uninstall = super::dgvoodoo::has_install_manifest(dir);
 
     DgVoodooStatus {
         cpl,
@@ -200,7 +207,9 @@ mod tests {
             executable_path: dir.join(executable).to_string_lossy().to_string(),
             patcher_path: None,
             wine_prefix: None,
+            prefix_mode: None,
             runner: None,
+            launch: Default::default(),
             autopot: Default::default(),
             spammer: Default::default(),
             autobuff: Default::default(),
@@ -290,5 +299,35 @@ mod tests {
         let _ = std::fs::remove_file(dir.join("setup.exe"));
         let _ = std::fs::remove_file(dir.join("opensetup.exe"));
         let _ = std::fs::remove_dir(&dir);
+    }
+
+    #[test]
+    fn invalid_existing_wrapper_set_is_repairable() {
+        let dir = temp_test_dir("dgvoodoo-repair");
+        std::fs::write(dir.join("D3DImm.dll"), b"wrapper").unwrap();
+        std::fs::write(dir.join("DDraw.dll"), b"wrapper").unwrap();
+        std::fs::write(dir.join("dgVoodoo.conf"), b"invalid").unwrap();
+
+        let status = detect_dgvoodoo(&dir, true);
+        assert!(!status.configured);
+        assert!(status.needs_install);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn missing_control_panel_is_offered_as_a_repair() {
+        let dir = temp_test_dir("dgvoodoo-cpl-repair");
+        std::fs::write(dir.join("D3DImm.dll"), b"wrapper").unwrap();
+        std::fs::write(dir.join("DDraw.dll"), b"wrapper").unwrap();
+        std::fs::write(
+            dir.join("dgVoodoo.conf"),
+            b"[General]\nVersion = 2\nOutputAPI = d3d11_fl11",
+        )
+        .unwrap();
+
+        let status = detect_dgvoodoo(&dir, true);
+        assert!(status.configured);
+        assert!(status.needs_install);
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }
