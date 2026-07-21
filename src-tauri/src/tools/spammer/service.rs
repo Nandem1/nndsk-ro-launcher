@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use tauri::AppHandle;
 
 use crate::models::spammer::SpammerStatusEvent;
-use crate::tools::input::{InputGateway, InputSource};
+use crate::tools::input::InputGateway;
 use crate::tools::session::SessionController;
 use crate::utils::emit_tool_log_opt;
 
@@ -52,9 +52,10 @@ impl SpammerHandle {
         config.enabled = true;
         config.validate_for_start().map_err(|e| e.to_string())?;
         let status_arc = Arc::clone(&self.status);
-        let effective_delay_ms = config.delay_ms.max(10);
+        let timing = super::timing::SpammerTimingPlan::new(config.delay_ms);
+        let effective_delay_ms = timing.post_delay_ms;
         let writer = input
-            .writer(InputSource::Spammer, effective_delay_ms)
+            .spammer_writer(timing.cycle, timing.deadline_budget_ms)
             .map_err(|error| error.to_string())?;
 
         emit_tool_log_opt(
@@ -65,10 +66,15 @@ impl SpammerHandle {
                 effective_delay_ms,
             ),
         );
+        emit_tool_log_opt(
+            Some(&app),
+            format!("[Spammer][diag] timing {}", timing.log_line()),
+        );
 
         self.session
             .replace(move |stop_rx| async move {
-                super::loop_runner::run(app, writer, config, stop_rx, status_arc, input).await;
+                super::loop_runner::run(app, writer, config, timing, stop_rx, status_arc, input)
+                    .await;
             })
             .await?;
         Ok(())

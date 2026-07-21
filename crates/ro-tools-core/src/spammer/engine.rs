@@ -90,7 +90,7 @@ mod tests {
             input,
             SpammerConfig {
                 enabled: true,
-                delay_ms: 10,
+                delay_ms: 16,
                 keys: vec!["F2".into()],
                 gear_switch: Default::default(),
             },

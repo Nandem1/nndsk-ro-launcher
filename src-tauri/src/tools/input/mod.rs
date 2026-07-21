@@ -8,6 +8,7 @@ use tauri::{AppHandle, Emitter};
 
 pub use gateway::{GatewayWriter, InputGateway};
 pub use uinput_worker::InputSource;
+pub(crate) use uinput_worker::SpamCycleTiming;
 
 pub(crate) fn emit_status_if_changed<T>(
     app: &AppHandle,

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-const MINIMUM_DELAY_MS = 10
+const MINIMUM_DELAY_MS = 16
 const MAXIMUM_DELAY_MS = 50
 
 interface SpammerDelayControlProps {

@@ -2,7 +2,9 @@ use std::time::Duration;
 
 use ro_tools_core::{HeldKeyWriter, KeyPressWriter, SpamCycleWriter, ToolsError};
 
-use super::uinput_worker::{InputSource, MetricsSnapshot, UinputInput, UinputWriter};
+use super::uinput_worker::{
+    InputSource, MetricsSnapshot, SpamCycleTiming, UinputInput, UinputWriter,
+};
 
 /// Shared gateway to the single persistent, prioritized uinput worker.
 #[derive(Clone)]
@@ -24,6 +26,18 @@ impl InputGateway {
     ) -> Result<GatewayWriter, ToolsError> {
         self.uinput
             .writer(source, Duration::from_millis(effective_delay_ms.max(10)))
+    }
+
+    pub(crate) fn spammer_writer(
+        &self,
+        timing: SpamCycleTiming,
+        deadline_budget_ms: u64,
+    ) -> Result<GatewayWriter, ToolsError> {
+        self.uinput.writer_with_spam_timing(
+            InputSource::Spammer,
+            Duration::from_millis(deadline_budget_ms.max(10)),
+            timing,
+        )
     }
 
     pub async fn prepare(&self) -> Result<String, ToolsError> {

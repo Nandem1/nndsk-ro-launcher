@@ -14,12 +14,61 @@ const KEY_PRESS_HOLD: Duration = Duration::from_millis(1);
 // Give Wine/RO a visible key-up window before selecting the skill again.
 // The previous click remains protected because this gap starts only when the
 // next cycle begins, after the configured post-cycle delay has elapsed.
-const KEY_REARM_SETTLE: Duration = Duration::from_millis(10);
+const KEY_REARM_SETTLE: Duration = Duration::from_millis(17);
 // Two milliseconds was deterministic at the evdev layer, but it was shorter
 // than a game frame. Let Wine/RO consume the skill edge before mouse-down.
 const KEY_TO_CLICK_SETTLE: Duration = Duration::from_millis(20);
-const CLICK_HOLD: Duration = Duration::from_millis(1);
+const CLICK_HOLD: Duration = Duration::from_millis(17);
 const ACK_TIMEOUT: Duration = Duration::from_millis(250);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SpamCycleTiming {
+    key_rearm_settle: Duration,
+    key_to_click_settle: Duration,
+    click_hold: Duration,
+}
+
+impl SpamCycleTiming {
+    pub(crate) const fn new(
+        key_rearm_settle: Duration,
+        key_to_click_settle: Duration,
+        click_hold: Duration,
+    ) -> Self {
+        Self {
+            key_rearm_settle,
+            key_to_click_settle,
+            click_hold,
+        }
+    }
+
+    pub(crate) const fn stable() -> Self {
+        Self::new(KEY_REARM_SETTLE, KEY_TO_CLICK_SETTLE, CLICK_HOLD)
+    }
+
+    pub(crate) fn key_rearm_settle(self) -> Duration {
+        self.key_rearm_settle
+    }
+
+    pub(crate) fn key_to_click_settle(self) -> Duration {
+        self.key_to_click_settle
+    }
+
+    pub(crate) fn click_hold(self) -> Duration {
+        self.click_hold
+    }
+
+    pub(crate) fn repeated_work_ms(self) -> u64 {
+        (self.key_rearm_settle + self.key_to_click_settle + self.click_hold)
+            .as_millis()
+            .min(u64::MAX as u128) as u64
+    }
+}
+
+impl Default for SpamCycleTiming {
+    fn default() -> Self {
+        Self::stable()
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum InputSource {
@@ -54,12 +103,16 @@ pub struct MetricsSnapshot {
     pub period_p50_us: u64,
     pub period_p95_us: u64,
     pub period_p99_us: u64,
+    pub period_max_us: u64,
     pub queue_p50_us: u64,
     pub queue_p95_us: u64,
     pub queue_p99_us: u64,
+    pub queue_max_us: u64,
     pub cycle_p50_us: u64,
     pub cycle_p95_us: u64,
     pub cycle_p99_us: u64,
+    pub cycle_max_us: u64,
+    pub overrun_queue_max_us: u64,
     pub cancelled: u64,
     pub overruns: u64,
     pub dropped: u64,
@@ -70,19 +123,23 @@ impl MetricsSnapshot {
     pub fn log_line(&self, source: InputSource, final_window: bool) -> String {
         let kind = if final_window { "final" } else { "10s" };
         format!(
-            "[input-metrics] backend=uinput source={} window={} samples={} period_us[p50/p95/p99]={}/{}/{} queue_us[p50/p95/p99]={}/{}/{} cycle_us[p50/p95/p99]={}/{}/{} cancelled={} overruns={} dropped={} uinput_errors={}",
+            "[input-metrics] backend=uinput source={} window={} samples={} period_us[p50/p95/p99/max]={}/{}/{}/{} queue_us[p50/p95/p99/max]={}/{}/{}/{} cycle_us[p50/p95/p99/max]={}/{}/{}/{} overrun_queue_max_us={} cancelled={} overruns={} dropped={} uinput_errors={}",
             source.as_str(),
             kind,
             self.samples,
             self.period_p50_us,
             self.period_p95_us,
             self.period_p99_us,
+            self.period_max_us,
             self.queue_p50_us,
             self.queue_p95_us,
             self.queue_p99_us,
+            self.queue_max_us,
             self.cycle_p50_us,
             self.cycle_p95_us,
             self.cycle_p99_us,
+            self.cycle_max_us,
+            self.overrun_queue_max_us,
             self.cancelled,
             self.overruns,
             self.dropped,
@@ -96,6 +153,7 @@ struct SourceMetrics {
     periods_us: Vec<u64>,
     queue_us: Vec<u64>,
     cycle_us: Vec<u64>,
+    overrun_queue_us: Vec<u64>,
     last_start: Option<Instant>,
     cancelled: u64,
     overruns: u64,
@@ -113,18 +171,26 @@ impl SourceMetrics {
         self.cycle_us.push(duration_us(cycle));
     }
 
+    fn reset_period_baseline(&mut self) {
+        self.last_start = None;
+    }
+
     fn snapshot_and_reset(&mut self) -> MetricsSnapshot {
         let snapshot = MetricsSnapshot {
             samples: self.cycle_us.len(),
             period_p50_us: percentile(&self.periods_us, 50),
             period_p95_us: percentile(&self.periods_us, 95),
             period_p99_us: percentile(&self.periods_us, 99),
+            period_max_us: maximum(&self.periods_us),
             queue_p50_us: percentile(&self.queue_us, 50),
             queue_p95_us: percentile(&self.queue_us, 95),
             queue_p99_us: percentile(&self.queue_us, 99),
+            queue_max_us: maximum(&self.queue_us),
             cycle_p50_us: percentile(&self.cycle_us, 50),
             cycle_p95_us: percentile(&self.cycle_us, 95),
             cycle_p99_us: percentile(&self.cycle_us, 99),
+            cycle_max_us: maximum(&self.cycle_us),
+            overrun_queue_max_us: maximum(&self.overrun_queue_us),
             cancelled: self.cancelled,
             overruns: self.overruns,
             dropped: self.dropped,
@@ -133,6 +199,7 @@ impl SourceMetrics {
         self.periods_us.clear();
         self.queue_us.clear();
         self.cycle_us.clear();
+        self.overrun_queue_us.clear();
         self.cancelled = 0;
         self.overruns = 0;
         self.dropped = 0;
@@ -215,6 +282,15 @@ impl UinputInput {
         source: InputSource,
         deadline_budget: Duration,
     ) -> Result<UinputWriter, ToolsError> {
+        self.writer_with_spam_timing(source, deadline_budget, SpamCycleTiming::stable())
+    }
+
+    pub(crate) fn writer_with_spam_timing(
+        &self,
+        source: InputSource,
+        deadline_budget: Duration,
+        spam_timing: SpamCycleTiming,
+    ) -> Result<UinputWriter, ToolsError> {
         let guard = self
             .inner
             .lock()
@@ -232,6 +308,7 @@ impl UinputInput {
             metrics: Arc::clone(&self.metrics),
             next_sequence: Arc::clone(&self.next_sequence),
             spam_generation: Arc::clone(&self.spam_generation),
+            spam_timing,
         })
     }
 
@@ -273,6 +350,7 @@ pub struct UinputWriter {
     metrics: Metrics,
     next_sequence: Arc<AtomicU64>,
     spam_generation: Arc<AtomicU64>,
+    spam_timing: SpamCycleTiming,
 }
 
 impl UinputWriter {
@@ -282,14 +360,29 @@ impl UinputWriter {
     }
 
     pub fn spam_cycle(&self, key: &str, deadline: Option<Instant>) -> Result<bool, ToolsError> {
-        let cancellation = SpamCancellation {
-            observed_generation: self.spam_generation.load(Ordering::Acquire),
-            current_generation: Arc::clone(&self.spam_generation),
-        };
+        let ticket = self.spam_cycle_ticket(deadline);
+        self.spam_cycle_with_ticket(key, ticket)
+    }
+
+    pub(crate) fn spam_cycle_ticket(&self, deadline: Option<Instant>) -> SpamCycleTicket {
+        SpamCycleTicket {
+            deadline,
+            cancellation: SpamCancellation {
+                observed_generation: self.spam_generation.load(Ordering::Acquire),
+                current_generation: Arc::clone(&self.spam_generation),
+            },
+        }
+    }
+
+    pub(crate) fn spam_cycle_with_ticket(
+        &self,
+        key: &str,
+        ticket: SpamCycleTicket,
+    ) -> Result<bool, ToolsError> {
         self.submit(
             CommandKind::SpamCycle(key.to_string()),
-            deadline,
-            Some(cancellation),
+            ticket.deadline,
+            Some(ticket.cancellation),
         )
     }
 
@@ -327,6 +420,7 @@ impl UinputWriter {
             sequence: self.next_sequence.fetch_add(1, Ordering::Relaxed),
             deadline,
             cancellation,
+            spam_timing: self.spam_timing,
             ack: ack_tx,
         };
         let sender = if self.source.high_priority() || reliable_cleanup {
@@ -408,12 +502,18 @@ struct WorkerCommand {
     sequence: u64,
     deadline: Option<Instant>,
     cancellation: Option<SpamCancellation>,
+    spam_timing: SpamCycleTiming,
     ack: Sender<CommandOutcome>,
 }
 
 struct SpamCancellation {
     observed_generation: u64,
     current_generation: Arc<AtomicU64>,
+}
+
+pub(crate) struct SpamCycleTicket {
+    deadline: Option<Instant>,
+    cancellation: SpamCancellation,
 }
 
 impl SpamCancellation {
@@ -509,7 +609,12 @@ fn execute_command<D: InputDevice>(
     }
     if command.deadline.is_some_and(|deadline| started > deadline) {
         if command.source.records_metrics() {
-            record_metric(metrics, command.source, |metric| metric.overruns += 1);
+            record_metric(metrics, command.source, |metric| {
+                metric.overruns += 1;
+                metric
+                    .overrun_queue_us
+                    .push(duration_us(started.duration_since(command.enqueued)));
+            });
         }
         return CommandOutcome::Overrun;
     }
@@ -517,7 +622,13 @@ fn execute_command<D: InputDevice>(
     let result = match &command.kind {
         CommandKind::PressKey(key) => press_key(device, spam_state, key),
         CommandKind::SpamCycle(key) => {
-            match spam_cycle(device, spam_state, key, command.cancellation.as_ref()) {
+            match spam_cycle(
+                device,
+                spam_state,
+                key,
+                command.spam_timing,
+                command.cancellation.as_ref(),
+            ) {
                 Ok(true) => Ok(()),
                 Ok(false) => {
                     if command.source.records_metrics() {
@@ -536,6 +647,13 @@ fn execute_command<D: InputDevice>(
                     .cancelled_through
                     .map_or(command.sequence, |cutoff| cutoff.max(command.sequence)),
             );
+            if command.source.records_metrics() {
+                record_metric(
+                    metrics,
+                    command.source,
+                    SourceMetrics::reset_period_baseline,
+                );
+            }
             release_spam_inputs(device, spam_state).map(|_| ())
         }
         CommandKind::KeyEvent(key, value) => key_event(device, spam_state, key, *value),
@@ -623,11 +741,12 @@ fn spam_cycle(
     device: &mut impl InputDevice,
     spam_state: &mut SpamState,
     key: &str,
+    timing: SpamCycleTiming,
     cancellation: Option<&SpamCancellation>,
 ) -> Result<bool, ToolsError> {
     if release_spam_inputs(device, spam_state)? {
         // Produce a real up->down edge before every click after the first one.
-        thread::sleep(KEY_REARM_SETTLE);
+        thread::sleep(timing.key_rearm_settle());
     }
 
     if cancellation.is_some_and(SpamCancellation::requested) {
@@ -642,7 +761,7 @@ fn spam_cycle(
 
     // Keyboard and mouse share one evdev FIFO. The settle gives Wine/RO time to
     // select the skill; the key deliberately remains down after mouse-up.
-    thread::sleep(KEY_TO_CLICK_SETTLE);
+    thread::sleep(timing.key_to_click_settle());
     if cancellation.is_some_and(SpamCancellation::requested) {
         release_spam_inputs(device, spam_state)?;
         return Ok(false);
@@ -653,7 +772,7 @@ fn spam_cycle(
         device.release(Some(key), true);
         return Err(error);
     }
-    thread::sleep(CLICK_HOLD);
+    thread::sleep(timing.click_hold());
     if let Err(error) = device.mouse_left_event(0) {
         device.release(Some(key), true);
         return Err(error);
@@ -714,6 +833,10 @@ fn percentile(values: &[u64], percentile: usize) -> u64 {
     sorted[index]
 }
 
+fn maximum(values: &[u64]) -> u64 {
+    values.iter().copied().max().unwrap_or(0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -765,6 +888,7 @@ mod tests {
             sequence: NEXT_SEQUENCE.fetch_add(1, Ordering::Relaxed),
             deadline,
             cancellation: None,
+            spam_timing: SpamCycleTiming::stable(),
             ack,
         }
     }
@@ -867,6 +991,50 @@ mod tests {
     }
 
     #[test]
+    fn release_after_dispatch_cancels_cycle_before_any_events() {
+        let cancellation_generation = Arc::new(AtomicU64::new(1));
+        let pending = cancellable_command(
+            CommandKind::SpamCycle("F2".into()),
+            Arc::clone(&cancellation_generation),
+        );
+        cancellation_generation.fetch_add(1, Ordering::AcqRel);
+        let mut device = MockDevice::default();
+        let mut spam_state = SpamState::default();
+        let metrics = Arc::new(Mutex::new(HashMap::new()));
+
+        let outcome = execute_command(&mut device, &mut spam_state, &pending, &metrics);
+
+        assert!(matches!(outcome, CommandOutcome::Overrun));
+        assert!(device.events.is_empty());
+        assert!(spam_state.held_key.is_none());
+    }
+
+    #[test]
+    fn spam_ticket_captures_deadline_and_generation_at_dispatch() {
+        let (high_tx, _high_rx) = bounded(1);
+        let (normal_tx, _normal_rx) = bounded(1);
+        let generation = Arc::new(AtomicU64::new(7));
+        let writer = UinputWriter {
+            high_tx,
+            normal_tx,
+            source: InputSource::Spammer,
+            deadline_budget: Duration::from_millis(10),
+            metrics: Arc::new(Mutex::new(HashMap::new())),
+            next_sequence: Arc::new(AtomicU64::new(1)),
+            spam_generation: Arc::clone(&generation),
+            spam_timing: SpamCycleTiming::stable(),
+        };
+        let deadline = Instant::now() + Duration::from_millis(10);
+
+        let ticket = writer.spam_cycle_ticket(Some(deadline));
+        assert_eq!(ticket.deadline, Some(deadline));
+        assert!(!ticket.cancellation.requested());
+
+        generation.fetch_add(1, Ordering::AcqRel);
+        assert!(ticket.cancellation.requested());
+    }
+
+    #[test]
     fn changing_spam_key_releases_old_key_before_new_click() {
         let mut device = MockDevice::default();
         let mut spam_state = SpamState::default();
@@ -919,18 +1087,25 @@ mod tests {
             ..Default::default()
         };
         let metrics = Arc::new(Mutex::new(HashMap::new()));
-        let outcome = execute_command(
-            &mut device,
-            &mut spam_state,
-            &command(
-                CommandKind::SpamCycle("F2".into()),
-                Some(Instant::now() - Duration::from_millis(1)),
-            ),
-            &metrics,
+        let mut expired = command(
+            CommandKind::SpamCycle("F2".into()),
+            Some(Instant::now() - Duration::from_millis(1)),
         );
+        expired.enqueued = Instant::now() - Duration::from_millis(10);
+        let outcome = execute_command(&mut device, &mut spam_state, &expired, &metrics);
         assert!(matches!(outcome, CommandOutcome::Overrun));
         assert!(device.events.is_empty());
         assert_eq!(spam_state.held_key.as_deref(), Some("F2"));
+        let snapshot = metrics
+            .lock()
+            .unwrap()
+            .get_mut(&InputSource::Spammer)
+            .unwrap()
+            .snapshot_and_reset();
+        assert_eq!(snapshot.overruns, 1);
+        assert_eq!(snapshot.cancelled, 0);
+        assert_eq!(snapshot.samples, 0);
+        assert!(snapshot.overrun_queue_max_us >= 10_000);
     }
 
     #[test]
@@ -1004,6 +1179,74 @@ mod tests {
     fn percentile_uses_nearest_rank() {
         assert_eq!(percentile(&[10, 20, 30, 40, 50], 95), 50);
         assert_eq!(percentile(&[], 95), 0);
+    }
+
+    #[test]
+    fn metrics_snapshot_exposes_worst_case_and_resets_window() {
+        let mut metrics = SourceMetrics::default();
+        let started = Instant::now();
+        metrics.record_completed(
+            started,
+            Duration::from_micros(100),
+            Duration::from_micros(1_000),
+        );
+        metrics.record_completed(
+            started + Duration::from_micros(50_000),
+            Duration::from_micros(4_000),
+            Duration::from_micros(8_000),
+        );
+        metrics.overrun_queue_us.push(12_000);
+        metrics.overruns = 1;
+
+        let snapshot = metrics.snapshot_and_reset();
+        assert_eq!(snapshot.samples, 2);
+        assert_eq!(snapshot.period_max_us, 50_000);
+        assert_eq!(snapshot.queue_max_us, 4_000);
+        assert_eq!(snapshot.cycle_max_us, 8_000);
+        assert_eq!(snapshot.overrun_queue_max_us, 12_000);
+        assert_eq!(snapshot.overruns, 1);
+
+        let reset = metrics.snapshot_and_reset();
+        assert_eq!(reset.samples, 0);
+        assert_eq!(reset.period_max_us, 0);
+        assert_eq!(reset.queue_max_us, 0);
+        assert_eq!(reset.cycle_max_us, 0);
+        assert_eq!(reset.overrun_queue_max_us, 0);
+        assert_eq!(reset.overruns, 0);
+    }
+
+    #[test]
+    fn intentional_spam_release_resets_period_baseline() {
+        let mut metrics = SourceMetrics::default();
+        let started = Instant::now();
+        metrics.record_completed(started, Duration::ZERO, Duration::ZERO);
+        metrics.reset_period_baseline();
+        metrics.record_completed(
+            started + Duration::from_secs(30),
+            Duration::ZERO,
+            Duration::ZERO,
+        );
+
+        let snapshot = metrics.snapshot_and_reset();
+        assert_eq!(snapshot.samples, 2);
+        assert_eq!(snapshot.period_max_us, 0);
+    }
+
+    #[test]
+    fn isolated_period_outlier_is_kept_by_maximum() {
+        let mut metrics = SourceMetrics::default();
+        let mut started = Instant::now();
+        metrics.record_completed(started, Duration::ZERO, Duration::ZERO);
+        for _ in 0..100 {
+            started += Duration::from_millis(41);
+            metrics.record_completed(started, Duration::ZERO, Duration::ZERO);
+        }
+        started += Duration::from_millis(250);
+        metrics.record_completed(started, Duration::ZERO, Duration::ZERO);
+
+        let snapshot = metrics.snapshot_and_reset();
+        assert_eq!(snapshot.period_p99_us, 41_000);
+        assert_eq!(snapshot.period_max_us, 250_000);
     }
 
     #[test]

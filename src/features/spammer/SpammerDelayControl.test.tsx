@@ -11,15 +11,16 @@ describe('SpammerDelayControl', () => {
     const onCommit = vi.fn()
     render(
       <SpammerDelayControl
-        configuredDelayMs={10}
+        configuredDelayMs={16}
         disabled={false}
         onCommit={onCommit}
       />,
     )
     const slider = screen.getByRole('slider', { name: 'Delay del spammer' })
+    expect(slider).toHaveAttribute('min', '16')
 
-    fireEvent.change(slider, { target: { value: '11' } })
     fireEvent.change(slider, { target: { value: '17' } })
+    fireEvent.change(slider, { target: { value: '18' } })
     fireEvent.change(slider, { target: { value: '20' } })
 
     expect(onCommit).not.toHaveBeenCalled()
