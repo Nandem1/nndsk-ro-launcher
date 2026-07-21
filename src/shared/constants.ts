@@ -99,7 +99,7 @@ export const DEFAULT_GEAR_SWITCH_CONFIG = {
 
 export const DEFAULT_SPAMMER_CONFIG = {
   enabled: false,
-  delayMs: 10,
+  delayMs: 16,
   keys: ['F1'],
   gearSwitch: DEFAULT_GEAR_SWITCH_CONFIG,
 } as const

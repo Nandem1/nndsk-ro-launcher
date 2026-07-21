@@ -121,7 +121,7 @@
     },
     "spammer": {
       "enabled": false,
-      "delayMs": 10,
+      "delayMs": 16,
       "keys": ["F1"],
       "gearSwitch": { "enabled": false, "switchDelayMs": 50, "rules": [] }
     },
@@ -144,7 +144,7 @@
     ],
     "expectedCanonical": {
       "enabled": false,
-      "delayMs": 10,
+      "delayMs": 16,
       "keys": ["F3", "F4"],
       "gearSwitch": {
         "enabled": true,

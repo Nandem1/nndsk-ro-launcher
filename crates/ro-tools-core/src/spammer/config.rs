@@ -4,7 +4,7 @@ use crate::error::ToolsError;
 use crate::spammer::keys::{is_valid_spammer_key, normalize_spammer_keys};
 
 fn default_spammer_delay_ms() -> u64 {
-    10
+    16
 }
 
 fn default_spammer_keys() -> Vec<String> {
@@ -204,7 +204,7 @@ impl Default for SpammerConfig {
 impl SpammerConfig {
     pub fn clamped(&self) -> Self {
         let mut c = self.normalized();
-        c.delay_ms = c.delay_ms.clamp(10, 100);
+        c.delay_ms = c.delay_ms.clamp(16, 100);
         c
     }
 
@@ -258,6 +258,7 @@ mod tests {
             },
         };
         let c = cfg.clamped();
+        assert_eq!(c.delay_ms, 16);
         assert_eq!(c.gear_switch.switch_delay_ms, 300);
         assert_eq!(c.gear_switch.rules.len(), 1);
         assert_eq!(c.gear_switch.rules[0].trigger, "F3");
