@@ -298,7 +298,7 @@ fn validate_character_name(character_name: &str) -> Result<(), String> {
     if character_name.is_empty() {
         return Err("El nombre del personaje no puede estar vacío".into());
     }
-    if character_name.as_bytes().len() > 39 {
+    if character_name.len() > 39 {
         return Err("El nombre del personaje no puede superar 39 bytes".into());
     }
     if character_name.chars().any(char::is_control) {
