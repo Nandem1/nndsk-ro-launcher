@@ -8,11 +8,9 @@ pub async fn start_autobuff(
     state: State<'_, GameState>,
     server: ServerConfig,
 ) -> Result<(), String> {
+    let _tool_lifecycle = state.tool_lifecycle.lock().await;
     server.validate_executable_available()?;
-    let launcher_pid = state
-        .game
-        .running_pid()?
-        .ok_or_else(|| "No hay proceso Wine del juego (lanza el juego primero)".to_string())?;
+    let launcher_pid = state.game.sole_running_pid_for(&server.id)?;
     start_session(
         app,
         &state.autobuff,
@@ -24,6 +22,7 @@ pub async fn start_autobuff(
 }
 #[tauri::command]
 pub async fn stop_autobuff(state: State<'_, GameState>) -> Result<(), String> {
+    let _tool_lifecycle = state.tool_lifecycle.lock().await;
     state.autobuff.stop().await
 }
 #[tauri::command]

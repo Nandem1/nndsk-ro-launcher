@@ -1,6 +1,7 @@
 pub mod autobuff;
 pub mod autopot;
 pub mod dependency;
+pub mod game_client;
 pub mod launch;
 pub mod runner;
 pub mod server;

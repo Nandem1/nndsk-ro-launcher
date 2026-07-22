@@ -4,7 +4,10 @@ import type {
   SpammerConfig,
   SpammerStatusEvent,
 } from '../../shared/types'
-import { useLauncherStore } from '../launcher/launcher.store'
+import {
+  isSoleRunningClientForServer,
+  useLauncherStore,
+} from '../launcher/launcher.store'
 import { useLogsStore } from '../logs/logs.store'
 import { useSettingsStore } from '../settings/settings.store'
 import { useServersStore } from '../servers/servers.store'
@@ -18,7 +21,6 @@ import { LAUNCHER_EVENTS } from '../../shared/constants'
 import { useServerRuntimeTool } from '../../shared/hooks/useServerRuntimeTool'
 
 export function useSpammer(server: ServerConfig | null) {
-  const launcherStatus = useLauncherStore((s) => s.status)
   const selectedRunner = useSettingsStore((s) => s.selectedRunner)
   const updateServer = useServersStore((s) => s.updateServer)
   const addToolLog = useLogsStore((s) => s.addToolLog)
@@ -29,7 +31,9 @@ export function useSpammer(server: ServerConfig | null) {
   const setBusy = useSpammerStore((s) => s.setBusy)
   const setUserEnabled = useSpammerStore((s) => s.setUserEnabled)
   const reset = useSpammerStore((s) => s.reset)
-  const isRunning = launcherStatus === 'running'
+  const isRunning = useLauncherStore((state) =>
+    isSoleRunningClientForServer(state, server?.id),
+  )
 
   return useServerRuntimeTool<
     SpammerConfig,

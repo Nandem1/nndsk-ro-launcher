@@ -69,6 +69,7 @@ export function AutopotPanel() {
   const { config, status, busy, isRunning, error, setEnabled, updateField } =
     useAutopot(server)
   const launching = useLauncherStore((s) => s.status === 'launching')
+  const multipleClients = useLauncherStore((s) => s.clients.length > 1)
   const hero = useUiModeStore((s) => s.mode === 'ingame')
   const available = isRunning && !!server
   const minimumDelayMs = 10
@@ -125,11 +126,13 @@ export function AutopotPanel() {
     ? 'Selecciona un servidor'
     : launching
       ? 'Iniciando juego...'
-      : !isRunning
-        ? 'Inicia el juego'
-        : status.active
-          ? 'Activo'
-          : 'Inactivo'
+      : multipleClients
+        ? 'No disponible con varios clientes'
+        : !isRunning
+          ? 'Inicia el juego'
+          : status.active
+            ? 'Activo'
+            : 'Inactivo'
 
   const hpCur =
     available && (status.active || config.enabled) ? status.curHp : 0

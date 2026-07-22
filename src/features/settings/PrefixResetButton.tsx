@@ -2,6 +2,7 @@ import { api } from '../../shared/api'
 import { Button } from '../../shared/ui/Button'
 import { runtimeStatusKey } from '../../shared/resolveRunner'
 import { useLauncherTask } from '../launcher/useLauncherTask'
+import { useLauncherStore } from '../launcher/launcher.store'
 import { useSelectedServer } from '../servers/useSelectedServer'
 import { useServersStore } from '../servers/servers.store'
 import { useSettingsStore } from './settings.store'
@@ -15,12 +16,19 @@ export function PrefixResetButton() {
   const advancedStatus = useCurrentAdvancedStatus()
   const loadDepsStatus = useSettingsStore((s) => s.loadDepsStatus)
   const server = useSelectedServer()
+  const activeClients = useLauncherStore((s) => s.clients.length)
   const canReset = advancedStatus?.canReset ?? false
   const canSetup = advancedStatus?.canSetup ?? false
   const prefixPath = advancedStatus?.prefixPath ?? 'el entorno seleccionado'
 
   const handleReset = async () => {
-    if (!server || savingRunner || !advancedStatus || (!canReset && !canSetup))
+    if (
+      !server ||
+      savingRunner ||
+      activeClients > 0 ||
+      !advancedStatus ||
+      (!canReset && !canSetup)
+    )
       return
     const expectedStatusKey = runtimeStatusKey(server, selectedRunner)
     const confirmed = window.confirm(
@@ -57,7 +65,6 @@ export function PrefixResetButton() {
     )
 
     await runTask(async () => {
-      await api.stopGame()
       if (canReset) {
         await api.resetPrefix(serverSnapshot, runnerSnapshot || null)
       } else {
@@ -96,19 +103,22 @@ export function PrefixResetButton() {
       onClick={handleReset}
       disabled={
         isBusy ||
+        activeClients > 0 ||
         savingRunner ||
         !server ||
         !advancedStatus ||
         (!canReset && !canSetup)
       }
     >
-      {!advancedStatus
-        ? 'Comprobando entorno...'
-        : canReset
-          ? 'Rearmar entorno'
-          : canSetup
-            ? 'Reparar entorno'
-            : 'Entorno no reparable'}
+      {activeClients > 0
+        ? 'Cierra los clientes para rearmar'
+        : !advancedStatus
+          ? 'Comprobando entorno...'
+          : canReset
+            ? 'Rearmar entorno'
+            : canSetup
+              ? 'Reparar entorno'
+              : 'Entorno no reparable'}
     </Button>
   )
 }

@@ -7,6 +7,7 @@ import { ServerList } from '../features/servers/ServerList'
 import { ServerToolsPanel } from '../features/servers/ServerToolsPanel'
 import { LaunchButton } from '../features/launcher/LaunchButton'
 import { IngameRail } from '../features/launcher/IngameRail'
+import { ActiveClients } from '../features/launcher/ActiveClients'
 import { AutopotPanel } from '../features/autopot/AutopotPanel'
 import { SpammerPanel } from '../features/spammer/SpammerPanel'
 import { AutobuffPanel } from '../features/autobuff/AutobuffPanel'
@@ -84,6 +85,7 @@ export function App() {
               )}
               <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-2.5 pr-0.5">
                 <ServerList />
+                <ActiveClients />
                 <AdvancedSettings />
               </div>
               <div className="shrink-0 pb-2.5">

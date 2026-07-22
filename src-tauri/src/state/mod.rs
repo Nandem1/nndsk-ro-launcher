@@ -1,6 +1,7 @@
 mod game_process;
 
 use std::{path::PathBuf, sync::Mutex};
+use tokio::sync::Mutex as AsyncMutex;
 
 pub use game_process::{GameProcessHandle, LaunchReservation};
 
@@ -23,6 +24,7 @@ use crate::{
 /// Estado compartido de la app entre comandos Tauri (juego, tools, input).
 pub struct GameState {
     pub game: GameProcessHandle,
+    pub tool_lifecycle: AsyncMutex<()>,
     pub autopot: AutopotHandle,
     pub autobuff: AutobuffHandle,
     pub spammer: SpammerHandle,

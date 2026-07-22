@@ -10,6 +10,6 @@ describe('modeForStatus', () => {
 
   it('pasa a ingame desde launching', () => {
     expect(modeForStatus('launching')).toBe('ingame')
-    expect(modeForStatus('running')).toBe('ingame')
+    expect(modeForStatus('idle', 2)).toBe('ingame')
   })
 })

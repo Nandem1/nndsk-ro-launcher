@@ -9,6 +9,7 @@ Launcher dedicado para **Ragnarok Online** en Linux. Gestiona el WINEPREFIX, dep
 ## Características
 
 - **Multi-servidor aislado** — cada cliente recibe un entorno independiente
+- **Multi-client** — abre varias instancias sucesivas y detén cada cliente por separado
 - **Selector de .exe** — diálogo nativo para elegir el cliente (sin escribir rutas a mano)
 - **Setup por perfil** — DXVK, Gecko, vcredist, d3dx9, fuentes y WebView2 cuando el ejecutable de la estrategia activa o el override manual lo requiere
 - **Contrato de lanzamiento** — inicio directo o mediante patcher, argv sin shell y placeholders efímeros para credenciales
@@ -130,6 +131,7 @@ Para actualizar: borra el `.AppImage` anterior y usa el nuevo. Tus datos en `~/.
    - Activa **Forzar WebView2** si el diagnóstico PE es inconcluso y el ejecutable activo usa una interfaz web; en modo directo, un patcher opcional no bloquea el juego
 4. Revisa **Herramientas** — instala dgVoodoo sólo si el cliente lo necesita y el servidor lo permite
 5. Pulsa **JUGAR**
+6. Usa **Abrir otro cliente** para iniciar instancias adicionales y adminístralas desde la lista de clientes activos
 
 En el primer lanzamiento se descarga el runtime y se configura el WINEPREFIX automáticamente
 (puede tardar unos minutos). Un entorno administrado creado con otro runner se respalda, reconstruye
@@ -200,6 +202,9 @@ incluida; el manifiesto local nunca se usa como fuente de confianza.
 
 Todas las herramientas comparten un único worker uinput persistente.
 La configuración de las tres herramientas se guarda por servidor en `servers.json`.
+Por seguridad, AutoPot, Spammer y AutoBuff sólo se habilitan cuando hay exactamente un cliente
+abierto. Al iniciar una segunda instancia, el launcher detiene las herramientas activas; vuelven a
+estar disponibles cuando queda un solo cliente y deben iniciarse manualmente.
 
 ### Migración y recuperación de configuración
 

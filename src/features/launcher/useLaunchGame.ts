@@ -8,7 +8,18 @@ import type {
 } from '../../shared/types'
 import { useSettingsStore } from '../settings/settings.store'
 import { useServersStore } from '../servers/servers.store'
+import { useLauncherStore } from './launcher.store'
 import { useLauncherTask } from './useLauncherTask'
+
+let fallbackClientSequence = 0
+
+function createClientId(): string {
+  if (typeof globalThis.crypto?.randomUUID === 'function') {
+    return globalThis.crypto.randomUUID()
+  }
+  fallbackClientSequence += 1
+  return `client-${Date.now()}-${fallbackClientSequence}`
+}
 
 export function useLaunchGame(server: ServerConfig | null) {
   const preparePromiseRef = useRef<Promise<boolean> | null>(null)
@@ -25,6 +36,9 @@ export function useLaunchGame(server: ServerConfig | null) {
     runTask,
     isBusy,
   } = useLauncherTask()
+  const upsertClient = useLauncherStore((s) => s.upsertClient)
+  const removeClient = useLauncherStore((s) => s.removeClient)
+  const setClients = useLauncherStore((s) => s.setClients)
 
   const launchSnapshotKey = server
     ? launchConfigKey(server, selectedRunner)
@@ -143,20 +157,39 @@ export function useLaunchGame(server: ServerConfig | null) {
         return
       }
 
-      await runTask(async () => {
+      const clientId = createClientId()
+      upsertClient({
+        clientId,
+        serverId: server.id,
+        serverName: server.name,
+        status: 'launching',
+        pid: null,
+      })
+      const result = await runTask(async () => {
         setStatus('launching')
         addGameLog(`Lanzando ${server.name}...`)
 
-        await api.launchGame(server, launchValues, selectedRunner || null)
-        setStatus('running')
+        const client = await api.launchGame(
+          clientId,
+          server,
+          launchValues,
+          selectedRunner || null,
+        )
+        upsertClient(client)
+        setStatus('idle')
       })
+      if (!result.ok) {
+        removeClient(clientId)
+      } else {
+        try {
+          setClients(await api.listGameClients())
+        } catch {
+          addGameLog('No se pudo sincronizar la lista de clientes activos')
+        }
+      }
     } finally {
       launchInFlightRef.current = false
     }
-  }
-
-  const handleStop = () => {
-    void api.stopGame()
   }
 
   return {
@@ -166,6 +199,5 @@ export function useLaunchGame(server: ServerConfig | null) {
     isBusy,
     handleLaunch,
     handlePrepareEnvironment,
-    handleStop,
   }
 }

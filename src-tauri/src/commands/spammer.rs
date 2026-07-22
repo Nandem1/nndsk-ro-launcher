@@ -11,11 +11,9 @@ pub async fn start_spammer(
     state: State<'_, GameState>,
     server: ServerConfig,
 ) -> Result<(), String> {
+    let _tool_lifecycle = state.tool_lifecycle.lock().await;
     server.validate()?;
-    state
-        .game
-        .running_pid()?
-        .ok_or_else(|| "No hay juego en ejecución (lanza el juego primero)".to_string())?;
+    state.game.sole_running_pid_for(&server.id)?;
 
     start_session(
         app,
@@ -28,6 +26,7 @@ pub async fn start_spammer(
 
 #[tauri::command]
 pub async fn stop_spammer(state: State<'_, GameState>) -> Result<(), String> {
+    let _tool_lifecycle = state.tool_lifecycle.lock().await;
     state.spammer.stop().await
 }
 
@@ -38,10 +37,8 @@ pub async fn update_spammer_config(
     state: State<'_, GameState>,
     config: ro_tools_core::SpammerConfig,
 ) -> Result<(), String> {
-    state
-        .game
-        .running_pid()?
-        .ok_or_else(|| "No hay juego en ejecución (lanza el juego primero)".to_string())?;
+    let _tool_lifecycle = state.tool_lifecycle.lock().await;
+    state.game.sole_running_pid()?;
 
     start_session(app, &state.spammer, state.input.clone(), config).await
 }

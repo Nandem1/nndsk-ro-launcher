@@ -21,8 +21,13 @@ pub struct ProgressEvent {
 }
 
 #[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ExitEvent {
+    pub client_id: String,
+    pub server_id: String,
+    pub server_name: String,
     pub code: i32,
+    pub requested: bool,
 }
 
 pub fn emit_log(app: &AppHandle, line: impl Into<String>) -> Result<(), String> {

@@ -14,7 +14,7 @@ use commands::{
         stop_autopot, update_autopot_config,
     },
     deps::check_dependencies,
-    launcher::{launch_game, stop_game},
+    launcher::{launch_game, list_game_clients, stop_all_games, stop_game},
     prefix::{reset_prefix, setup_prefix},
     runners::list_runners,
     server_tools::{install_dgvoodoo, launch_server_tool, scan_server_tools, uninstall_dgvoodoo},
@@ -44,6 +44,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(GameState {
             game: state::GameProcessHandle::new(),
+            tool_lifecycle: tokio::sync::Mutex::new(()),
             autopot: AutopotHandle::new(),
             autobuff: AutobuffHandle::new(),
             spammer: SpammerHandle::new(),
@@ -56,7 +57,9 @@ pub fn run() {
             show_main_window,
             check_dependencies,
             launch_game,
+            list_game_clients,
             stop_game,
+            stop_all_games,
             list_runners,
             list_servers,
             load_settings,

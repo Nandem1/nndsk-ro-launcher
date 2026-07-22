@@ -8,7 +8,21 @@ export interface LogEventPayload {
 }
 
 export interface ExitEventPayload {
+  clientId: string
+  serverId: string
+  serverName: string
   code: number
+  requested: boolean
+}
+
+export type GameClientStatus = 'launching' | 'running' | 'stopping'
+
+export interface GameClientSnapshot {
+  clientId: string
+  serverId: string
+  serverName: string
+  status: GameClientStatus
+  pid: number | null
 }
 
 export interface AppSettings {

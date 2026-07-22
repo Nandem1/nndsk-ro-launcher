@@ -8,6 +8,7 @@ use tauri::{AppHandle, Emitter};
 use tokio::process::Child;
 use tokio::time::{sleep, Instant};
 
+use crate::models::game_client::GameClientSnapshot;
 use crate::models::launch::{LaunchStrategy, LaunchValues};
 use crate::models::server::ServerConfig;
 use crate::state::{GameProcessHandle, GameState, LaunchReservation};
@@ -47,7 +48,7 @@ pub async fn launch_game(
     server: ServerConfig,
     runner: Option<String>,
     launch_values: LaunchValues,
-) -> Result<(), String> {
+) -> Result<GameClientSnapshot, String> {
     let LaunchTools {
         autopot,
         autobuff,
@@ -56,7 +57,8 @@ pub async fn launch_game(
     } = tools;
     ensure_managed_runtime(&app).await?;
     let ctx = resolve_server_wine_context_with_runner(Some(&server), runner).await?;
-    let prefix_operation = OperationGuard::acquire("prefix", std::path::Path::new(&ctx.prefix))?;
+    let prefix_operation =
+        OperationGuard::acquire_shared("prefix", std::path::Path::new(&ctx.prefix))?;
     validate_runtime_prefix(&ctx)?;
     let missing_components =
         server_tools::missing_runtime_components(&server, std::path::Path::new(&ctx.prefix));
@@ -99,7 +101,8 @@ pub async fn launch_game(
     audio::ensure_audio_driver(Some(&app), &ctx.prefix, &ctx.resolved).await?;
 
     let game_dir = required_game_dir(&server.executable_path)?;
-    let dgvoodoo_operation = OperationGuard::acquire("dgvoodoo", std::path::Path::new(&game_dir))?;
+    let dgvoodoo_operation =
+        OperationGuard::acquire_shared("dgvoodoo", std::path::Path::new(&game_dir))?;
     let use_dgvoodoo = server_tools::scan_status(&app, &server)
         .map(|status| status.dgvoodoo.configured)
         .unwrap_or(false);
@@ -168,12 +171,15 @@ pub async fn launch_game(
         }
     };
 
-    if let Err(error) = game.mark_running(reservation, identity) {
-        let _ = child.kill().await;
-        let _ = child.wait().await;
-        let _ = output_task.await;
-        return Err(error);
-    }
+    let snapshot = match game.mark_running(reservation, identity) {
+        Ok(snapshot) => snapshot,
+        Err(error) => {
+            let _ = child.kill().await;
+            let _ = child.wait().await;
+            let _ = output_task.await;
+            return Err(error);
+        }
+    };
     emit_tool_log_opt(
         Some(&app),
         format!(
@@ -237,23 +243,34 @@ pub async fn launch_game(
             .unwrap_or(-1);
         let _ = output_task.await;
 
-        let stops = tokio::join!(autopot.stop(), autobuff.stop(), spammer.stop());
-        for error in [stops.0.err(), stops.1.err(), stops.2.err()]
-            .into_iter()
-            .flatten()
-        {
-            emit_tool_log_opt(Some(&app_for_exit), format!("[Launch] Cleanup: {error}"));
-        }
-        emit_tool_log_opt(
-            Some(&app_for_exit),
-            "[Launch] Cliente terminado; herramientas de combate detenidas",
-        );
-        if game.finish(reservation) {
-            let _ = app_for_exit.emit(EVENT_GAME_EXIT, ExitEvent { code });
+        if let Some(finished) = game.finish(reservation) {
+            if finished.remaining_clients == 0 {
+                let stops = tokio::join!(autopot.stop(), autobuff.stop(), spammer.stop());
+                for error in [stops.0.err(), stops.1.err(), stops.2.err()]
+                    .into_iter()
+                    .flatten()
+                {
+                    emit_tool_log_opt(Some(&app_for_exit), format!("[Launch] Cleanup: {error}"));
+                }
+                emit_tool_log_opt(
+                    Some(&app_for_exit),
+                    "[Launch] Último cliente terminado; herramientas de combate detenidas",
+                );
+            }
+            let _ = app_for_exit.emit(
+                EVENT_GAME_EXIT,
+                ExitEvent {
+                    client_id: finished.client_id,
+                    server_id: finished.server_id,
+                    server_name: finished.server_name,
+                    code,
+                    requested: finished.stop_requested,
+                },
+            );
         }
     });
 
-    Ok(())
+    Ok(snapshot)
 }
 
 struct ProcessSearch<'a> {
@@ -332,7 +349,9 @@ async fn wait_for_process_handoff(
             let Some(identity) = capture_process_identity(candidate.pid) else {
                 continue;
             };
-            if !seen.contains(&identity) {
+            if !seen.contains(&identity)
+                && game.candidate_available_for_handoff(reservation, identity)
+            {
                 return Some(identity);
             }
         }
@@ -343,24 +362,55 @@ async fn wait_for_process_handoff(
     }
 }
 
-pub async fn stop_game(state: &GameState) -> Result<(), String> {
+pub async fn stop_game(state: &GameState, client_id: &str) -> Result<(), String> {
+    let request = state.game.request_stop(client_id)?;
+    let tool_errors = if request.was_only_client {
+        stop_combat_tools(state).await
+    } else {
+        Vec::new()
+    };
+    let process_errors = terminate_processes(request.identities).await;
+    combine_stop_errors(process_errors, tool_errors)
+}
+
+pub async fn stop_all_games(state: &GameState) -> Result<(), String> {
+    let tool_errors = stop_combat_tools(state).await;
+    let identities = state.game.request_stop_all()?;
+    let process_errors = terminate_processes(identities).await;
+    combine_stop_errors(process_errors, tool_errors)
+}
+
+pub async fn stop_tools_for_additional_client(state: &GameState) -> Result<(), String> {
+    combine_stop_errors(Vec::new(), stop_combat_tools(state).await)
+}
+
+async fn stop_combat_tools(state: &GameState) -> Vec<String> {
     let stops = tokio::join!(
         state.autopot.stop(),
         state.autobuff.stop(),
         state.spammer.stop()
     );
-    let tool_errors: Vec<_> = [stops.0.err(), stops.1.err(), stops.2.err()]
+    [stops.0.err(), stops.1.err(), stops.2.err()]
         .into_iter()
         .flatten()
-        .collect();
+        .collect()
+}
+
+async fn terminate_processes(identities: Vec<ProcessIdentity>) -> Vec<String> {
     let mut process_errors = Vec::new();
-    for identity in state.game.request_stop()? {
+    for identity in identities {
         if verify_process_identity(&identity) {
-            let status = tokio::process::Command::new("kill")
+            let status = match tokio::process::Command::new("kill")
                 .args(["-TERM", &identity.pid.to_string()])
                 .status()
                 .await
-                .map_err(|error| format!("No se pudo enviar TERM al proceso: {error}"))?;
+            {
+                Ok(status) => status,
+                Err(error) => {
+                    process_errors.push(format!("No se pudo enviar TERM al proceso: {error}"));
+                    continue;
+                }
+            };
             if !status.success() {
                 process_errors.push(format!(
                     "No se pudo detener el proceso (kill terminó con {status})"
@@ -368,6 +418,13 @@ pub async fn stop_game(state: &GameState) -> Result<(), String> {
             }
         }
     }
+    process_errors
+}
+
+fn combine_stop_errors(
+    process_errors: Vec<String>,
+    tool_errors: Vec<String>,
+) -> Result<(), String> {
     if !process_errors.is_empty() {
         return Err(process_errors.join("; "));
     }

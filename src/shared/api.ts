@@ -8,6 +8,7 @@ import type {
   ClientProfile,
   DependencyStatus,
   DetectedNameAddress,
+  GameClientSnapshot,
   InstallDgVoodooResult,
   LaunchValues,
   MemoryScanProgress,
@@ -43,15 +44,25 @@ export const api = {
     invoke<void>('reset_prefix', { server, runner }),
 
   launchGame: (
+    clientId: string,
     server: ServerConfig,
     launchValues: LaunchValues = {},
     runner: string | null = null,
   ) => {
     assertValid(validateServerConfig(server))
-    return invoke<void>('launch_game', { server, runner, launchValues })
+    return invoke<GameClientSnapshot>('launch_game', {
+      clientId,
+      server,
+      runner,
+      launchValues,
+    })
   },
 
-  stopGame: () => invoke<void>('stop_game'),
+  listGameClients: () => invoke<GameClientSnapshot[]>('list_game_clients'),
+
+  stopGame: (clientId: string) => invoke<void>('stop_game', { clientId }),
+
+  stopAllGames: () => invoke<void>('stop_all_games'),
 
   listServers: () => invoke<ServerConfig[]>('list_servers'),
 

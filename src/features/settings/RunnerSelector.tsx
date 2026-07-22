@@ -7,7 +7,8 @@ export function RunnerSelector() {
   const { runners, selectedRunner, savingRunner, error, setRunner } =
     useSettingsStore()
   const launcherStatus = useLauncherStore((state) => state.status)
-  const launcherBusy = isLauncherBusy(launcherStatus)
+  const activeClients = useLauncherStore((state) => state.clients.length)
+  const launcherBusy = isLauncherBusy(launcherStatus) || activeClients > 0
 
   const detected = runners.some((runner) => runner.path === selectedRunner)
   const options = runners.map((runner) => ({

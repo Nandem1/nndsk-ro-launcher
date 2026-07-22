@@ -2,27 +2,37 @@
 
 import { act, renderHook } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { DependencyStatus, ServerConfig } from '../../shared/types'
+import type {
+  DependencyStatus,
+  GameClientSnapshot,
+  ServerConfig,
+} from '../../shared/types'
 import { useServersStore } from '../servers/servers.store'
 import { useSettingsStore } from '../settings/settings.store'
 import { useLauncherStore } from './launcher.store'
 import { useLaunchGame } from './useLaunchGame'
 import { deferred } from '../../test/deferred'
 
-const { checkMock, launchMock, setupMock } = vi.hoisted(() => ({
-  checkMock: vi.fn(),
-  launchMock: vi.fn(),
-  setupMock: vi.fn(),
-}))
+const { checkMock, launchMock, listClientsMock, setupMock } = vi.hoisted(
+  () => ({
+    checkMock: vi.fn(),
+    launchMock: vi.fn(),
+    listClientsMock: vi.fn(),
+    setupMock: vi.fn(),
+  }),
+)
 
 vi.mock('../../shared/api', () => ({
   api: {
     checkDependencies: checkMock,
     setupPrefix: setupMock,
     launchGame: launchMock,
+    listGameClients: listClientsMock,
     stopGame: vi.fn(),
   },
 }))
+
+let runtimeClients: GameClientSnapshot[] = []
 
 const server: ServerConfig = {
   id: 'sakura',
@@ -65,7 +75,21 @@ function readyStatus(): DependencyStatus {
 describe('useLaunchGame', () => {
   beforeEach(() => {
     checkMock.mockReset().mockResolvedValue(readyStatus())
-    launchMock.mockReset().mockResolvedValue(undefined)
+    runtimeClients = []
+    launchMock.mockReset().mockImplementation(async (clientId: string) => {
+      const client: GameClientSnapshot = {
+        clientId,
+        serverId: server.id,
+        serverName: server.name,
+        status: 'running',
+        pid: 100 + runtimeClients.length,
+      }
+      runtimeClients.push(client)
+      return client
+    })
+    listClientsMock
+      .mockReset()
+      .mockImplementation(async () => [...runtimeClients])
     setupMock.mockReset().mockResolvedValue(undefined)
     useServersStore.setState({
       servers: [server],
@@ -76,6 +100,7 @@ describe('useLaunchGame', () => {
     useSettingsStore.setState({ selectedRunner: '/opt/proton/proton' })
     useLauncherStore.setState({
       status: 'idle',
+      clients: [],
       setupProgress: null,
       error: null,
     })
@@ -94,6 +119,18 @@ describe('useLaunchGame', () => {
     expect(checkMock).toHaveBeenCalledTimes(1)
     expect(launchMock).toHaveBeenCalledTimes(1)
     expect(setupMock).not.toHaveBeenCalled()
+    expect(useLauncherStore.getState().clients).toHaveLength(1)
+    expect(useLauncherStore.getState().status).toBe('idle')
+  })
+
+  it('permits a new launch after the previous client is running', async () => {
+    const { result } = renderHook(() => useLaunchGame(server))
+
+    await act(async () => result.current.handleLaunch())
+    await act(async () => result.current.handleLaunch())
+
+    expect(launchMock).toHaveBeenCalledTimes(2)
+    expect(useLauncherStore.getState().clients).toHaveLength(2)
   })
 
   it('does not launch a stale argv snapshot after the server is edited', async () => {

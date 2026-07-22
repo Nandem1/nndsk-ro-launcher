@@ -208,7 +208,7 @@ Tokio y comunican progreso mediante eventos.
 ro-launcher://log            { line: string }       — stdout/stderr Wine
 ro-launcher://tool-log       { line: string }       — AutoPot, Spammer, input, launch hints
 ro-launcher://progress       { step: string, percent: number }
-ro-launcher://game-exit      { code: number }
+ro-launcher://game-exit      { clientId, serverId, serverName, code, requested }
 ro-launcher://autopot-status { AutopotStatusEvent }
 ro-launcher://autobuff-status { AutobuffStatusEvent }
 ro-launcher://spammer-status { SpammerStatusEvent }
@@ -232,9 +232,12 @@ Checks: `wine-cachyos` or `wine` binary, `winetricks`, DXVK at `{prefix}/drive_c
 
 All subprocess calls set `WINEPREFIX` and `WAYLAND_DISPLAY=""`.
 
-### `launch_game(server: ServerConfig)`
+### `launch_game(clientId, server: ServerConfig)`
 
-Verifies marker exists, then spawns `wine <exe>` with working dir set to the exe's parent. Pipes stdout/stderr line-by-line as `ro-launcher://log` events. Filters out `fixme:` lines (too noisy). Emits `ro-launcher://game-exit` on process exit.
+Verifies the runtime, launches a client and returns its `GameClientSnapshot`. Running clients live
+in a registry keyed by `clientId`; PID detection is serialized while existing clients keep running.
+`list_game_clients`, `stop_game(clientId)` and `stop_all_games` expose lifecycle control. Emits a
+correlated `ro-launcher://game-exit` event when an instance exits.
 
 ### `list_runners`
 
@@ -333,12 +336,15 @@ Memory profiles are embedded in `src-tauri/resources/client_profiles.json`. `too
 Each feature has a Zustand store:
 
 - `servers.store.ts` — `servers[]`, `selectedId`, CRUD + persistence via `list_servers`/`save_servers`
-- `launcher.store.ts` — `status: 'idle'|'setting-up'|'launching'|'running'|'error'`, `setupProgress`, `error`
+- `launcher.store.ts` — launch-operation status, `clients[]`, setup progress and errors
 - `logs.store.ts` — `gameLogs[]` + `toolLogs[]` (FIFO, max 200 c/u)
 - `settings.store.ts` — `runners[]`, `selectedRunner` (path), persisted via `load_settings`/`save_settings`
 - `autopot.store.ts` — estado en vivo vía `ro-launcher://autopot-status`
 - `autobuff.store.ts` — estado en vivo vía `ro-launcher://autobuff-status`
 - `spammer.store.ts` — `status: SpammerStatusEvent`, `busy`, `userEnabled` vía `ro-launcher://spammer-status`
+
+AutoPot, AutoBuff and Spammer are intentionally available only when the registry contains exactly
+one running client. Starting a second client stops active tool sessions.
 
 ---
 

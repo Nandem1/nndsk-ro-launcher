@@ -25,6 +25,6 @@ export const useUiModeStore = create<UiModeState>((set) => ({
 }))
 
 /** `ingame` desde `launching` para dar feedback inmediato al click en Jugar. */
-export function modeForStatus(status: LaunchStatus): UiMode {
-  return status === 'launching' || status === 'running' ? 'ingame' : 'prep'
+export function modeForStatus(status: LaunchStatus, activeClients = 0): UiMode {
+  return status === 'launching' || activeClients > 0 ? 'ingame' : 'prep'
 }

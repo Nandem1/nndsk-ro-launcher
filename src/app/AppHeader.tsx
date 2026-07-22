@@ -1,18 +1,20 @@
 import { useLauncherStore } from '../features/launcher/launcher.store'
-import { useSelectedServer } from '../features/servers/useSelectedServer'
 import { StatusDot } from '../shared/ui/StatusDot'
 import { useUiModeStore } from './uiMode.store'
 
 function IngameStatusChip() {
   const launching = useLauncherStore((s) => s.status === 'launching')
-  const server = useSelectedServer()
+  const clients = useLauncherStore((s) => s.clients)
+  const running = clients.filter((client) => client.status === 'running').length
 
   return (
     <div className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-white/[0.06] bg-zinc-900/50 shadow-glass animate-fade-rise">
       <StatusDot status={launching ? 'warning' : 'ok'} pulse />
       <span className="text-[11px] text-zinc-300 font-medium truncate max-w-[220px]">
         {launching ? 'Iniciando...' : 'En juego'}
-        {server ? ` · ${server.name}` : ''}
+        {clients.length === 1
+          ? ` · ${clients[0].serverName}`
+          : ` · ${running}/${clients.length} clientes`}
       </span>
     </div>
   )

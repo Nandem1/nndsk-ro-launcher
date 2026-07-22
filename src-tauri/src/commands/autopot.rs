@@ -14,11 +14,9 @@ pub async fn start_autopot(
     state: State<'_, GameState>,
     server: ServerConfig,
 ) -> Result<(), String> {
+    let _tool_lifecycle = state.tool_lifecycle.lock().await;
     server.validate_executable_available()?;
-    let launcher_pid = state
-        .game
-        .running_pid()?
-        .ok_or_else(|| "No hay proceso Wine del juego (lanza el juego primero)".to_string())?;
+    let launcher_pid = state.game.sole_running_pid_for(&server.id)?;
 
     start_session(
         app,
@@ -32,6 +30,7 @@ pub async fn start_autopot(
 
 #[tauri::command]
 pub async fn stop_autopot(state: State<'_, GameState>) -> Result<(), String> {
+    let _tool_lifecycle = state.tool_lifecycle.lock().await;
     state.autopot.stop().await
 }
 
@@ -63,10 +62,7 @@ pub async fn begin_autopot_memory_scan(
     if state.autopot.status().active {
         return Err("Detén AutoPot antes de buscar una dirección de memoria".into());
     }
-    let pid = state
-        .game
-        .running_pid()?
-        .ok_or_else(|| "Inicia el juego antes de buscar la dirección de HP".to_string())?;
+    let pid = state.game.sole_running_pid()?;
     emit_tool_log_opt(
         Some(&app),
         format!("[AutoPot] Escaneo inicial PID={pid} HP={current_hp}"),
@@ -131,10 +127,7 @@ pub async fn find_autopot_name_address(
     if state.autopot.status().active {
         return Err("Detén AutoPot antes de buscar la dirección del nombre".into());
     }
-    let pid = state
-        .game
-        .running_pid()?
-        .ok_or_else(|| "Inicia el juego antes de buscar el nombre".to_string())?;
+    let pid = state.game.sole_running_pid()?;
     let result = state.autopot.find_name_address(pid, character_name).await?;
     emit_tool_log_opt(
         Some(&app),

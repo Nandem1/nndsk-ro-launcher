@@ -6,7 +6,10 @@ import type {
 } from '../../shared/types'
 import { LAUNCHER_EVENTS } from '../../shared/constants'
 import { useServerRuntimeTool } from '../../shared/hooks/useServerRuntimeTool'
-import { useLauncherStore } from '../launcher/launcher.store'
+import {
+  isSoleRunningClientForServer,
+  useLauncherStore,
+} from '../launcher/launcher.store'
 import { useLogsStore } from '../logs/logs.store'
 import { useSettingsStore } from '../settings/settings.store'
 import { useServersStore } from '../servers/servers.store'
@@ -33,7 +36,9 @@ export function useAutobuff(server: ServerConfig | null) {
     PersistedAutobuffPatch
   >({
     server,
-    isRunning: useLauncherStore((s) => s.status) === 'running',
+    isRunning: useLauncherStore((state) =>
+      isSoleRunningClientForServer(state, server?.id),
+    ),
     selectedRunner: useSettingsStore((s) => s.selectedRunner),
     state: {
       status,

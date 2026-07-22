@@ -38,7 +38,9 @@ function LogTab({
 }
 
 export function UnifiedLogPanel() {
-  const isRunning = useLauncherStore((s) => s.status === 'running')
+  const isRunning = useLauncherStore((s) =>
+    s.clients.some((client) => client.status === 'running'),
+  )
   const [channel, setChannel] = useState<LogChannel>('game')
   const gameLogs = useLogsStore((s) => s.gameLogs)
   const toolLogs = useLogsStore((s) => s.toolLogs)

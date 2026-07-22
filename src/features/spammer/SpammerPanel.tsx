@@ -15,6 +15,7 @@ export function SpammerPanel() {
   const { config, status, busy, isRunning, error, setEnabled, updateField } =
     useSpammer(server)
   const launching = useLauncherStore((state) => state.status === 'launching')
+  const multipleClients = useLauncherStore((state) => state.clients.length > 1)
   const hero = useUiModeStore((state) => state.mode === 'ingame')
   const available = isRunning && !!server
   const keysLabel = formatSpammerKeys(config.keys)
@@ -31,13 +32,15 @@ export function SpammerPanel() {
     ? 'Selecciona un servidor'
     : launching
       ? 'Iniciando juego...'
-      : !isRunning
-        ? 'Inicia el juego'
-        : config.keys.length === 0
-          ? 'Selecciona al menos una tecla'
-          : status.spamming
-            ? 'Spameando...'
-            : 'Mantén una tecla configurada en el juego'
+      : multipleClients
+        ? 'No disponible con varios clientes'
+        : !isRunning
+          ? 'Inicia el juego'
+          : config.keys.length === 0
+            ? 'Selecciona al menos una tecla'
+            : status.spamming
+              ? 'Spameando...'
+              : 'Mantén una tecla configurada en el juego'
 
   const tone = resolveToolTone(
     available,

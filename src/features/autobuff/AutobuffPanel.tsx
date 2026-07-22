@@ -12,6 +12,7 @@ export function AutobuffPanel() {
   const { config, status, busy, isRunning, error, setEnabled, updateField } =
     useAutobuff(server)
   const launching = useLauncherStore((state) => state.status === 'launching')
+  const multipleClients = useLauncherStore((state) => state.clients.length > 1)
   const hero = useUiModeStore((state) => state.mode === 'ingame')
   const available = isRunning && !!server
   const hasEnabledRule = config.rules.some((rule) => rule.enabled)
@@ -45,9 +46,11 @@ export function AutobuffPanel() {
                 ? 'Selecciona un servidor'
                 : launching
                   ? 'Iniciando juego...'
-                  : !isRunning
-                    ? 'Inicia el juego'
-                    : `${status.activeStatuses} estados detectados`}
+                  : multipleClients
+                    ? 'No disponible con varios clientes'
+                    : !isRunning
+                      ? 'Inicia el juego'
+                      : `${status.activeStatuses} estados detectados`}
             </p>
           </div>
           <ToggleSwitch

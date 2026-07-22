@@ -8,6 +8,7 @@ import { useSelectedServer } from '../servers/useSelectedServer'
 import { useSettingsStore } from '../settings/settings.store'
 import { useCurrentAdvancedStatus } from '../settings/useSelectedRuntimeStatus'
 import { LaunchFieldsModal } from './LaunchFieldsModal'
+import { useLauncherStore } from './launcher.store'
 
 export function LaunchButton() {
   const server = useSelectedServer()
@@ -22,8 +23,11 @@ export function LaunchButton() {
     isBusy,
     handleLaunch,
     handlePrepareEnvironment,
-    handleStop,
   } = useLaunchGame(server)
+  const existingClients = useLauncherStore(
+    (state) =>
+      state.clients.filter((client) => client.serverId === server?.id).length,
+  )
 
   const serverLaunchKey = server ? launchConfigKey(server, selectedRunner) : ''
   useEffect(() => setShowLaunchFields(false), [serverLaunchKey])
@@ -36,22 +40,17 @@ export function LaunchButton() {
       ? advancedStatus?.canSetup === false
         ? 'Revisar entorno'
         : 'Preparar entorno'
-      : 'Jugar',
+      : existingClients > 0
+        ? 'Abrir otro cliente'
+        : 'Jugar',
     checking: 'Comprobando...',
     'setting-up': 'Configurando...',
     launching: 'Iniciando...',
-    running: 'Jugando...',
     error: 'Reintentar',
   }
 
   const variant: ButtonVariant =
-    status === 'running'
-      ? 'success'
-      : status === 'error'
-        ? 'danger'
-        : buildMode
-          ? 'secondary'
-          : 'primary'
+    status === 'error' ? 'danger' : buildMode ? 'secondary' : 'primary'
 
   const icon =
     status === 'error' ? (
@@ -103,21 +102,10 @@ export function LaunchButton() {
           })()
         }}
         disabled={isDisabled}
-        className={status === 'running' ? 'cursor-default' : ''}
       >
         {icon}
         {labels[status]}
       </Button>
-      {(status === 'running' || status === 'launching') && (
-        <button
-          type="button"
-          onClick={handleStop}
-          className="w-full py-2 rounded-xl text-xs text-zinc-500 hover:text-red-400 border border-zinc-800/80
-            hover:border-red-500/30 hover:bg-red-500/5 transition-colors"
-        >
-          Detener juego
-        </button>
-      )}
       {status === 'error' && error && (
         <p className="text-red-400 text-[11px] text-center px-2 leading-relaxed">
           {error}
