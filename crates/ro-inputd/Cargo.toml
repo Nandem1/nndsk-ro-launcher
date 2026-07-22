@@ -11,6 +11,6 @@ path = "src/main.rs"
 evdev = "0.13"
 libc = "0.2"
 serde_json = "1"
-signal-hook = "0.3"
+signal-hook = "0.4"
 ro-tools-linux = { path = "../ro-tools-linux" }
 ro-tools-core = { path = "../ro-tools-core" }
