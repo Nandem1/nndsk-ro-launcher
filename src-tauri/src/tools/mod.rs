@@ -20,6 +20,7 @@ mod game_pid;
 pub mod input;
 pub mod launcher;
 pub mod prefix;
+pub mod presence;
 pub mod runners;
 pub mod server_tools;
 pub mod session;

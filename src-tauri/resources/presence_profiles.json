@@ -1,0 +1,26 @@
+[
+  {
+    "id": "sakura-ro-ragexe-2025-07-16",
+    "exeNames": ["ragexe.exe"],
+    "executableSha256": "143a5413fd8bd213ccb9362d835971b7ab81d1bd9805d8cfe426508cfd12ec91",
+    "peBuildTimestamp": "2025-07-16 08:00:00",
+    "imageSize": 16144384,
+    "moduleBase": "0x00400000",
+    "nameAddress": "0x01602568",
+    "levelAddress": "0x015FB9F0",
+    "jobLevelAddress": "0x015FB9F8",
+    "mapAddress": "0x015FB9AC"
+  },
+  {
+    "id": "honey-ro-ragexe-2018-06-21",
+    "exeNames": ["HoneyRO.exe"],
+    "executableSha256": "b3b9d0311d74b097ec1a7a354d5a23f6f706e0170bb5e6826f1f335412e705cb",
+    "peBuildTimestamp": "2018-06-21 06:43:21",
+    "imageSize": 21012480,
+    "moduleBase": "0x00400000",
+    "nameAddress": "0x010DF5D8",
+    "levelAddress": "0x010D9400",
+    "jobLevelAddress": "0x010D9408",
+    "mapAddress": "0x010D856C"
+  }
+]

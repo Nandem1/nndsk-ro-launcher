@@ -14,6 +14,7 @@ import { AutobuffPanel } from '../features/autobuff/AutobuffPanel'
 import { UnifiedLogPanel } from '../features/logs/LogPanels'
 import { AdvancedSettings } from '../features/settings/AdvancedSettings'
 import { PrefixResetButton } from '../features/settings/PrefixResetButton'
+import { DiscordPresenceToggle } from '../features/settings/DiscordPresenceToggle'
 import { useLauncherEvents } from '../features/launcher/useLauncherEvents'
 import { IconButton } from '../shared/ui/Button'
 import { ToolViewTabs } from './ToolViewTabs'
@@ -87,6 +88,7 @@ export function App() {
                 <ServerList />
                 <ActiveClients />
                 <AdvancedSettings />
+                <DiscordPresenceToggle />
               </div>
               <div className="shrink-0 pb-2.5">
                 <PrefixResetButton />

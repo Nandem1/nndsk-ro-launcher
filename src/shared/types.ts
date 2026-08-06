@@ -27,6 +27,7 @@ export interface GameClientSnapshot {
 
 export interface AppSettings {
   defaultRunner: string
+  richPresenceEnabled: boolean
 }
 
 export interface StorageNotice {

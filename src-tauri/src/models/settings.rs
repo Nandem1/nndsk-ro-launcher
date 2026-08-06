@@ -6,12 +6,15 @@ use crate::utils::default_system_wine;
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
     pub default_runner: String,
+    #[serde(default)]
+    pub rich_presence_enabled: bool,
 }
 
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
             default_runner: default_system_wine(),
+            rich_presence_enabled: false,
         }
     }
 }

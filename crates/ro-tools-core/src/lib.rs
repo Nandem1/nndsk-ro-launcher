@@ -6,6 +6,7 @@ pub mod dgvoodoo;
 pub mod domain;
 pub mod error;
 pub mod ports;
+pub mod presence;
 pub mod profiles;
 pub mod spammer;
 
@@ -16,6 +17,10 @@ pub use autopot::engine::{AutopotEngine, AutopotTick};
 pub use domain::ClientProfile;
 pub use error::ToolsError;
 pub use ports::{HeldKeyWriter, KeyPressWriter, MemoryReader, SpamCycleWriter};
+pub use presence::{
+    parse_presence_profiles_json, read_character_snapshot, CharacterSnapshot, CharacterState,
+    PresenceMemoryProfile,
+};
 pub use profiles::{parse_hex, parse_profiles_json, resolve_profile};
 pub use spammer::config::{GearSwitchConfig, GearSwitchRule, SpammerConfig};
 pub use spammer::engine::{SpammerEngine, SpammerTick};

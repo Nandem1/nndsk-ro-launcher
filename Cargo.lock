@@ -2751,6 +2751,7 @@ name = "ro-launcher"
 version = "0.1.0"
 dependencies = [
  "crossbeam-channel",
+ "libc",
  "reqwest 0.12.28",
  "ro-tools-core",
  "ro-tools-linux",

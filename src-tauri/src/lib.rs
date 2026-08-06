@@ -25,7 +25,8 @@ use commands::{
 };
 use state::{GameState, ServerRepository, SettingsRepository, StorageNotices};
 use tools::{
-    autobuff::AutobuffHandle, autopot::AutopotHandle, input::InputGateway, spammer::SpammerHandle,
+    autobuff::AutobuffHandle, autopot::AutopotHandle, input::InputGateway,
+    presence::PresenceHandle, spammer::SpammerHandle,
 };
 use utils::configure_linux_webview_env;
 
@@ -49,6 +50,7 @@ pub fn run() {
             autobuff: AutobuffHandle::new(),
             spammer: SpammerHandle::new(),
             input: InputGateway::new(),
+            presence: PresenceHandle::new(),
         })
         .manage(ServerRepository::default())
         .manage(SettingsRepository)
@@ -95,6 +97,7 @@ pub fn run() {
         .run(|app, event| {
             if let RunEvent::Exit = event {
                 if let Some(state) = app.try_state::<GameState>() {
+                    state.presence.shutdown();
                     tauri::async_runtime::block_on(async {
                         let _ = tokio::join!(
                             state.autopot.stop(),

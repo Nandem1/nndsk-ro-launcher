@@ -15,10 +15,12 @@ import { runtimeStatusKey } from '../../shared/resolveRunner'
 interface SettingsState {
   runners: RunnerInfo[]
   selectedRunner: string
+  richPresenceEnabled: boolean
   advancedStatus: AdvancedDepsStatus | null
   advancedStatusKey: string | null
   loading: boolean
   savingRunner: boolean
+  savingPresence: boolean
   error: string | null
   notice: StorageNotice | null
   init: () => Promise<boolean>
@@ -30,20 +32,24 @@ interface SettingsState {
   ) => Promise<void>
   applyDepsStatus: (status: DependencyStatus, key: string) => void
   setRunner: (path: string) => Promise<void>
+  setRichPresenceEnabled: (enabled: boolean) => Promise<void>
 }
 
 let depsRequestId = 0
 let runnerSaveRequestId = 0
-let runnerSaveTail: Promise<void> = Promise.resolve()
+let presenceSaveRequestId = 0
+let settingsSaveTail: Promise<unknown> = Promise.resolve()
 let lastPersistedRunner = ''
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
   runners: [],
   selectedRunner: '',
+  richPresenceEnabled: false,
   advancedStatus: null,
   advancedStatusKey: null,
   loading: true,
   savingRunner: false,
+  savingPresence: false,
   error: null,
   notice: null,
 
@@ -60,7 +66,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   loadSettings: async () => {
     const settings = await api.loadSettings()
     lastPersistedRunner = settings.defaultRunner
-    set({ selectedRunner: settings.defaultRunner })
+    set({
+      selectedRunner: settings.defaultRunner,
+      richPresenceEnabled: settings.richPresenceEnabled ?? false,
+    })
   },
 
   loadRunners: async () => {
@@ -72,7 +81,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
     if (resolution.persist) {
       const result = await runSafely(() =>
-        api.saveSettings({ defaultRunner: resolution.path }),
+        api.saveSettings({
+          defaultRunner: resolution.path,
+          richPresenceEnabled: get().richPresenceEnabled,
+        }),
       )
       if (!result.ok) {
         set({ error: result.error })
@@ -120,7 +132,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
     const save = async () => {
       const result = await runSafely(() =>
-        api.saveSettings({ defaultRunner: path }),
+        api.saveSettings({
+          defaultRunner: path,
+          richPresenceEnabled: get().richPresenceEnabled,
+        }),
       )
       if (result.ok) lastPersistedRunner = path
       if (requestId !== runnerSaveRequestId) return
@@ -131,8 +146,32 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         error: result.ok ? null : result.error,
       })
     }
-    const queued = runnerSaveTail.then(save, save)
-    runnerSaveTail = queued.catch(() => undefined)
+    const queued = settingsSaveTail.then(save, save)
+    settingsSaveTail = queued.catch(() => undefined)
     await queued
+  },
+
+  setRichPresenceEnabled: async (enabled) => {
+    const requestId = ++presenceSaveRequestId
+    const previous = get().richPresenceEnabled
+    set({ richPresenceEnabled: enabled, savingPresence: true, error: null })
+
+    const save = async () =>
+      runSafely(() =>
+        api.saveSettings({
+          defaultRunner: get().selectedRunner,
+          richPresenceEnabled: enabled,
+        }),
+      )
+    const queued = settingsSaveTail.then(save, save)
+    settingsSaveTail = queued.catch(() => undefined)
+    const result = await queued
+    if (requestId !== presenceSaveRequestId) return
+
+    set({
+      richPresenceEnabled: result.ok ? enabled : previous,
+      savingPresence: false,
+      error: result.ok ? null : result.error,
+    })
   },
 }))

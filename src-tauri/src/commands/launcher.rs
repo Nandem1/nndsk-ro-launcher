@@ -39,6 +39,7 @@ pub async fn launch_game(
             autobuff: &state.autobuff,
             spammer: &state.spammer,
             input: &state.input,
+            presence: &state.presence,
         },
         server,
         runner,

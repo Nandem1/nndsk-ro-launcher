@@ -8,6 +8,7 @@ pub use game_process::{GameProcessHandle, LaunchReservation};
 use crate::tools::autobuff::AutobuffHandle;
 use crate::tools::autopot::AutopotHandle;
 use crate::tools::input::InputGateway;
+use crate::tools::presence::PresenceHandle;
 use crate::tools::spammer::SpammerHandle;
 use crate::{
     models::{
@@ -29,6 +30,7 @@ pub struct GameState {
     pub autobuff: AutobuffHandle,
     pub spammer: SpammerHandle,
     pub input: InputGateway,
+    pub presence: PresenceHandle,
 }
 
 pub struct ServerRepository {
@@ -255,6 +257,7 @@ mod tests {
         let loaded = load_json_recovering::<AppSettings, _>(&path, AppSettings::validate).unwrap();
         assert_eq!(loaded.status, JsonLoadStatus::Recovered);
         assert_eq!(loaded.value.default_runner, "/usr/bin/wine");
+        assert!(!loaded.value.rich_presence_enabled);
         assert_eq!(
             fs::read_to_string(backup_path(&path)).unwrap(),
             r#"{"defaultRunner":"/usr/bin/wine"}"#

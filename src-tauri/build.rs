@@ -24,6 +24,8 @@ fn main() {
         "cargo:rerun-if-changed={}",
         workspace.join("crates/ro-inputd").display()
     );
+    println!("cargo:rerun-if-env-changed=RO_LAUNCHER_DISCORD_APPLICATION_ID");
+    println!("cargo:rerun-if-env-changed=DISCORD_APPLICATION_ID");
 
     // No invocar `cargo build` aquí: bloquea el lock del build padre.
     // El sidecar se compila con `cargo build -p ro-inputd` (ver npm scripts).

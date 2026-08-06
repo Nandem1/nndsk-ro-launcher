@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "build:nndsk": "npm run tauri:build:appimage && npm run install:nndsk",
+    "install:nndsk": "node scripts/install-nndsk.mjs",
     "test": "vitest run",
     "lint": "eslint src vite.config.ts",
     "format": "prettier --write src vite.config.ts",

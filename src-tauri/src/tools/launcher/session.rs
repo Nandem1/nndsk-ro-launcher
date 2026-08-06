@@ -15,6 +15,7 @@ use crate::state::{GameProcessHandle, GameState, LaunchReservation};
 use crate::tools::autobuff::AutobuffHandle;
 use crate::tools::autopot::AutopotHandle;
 use crate::tools::input::InputGateway;
+use crate::tools::presence::PresenceHandle;
 use crate::tools::runners::ensure_managed_runtime;
 use crate::tools::server_tools;
 use crate::tools::spammer::SpammerHandle;
@@ -38,6 +39,7 @@ pub struct LaunchTools<'a> {
     pub autobuff: &'a AutobuffHandle,
     pub spammer: &'a SpammerHandle,
     pub input: &'a InputGateway,
+    pub presence: &'a PresenceHandle,
 }
 
 pub async fn launch_game(
@@ -54,6 +56,7 @@ pub async fn launch_game(
         autobuff,
         spammer,
         input,
+        presence,
     } = tools;
     ensure_managed_runtime(&app).await?;
     let ctx = resolve_server_wine_context_with_runner(Some(&server), runner).await?;
@@ -187,10 +190,18 @@ pub async fn launch_game(
             identity.pid, game_exe, ctx.prefix
         ),
     );
+    presence.register(
+        snapshot.client_id.clone(),
+        snapshot.server_name.clone(),
+        identity,
+        game_exe.clone(),
+    );
 
     let autopot = autopot.clone();
     let autobuff = autobuff.clone();
     let spammer = spammer.clone();
+    let presence = presence.clone();
+    let presence_client_id = snapshot.client_id.clone();
     let app_for_exit = app.clone();
     tokio::spawn(async move {
         let _prefix_operation = prefix_operation;
@@ -222,6 +233,7 @@ pub async fn launch_game(
             if !game.replace_running(reservation, active_identity, replacement) {
                 break;
             }
+            presence.handoff(&presence_client_id, replacement);
             emit_tool_log_opt(
                 Some(&app_for_exit),
                 format!(
@@ -244,6 +256,7 @@ pub async fn launch_game(
         let _ = output_task.await;
 
         if let Some(finished) = game.finish(reservation) {
+            presence.unregister(&finished.client_id);
             if finished.remaining_clients == 0 {
                 let stops = tokio::join!(autopot.stop(), autobuff.stop(), spammer.stop());
                 for error in [stops.0.err(), stops.1.err(), stops.2.err()]

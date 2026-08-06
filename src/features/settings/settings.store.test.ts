@@ -18,7 +18,9 @@ describe('settings store runner selection', () => {
     useSettingsStore.setState({
       runners: [],
       selectedRunner: '',
+      richPresenceEnabled: false,
       savingRunner: false,
+      savingPresence: false,
       error: null,
       notice: null,
     })
@@ -37,7 +39,10 @@ describe('settings store runner selection', () => {
 
     expect(useSettingsStore.getState().selectedRunner).toBe(proton.path)
     expect(useSettingsStore.getState().notice?.kind).toBe('migrated')
-    expect(saveSettings).toHaveBeenCalledWith({ defaultRunner: proton.path })
+    expect(saveSettings).toHaveBeenCalledWith({
+      defaultRunner: proton.path,
+      richPresenceEnabled: false,
+    })
     expect(loadDepsStatus).toHaveBeenCalledWith(proton.path)
   })
 
@@ -85,6 +90,26 @@ describe('settings store runner selection', () => {
     expect(useSettingsStore.getState()).toMatchObject({
       selectedRunner: '/opt/proton-b/proton',
       savingRunner: false,
+      error: null,
+    })
+  })
+
+  it('persists the Rich Presence preference with the selected runner', async () => {
+    const saveSettings = vi.spyOn(api, 'saveSettings').mockResolvedValue()
+    useSettingsStore.setState({
+      selectedRunner: '/opt/proton/proton',
+      richPresenceEnabled: false,
+    })
+
+    await useSettingsStore.getState().setRichPresenceEnabled(true)
+
+    expect(saveSettings).toHaveBeenCalledWith({
+      defaultRunner: '/opt/proton/proton',
+      richPresenceEnabled: true,
+    })
+    expect(useSettingsStore.getState()).toMatchObject({
+      richPresenceEnabled: true,
+      savingPresence: false,
       error: null,
     })
   })
