@@ -4,8 +4,10 @@ use crate::models::autopot::AutopotStatusEvent;
 use crate::models::server::ServerConfig;
 use crate::state::GameState;
 use crate::tools::autopot::{
-    load_profiles, start_session, DetectedNameAddress, MemoryScanProgress,
+    load_profiles, start_session, DetectedNameAddress, LevelScanProgress, MapScanProgress,
+    MemoryScanProgress,
 };
+use crate::tools::presence::parse_address_override;
 use crate::utils::emit_tool_log_opt;
 
 #[tauri::command]
@@ -123,18 +125,159 @@ pub async fn find_autopot_name_address(
     app: AppHandle,
     state: State<'_, GameState>,
     character_name: String,
+    hp_base: Option<String>,
 ) -> Result<DetectedNameAddress, String> {
     if state.autopot.status().active {
         return Err("Detén AutoPot antes de buscar la dirección del nombre".into());
     }
     let pid = state.game.sole_running_pid()?;
-    let result = state.autopot.find_name_address(pid, character_name).await?;
+    let result = state
+        .autopot
+        .find_name_address(
+            pid,
+            character_name,
+            parse_address_override(hp_base.as_deref()),
+        )
+        .await?;
     emit_tool_log_opt(
         Some(&app),
         format!(
-            "[AutoPot] Nombre '{}' encontrado en {} (primera coincidencia)",
+            "[AutoPot] Nombre '{}' encontrado en {} (cerca de HP)",
             result.character_name, result.name_address
         ),
     );
+    Ok(result)
+}
+
+#[tauri::command]
+pub async fn begin_autopot_level_scan(
+    app: AppHandle,
+    state: State<'_, GameState>,
+    current_level: u32,
+    name_address: Option<String>,
+    hp_base: Option<String>,
+) -> Result<LevelScanProgress, String> {
+    if state.autopot.status().active {
+        return Err("Detén AutoPot antes de buscar una dirección de memoria".into());
+    }
+    let pid = state.game.sole_running_pid()?;
+    emit_tool_log_opt(
+        Some(&app),
+        format!("[Presence] Escaneo de nivel PID={pid} nv={current_level}"),
+    );
+    let result = state
+        .autopot
+        .begin_level_scan(
+            pid,
+            current_level,
+            parse_address_override(name_address.as_deref()),
+            parse_address_override(hp_base.as_deref()),
+        )
+        .await?;
+    emit_tool_log_opt(
+        Some(&app),
+        format!(
+            "[Presence] Escaneo de nivel: {} candidatos",
+            result.candidate_count
+        ),
+    );
+    Ok(result)
+}
+
+#[tauri::command]
+pub async fn refine_autopot_level_scan(
+    app: AppHandle,
+    state: State<'_, GameState>,
+    current_level: u32,
+) -> Result<LevelScanProgress, String> {
+    if state.autopot.status().active {
+        return Err("Detén AutoPot antes de continuar el escaneo de memoria".into());
+    }
+    let result = state.autopot.refine_level_scan(current_level).await?;
+    if let Some(found) = &result.confirmed {
+        emit_tool_log_opt(
+            Some(&app),
+            format!(
+                "[Presence] Nivel confirmado {} (job={})",
+                found.level_address,
+                found.job_level_address.as_deref().unwrap_or("—")
+            ),
+        );
+    } else {
+        emit_tool_log_opt(
+            Some(&app),
+            format!(
+                "[Presence] Refinado nivel={current_level}: {} candidatos",
+                result.candidate_count
+            ),
+        );
+    }
+    Ok(result)
+}
+
+#[tauri::command]
+pub async fn begin_autopot_map_scan(
+    app: AppHandle,
+    state: State<'_, GameState>,
+    map_name: String,
+    name_address: Option<String>,
+    hp_base: Option<String>,
+    level_address: Option<String>,
+) -> Result<MapScanProgress, String> {
+    if state.autopot.status().active {
+        return Err("Detén AutoPot antes de buscar una dirección de memoria".into());
+    }
+    let pid = state.game.sole_running_pid()?;
+    emit_tool_log_opt(
+        Some(&app),
+        format!("[Presence] Escaneo de mapa PID={pid} map={map_name}"),
+    );
+    let result = state
+        .autopot
+        .begin_map_scan(
+            pid,
+            map_name,
+            parse_address_override(name_address.as_deref()),
+            parse_address_override(hp_base.as_deref()),
+            parse_address_override(level_address.as_deref()),
+        )
+        .await?;
+    emit_tool_log_opt(
+        Some(&app),
+        format!(
+            "[Presence] Escaneo de mapa: {} candidatos",
+            result.candidate_count
+        ),
+    );
+    Ok(result)
+}
+
+#[tauri::command]
+pub async fn refine_autopot_map_scan(
+    app: AppHandle,
+    state: State<'_, GameState>,
+    map_name: String,
+) -> Result<MapScanProgress, String> {
+    if state.autopot.status().active {
+        return Err("Detén AutoPot antes de continuar el escaneo de memoria".into());
+    }
+    let result = state.autopot.refine_map_scan(map_name).await?;
+    if let Some(found) = &result.confirmed {
+        emit_tool_log_opt(
+            Some(&app),
+            format!(
+                "[Presence] Mapa '{}' confirmado {}",
+                found.map_name, found.map_address
+            ),
+        );
+    } else {
+        emit_tool_log_opt(
+            Some(&app),
+            format!(
+                "[Presence] Refinado mapa: {} candidatos",
+                result.candidate_count
+            ),
+        );
+    }
     Ok(result)
 }

@@ -5,12 +5,13 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use ro_tools_core::{
-    read_character_snapshot, CharacterSnapshot, CharacterState, PresenceMemoryProfile,
+    read_character_snapshot, resolve_presence_memory_profiles, CharacterSnapshot, CharacterState,
+    PresenceAddressOverrides, PresenceMemoryProfile,
 };
 use ro_tools_linux::{address_in_maps, verify_process_identity, ProcMemoryReader, ProcessIdentity};
 
 use super::map_names::display_map_name;
-use super::profiles::resolve_profile;
+use super::profiles::resolve_runtime_profiles;
 use super::transport::{default_transport, PresenceActivity, PresenceTransport};
 
 const SAMPLE_INTERVAL: Duration = Duration::from_secs(2);
@@ -45,15 +46,26 @@ impl PresenceHandle {
     pub fn register(
         &self,
         client_id: String,
+        server_id: String,
         server_name: String,
         identity: ProcessIdentity,
         executable_path: String,
+        overrides: PresenceAddressOverrides,
     ) {
         let _ = self.commands.send(PresenceCommand::Register {
             client_id,
+            server_id,
             server_name,
             identity,
             executable_path,
+            overrides,
+        });
+    }
+
+    pub fn apply_overrides(&self, server_id: &str, overrides: PresenceAddressOverrides) {
+        let _ = self.commands.send(PresenceCommand::ApplyOverrides {
+            server_id: server_id.to_string(),
+            overrides,
         });
     }
 
@@ -92,9 +104,15 @@ enum PresenceCommand {
     SetEnabled(bool),
     Register {
         client_id: String,
+        server_id: String,
         server_name: String,
         identity: ProcessIdentity,
         executable_path: String,
+        overrides: PresenceAddressOverrides,
+    },
+    ApplyOverrides {
+        server_id: String,
+        overrides: PresenceAddressOverrides,
     },
     Handoff {
         client_id: String,
@@ -117,9 +135,13 @@ struct PresenceWorker {
 }
 
 struct TrackedClient {
+    server_id: String,
     server_name: String,
     identity: ProcessIdentity,
+    from_hash: bool,
+    applied_overrides: PresenceAddressOverrides,
     profile: Option<PresenceMemoryProfile>,
+    derived_candidates: Vec<PresenceMemoryProfile>,
     session_started: i64,
     character_name: Option<String>,
     snapshot: Option<CharacterSnapshot>,
@@ -129,12 +151,14 @@ struct TrackedClient {
 
 struct PendingSnapshot {
     key: SnapshotKey,
+    profile: PresenceMemoryProfile,
     snapshot: CharacterSnapshot,
     samples: u8,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct SnapshotKey {
+    profile_id: String,
     character_name: Option<String>,
     level: Option<u32>,
     job_level: Option<u32>,
@@ -164,17 +188,24 @@ impl PresenceWorker {
             }
             PresenceCommand::Register {
                 client_id,
+                server_id,
                 server_name,
                 identity,
                 executable_path,
+                overrides,
             } => {
-                let profile = resolve_profile(&executable_path);
+                let (profile, derived_candidates) =
+                    resolve_runtime_profiles(&executable_path, overrides);
                 self.clients.insert(
                     client_id,
                     TrackedClient {
+                        server_id,
                         server_name,
                         identity,
+                        from_hash: profile.is_some(),
+                        applied_overrides: overrides,
                         profile,
+                        derived_candidates,
                         session_started: unix_timestamp(),
                         character_name: None,
                         snapshot: None,
@@ -184,6 +215,22 @@ impl PresenceWorker {
                 );
                 self.sample_clients();
                 self.publish(true);
+            }
+            PresenceCommand::ApplyOverrides {
+                server_id,
+                overrides,
+            } => {
+                let mut changed = false;
+                for client in self.clients.values_mut() {
+                    if client.server_id != server_id {
+                        continue;
+                    }
+                    changed |= apply_overrides_to_client(client, overrides);
+                }
+                if changed {
+                    self.sample_clients();
+                    self.publish(true);
+                }
             }
             PresenceCommand::Handoff {
                 client_id,
@@ -285,46 +332,88 @@ fn run_worker(receiver: Receiver<PresenceCommand>, transport: Box<dyn PresenceTr
     }
 }
 
+fn apply_overrides_to_client(
+    client: &mut TrackedClient,
+    overrides: PresenceAddressOverrides,
+) -> bool {
+    if client.from_hash {
+        return false;
+    }
+    if client.applied_overrides == overrides {
+        return false;
+    }
+    client.applied_overrides = overrides;
+    let (profile, derived_candidates) = resolve_presence_memory_profiles(None, overrides);
+    client.profile = profile;
+    client.derived_candidates = derived_candidates;
+    client.snapshot = None;
+    client.pending = None;
+    client.invalid_samples = 0;
+    true
+}
+
 fn sample_client(client: &mut TrackedClient) {
-    let Some(profile) = &client.profile else {
+    if client.profile.is_none() && client.derived_candidates.is_empty() {
+        return;
+    }
+    if !verify_process_identity(&client.identity) {
+        invalidate_client(client);
+        return;
+    }
+
+    let profiles = match &client.profile {
+        Some(profile) => vec![profile.clone()],
+        None => client.derived_candidates.clone(),
+    };
+    let Some((profile, snapshot)) = read_ingame_candidate(client.identity.pid, &profiles) else {
+        invalidate_client(client);
         return;
     };
     if !verify_process_identity(&client.identity) {
         invalidate_client(client);
         return;
     }
-    if !address_in_maps(client.identity.pid, profile.module_base) {
-        invalidate_client(client);
-        return;
-    }
-    let Ok(memory) = ProcMemoryReader::open(client.identity.pid) else {
-        invalidate_client(client);
-        return;
-    };
-    let Ok(snapshot) = read_character_snapshot(&memory, profile) else {
-        invalidate_client(client);
-        return;
-    };
-    if !verify_process_identity(&client.identity) {
-        invalidate_client(client);
-        return;
-    }
+    record_ingame_sample(client, profile, snapshot);
+}
 
-    if snapshot.state != CharacterState::InGame {
-        invalidate_client(client);
-        return;
+fn read_ingame_candidate(
+    pid: u32,
+    profiles: &[PresenceMemoryProfile],
+) -> Option<(PresenceMemoryProfile, CharacterSnapshot)> {
+    for profile in profiles {
+        if !address_in_maps(pid, profile.module_base) {
+            continue;
+        }
+        let Ok(memory) = ProcMemoryReader::open(pid) else {
+            continue;
+        };
+        let Ok(snapshot) = read_character_snapshot(&memory, profile) else {
+            continue;
+        };
+        if snapshot.state == CharacterState::InGame {
+            return Some((profile.clone(), snapshot));
+        }
     }
+    None
+}
 
-    let key = SnapshotKey::from(&snapshot);
+fn record_ingame_sample(
+    client: &mut TrackedClient,
+    profile: PresenceMemoryProfile,
+    snapshot: CharacterSnapshot,
+) {
+    let key = SnapshotKey::from_sample(&profile.id, &snapshot);
     match client.pending.as_mut() {
         Some(pending) if pending.key == key => {
             pending.samples = pending.samples.saturating_add(1);
-            pending.snapshot = snapshot.clone();
+            pending.snapshot = snapshot;
+            pending.profile = profile;
         }
         _ => {
             client.pending = Some(PendingSnapshot {
                 key,
-                snapshot: snapshot.clone(),
+                profile,
+                snapshot,
                 samples: 1,
             });
         }
@@ -333,24 +422,24 @@ fn sample_client(client: &mut TrackedClient) {
         .pending
         .as_ref()
         .is_some_and(|pending| pending.samples >= REQUIRED_STABLE_SAMPLES);
-    if stable {
-        let snapshot = client
-            .pending
-            .as_ref()
-            .expect("stable pending")
-            .snapshot
-            .clone();
-        if client
-            .character_name
-            .as_ref()
-            .is_some_and(|name| Some(name) != snapshot.character_name.as_ref())
-        {
-            client.session_started = unix_timestamp();
-        }
-        client.character_name = snapshot.character_name.clone();
-        client.snapshot = Some(snapshot);
-        client.invalid_samples = 0;
+    if !stable {
+        return;
     }
+    let pending = client.pending.as_ref().expect("stable pending");
+    if !client.from_hash {
+        client.profile = Some(pending.profile.clone());
+    }
+    let snapshot = pending.snapshot.clone();
+    if client
+        .character_name
+        .as_ref()
+        .is_some_and(|name| Some(name) != snapshot.character_name.as_ref())
+    {
+        client.session_started = unix_timestamp();
+    }
+    client.character_name = snapshot.character_name.clone();
+    client.snapshot = Some(snapshot);
+    client.invalid_samples = 0;
 }
 
 fn invalidate_client(client: &mut TrackedClient) {
@@ -358,6 +447,9 @@ fn invalidate_client(client: &mut TrackedClient) {
     client.invalid_samples = client.invalid_samples.saturating_add(1);
     if client.invalid_samples >= MAX_INVALID_SAMPLES {
         client.snapshot = None;
+        if !client.from_hash {
+            client.profile = None;
+        }
     }
 }
 
@@ -450,9 +542,10 @@ fn character_details(character: Option<&str>, level: Option<&str>) -> String {
     }
 }
 
-impl From<&CharacterSnapshot> for SnapshotKey {
-    fn from(snapshot: &CharacterSnapshot) -> Self {
+impl SnapshotKey {
+    fn from_sample(profile_id: &str, snapshot: &CharacterSnapshot) -> Self {
         Self {
+            profile_id: profile_id.to_string(),
             character_name: snapshot.character_name.clone(),
             level: snapshot.level,
             job_level: snapshot.job_level,
@@ -488,12 +581,16 @@ mod tests {
         (
             id.into(),
             TrackedClient {
+                server_id: id.into(),
                 server_name: server.into(),
                 identity: ProcessIdentity {
                     pid: 1,
                     start_time: 1,
                 },
+                from_hash: false,
+                applied_overrides: PresenceAddressOverrides::default(),
                 profile: None,
+                derived_candidates: Vec::new(),
                 session_started: 123,
                 character_name: None,
                 snapshot: None,
@@ -501,6 +598,32 @@ mod tests {
                 invalid_samples: 0,
             },
         )
+    }
+
+    fn memory_profile(id: &str) -> PresenceMemoryProfile {
+        PresenceMemoryProfile {
+            id: id.into(),
+            exe_names: Vec::new(),
+            executable_sha256: String::new(),
+            pe_build_timestamp: String::new(),
+            image_size: 0,
+            module_base: 0x0040_0000,
+            name_address: 0x1000,
+            level_address: 0x1004,
+            job_level_address: 0x1008,
+            map_address: 0x100c,
+        }
+    }
+
+    fn ingame_snapshot() -> CharacterSnapshot {
+        CharacterSnapshot {
+            character_name: Some("Hero".into()),
+            level: Some(10),
+            job_level: Some(7),
+            map_name: Some("prontera".into()),
+            state: CharacterState::InGame,
+            sampled_at: Instant::now(),
+        }
     }
 
     #[test]
@@ -557,5 +680,187 @@ mod tests {
     fn public_text_removes_controls_and_truncates_by_characters() {
         assert_eq!(sanitize_public_text("Server\nName", 64), "ServerName");
         assert_eq!(truncate_public_text("áéí", 2), "áé");
+    }
+
+    #[test]
+    fn apply_with_the_same_anchors_does_not_clear_snapshot() {
+        let (_, mut client) = client("one", "HoneyRO");
+        client.applied_overrides = PresenceAddressOverrides {
+            name: Some(0x010D_F5D8),
+            hp: Some(0x010D_CE10),
+            ..PresenceAddressOverrides::default()
+        };
+        client.snapshot = Some(ingame_snapshot());
+        client.character_name = Some("Hero".into());
+
+        assert!(!apply_overrides_to_client(
+            &mut client,
+            PresenceAddressOverrides {
+                name: Some(0x010D_F5D8),
+                hp: Some(0x010D_CE10),
+                ..PresenceAddressOverrides::default()
+            }
+        ));
+        assert!(client.snapshot.is_some());
+        assert_eq!(client.character_name.as_deref(), Some("Hero"));
+    }
+
+    #[test]
+    fn hash_client_is_not_reset_when_overrides_change() {
+        let (_, mut client) = client("one", "HoneyRO");
+        client.from_hash = true;
+        client.profile = Some(memory_profile("honey-ro-ragexe-2018-06-21"));
+        client.snapshot = Some(ingame_snapshot());
+
+        assert!(!apply_overrides_to_client(
+            &mut client,
+            PresenceAddressOverrides {
+                name: Some(0x010D_F5D8),
+                ..PresenceAddressOverrides::default()
+            }
+        ));
+        assert!(client.snapshot.is_some());
+        assert_eq!(
+            client.profile.as_ref().map(|profile| profile.id.as_str()),
+            Some("honey-ro-ragexe-2018-06-21")
+        );
+    }
+
+    #[test]
+    fn first_ingame_sample_does_not_lock_a_derived_family() {
+        let (_, mut client) = client("one", "CustomRO");
+        let rathena = memory_profile("derived-rathena-2018");
+        client.derived_candidates = vec![rathena.clone(), memory_profile("derived-sakura-2025")];
+
+        record_ingame_sample(&mut client, rathena, ingame_snapshot());
+
+        assert!(client.profile.is_none());
+        assert!(client.snapshot.is_none());
+        assert_eq!(
+            client.pending.as_ref().map(|pending| pending.samples),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn second_matching_sample_locks_the_derived_family() {
+        let (_, mut client) = client("one", "CustomRO");
+        let rathena = memory_profile("derived-rathena-2018");
+
+        record_ingame_sample(&mut client, rathena.clone(), ingame_snapshot());
+        record_ingame_sample(&mut client, rathena, ingame_snapshot());
+
+        assert_eq!(
+            client.profile.as_ref().map(|profile| profile.id.as_str()),
+            Some("derived-rathena-2018")
+        );
+        assert_eq!(
+            client
+                .snapshot
+                .as_ref()
+                .and_then(|snapshot| snapshot.map_name.as_deref()),
+            Some("prontera")
+        );
+    }
+
+    #[test]
+    fn switching_family_resets_stability_before_lock() {
+        let (_, mut client) = client("one", "CustomRO");
+
+        record_ingame_sample(
+            &mut client,
+            memory_profile("derived-rathena-2018"),
+            ingame_snapshot(),
+        );
+        record_ingame_sample(
+            &mut client,
+            memory_profile("derived-sakura-2025"),
+            ingame_snapshot(),
+        );
+
+        assert!(client.profile.is_none());
+        assert_eq!(
+            client
+                .pending
+                .as_ref()
+                .map(|pending| pending.key.profile_id.as_str()),
+            Some("derived-sakura-2025")
+        );
+        assert_eq!(
+            client.pending.as_ref().map(|pending| pending.samples),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn derived_invalid_samples_unlock_the_profile() {
+        let (_, mut client) = client("one", "CustomRO");
+        client.profile = Some(memory_profile("derived-rathena-2018"));
+        client.snapshot = Some(ingame_snapshot());
+        client.derived_candidates = vec![memory_profile("derived-rathena-2018")];
+
+        for _ in 0..MAX_INVALID_SAMPLES {
+            invalidate_client(&mut client);
+        }
+
+        assert!(client.profile.is_none());
+        assert!(client.snapshot.is_none());
+    }
+
+    #[test]
+    fn hash_profile_stays_locked_after_invalid_samples() {
+        let (_, mut client) = client("one", "HoneyRO");
+        client.from_hash = true;
+        client.profile = Some(memory_profile("honey-ro-ragexe-2018-06-21"));
+        client.snapshot = Some(ingame_snapshot());
+
+        for _ in 0..MAX_INVALID_SAMPLES {
+            invalidate_client(&mut client);
+        }
+
+        assert_eq!(
+            client.profile.as_ref().map(|profile| profile.id.as_str()),
+            Some("honey-ro-ragexe-2018-06-21")
+        );
+        assert!(client.snapshot.is_none());
+    }
+
+    #[test]
+    fn apply_new_name_override_rederives_candidates() {
+        let (_, mut client) = client("one", "CustomRO");
+        client.snapshot = Some(ingame_snapshot());
+
+        assert!(apply_overrides_to_client(
+            &mut client,
+            PresenceAddressOverrides {
+                name: Some(0x010D_F5D8),
+                hp: Some(0x010D_CE10),
+                ..PresenceAddressOverrides::default()
+            }
+        ));
+        assert!(client.snapshot.is_none());
+        assert!(client.profile.is_none());
+        assert_eq!(client.derived_candidates.len(), 1);
+        assert_eq!(client.derived_candidates[0].map_address, 0x010D_856C);
+    }
+
+    #[test]
+    fn apply_explicit_level_and_map_builds_a_scanned_profile() {
+        let (_, mut client) = client("one", "KlaipedaRO");
+
+        assert!(apply_overrides_to_client(
+            &mut client,
+            PresenceAddressOverrides {
+                name: Some(0x0177_AE00),
+                hp: Some(0x0177_8190),
+                level: Some(0x0177_8000),
+                job: Some(0x0177_8008),
+                map: Some(0x0177_7000),
+            }
+        ));
+        assert!(client.profile.is_none());
+        assert_eq!(client.derived_candidates.len(), 1);
+        assert_eq!(client.derived_candidates[0].id, "scanned");
+        assert_eq!(client.derived_candidates[0].map_address, 0x0177_7000);
     }
 }

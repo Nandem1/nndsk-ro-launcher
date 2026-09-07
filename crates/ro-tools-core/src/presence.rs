@@ -8,6 +8,9 @@ use crate::profiles::parse_hex;
 
 const MAX_TEXT_LEN: usize = 40;
 const MAX_LEVEL: u32 = 300;
+const MODULE_BASE: u32 = 0x0040_0000;
+const RATHENA_NAME_FROM_HP: u32 = 0x27C8;
+const INFINITY_NAME_MINUS_HP: u32 = 0x2A4C;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PresenceMemoryProfile {
@@ -21,6 +24,51 @@ pub struct PresenceMemoryProfile {
     pub level_address: u32,
     pub job_level_address: u32,
     pub map_address: u32,
+}
+
+/// Confirmed presence layout expressed as signed deltas from `name_address`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PresenceLayoutFamily {
+    pub id: &'static str,
+    pub name_minus_hp: Option<u32>,
+    pub name_minus_level: u32,
+    pub name_minus_job: u32,
+    pub name_minus_map: u32,
+}
+
+pub const RATHENA_2018_FAMILY: PresenceLayoutFamily = PresenceLayoutFamily {
+    id: "derived-rathena-2018",
+    name_minus_hp: Some(RATHENA_NAME_FROM_HP),
+    name_minus_level: 0x61D8,
+    name_minus_job: 0x61D0,
+    name_minus_map: 0x706C,
+};
+
+pub const SAKURA_2025_FAMILY: PresenceLayoutFamily = PresenceLayoutFamily {
+    id: "derived-sakura-2025",
+    name_minus_hp: None,
+    name_minus_level: 0x6B78,
+    name_minus_job: 0x6B70,
+    name_minus_map: 0x6BBC,
+};
+
+const LAYOUT_FAMILIES: &[PresenceLayoutFamily] = &[RATHENA_2018_FAMILY, SAKURA_2025_FAMILY];
+
+impl PresenceLayoutFamily {
+    pub fn apply(self, name_address: u32) -> Option<PresenceMemoryProfile> {
+        Some(PresenceMemoryProfile {
+            id: self.id.to_string(),
+            exe_names: Vec::new(),
+            executable_sha256: String::new(),
+            pe_build_timestamp: String::new(),
+            image_size: 0,
+            module_base: MODULE_BASE,
+            name_address,
+            level_address: name_address.checked_sub(self.name_minus_level)?,
+            job_level_address: name_address.checked_sub(self.name_minus_job)?,
+            map_address: name_address.checked_sub(self.name_minus_map)?,
+        })
+    }
 }
 
 impl PresenceMemoryProfile {
@@ -90,6 +138,101 @@ pub fn parse_presence_profiles_json(raw: &str) -> Result<Vec<PresenceMemoryProfi
             })
         })
         .collect()
+}
+
+pub fn derive_presence_profile(
+    name_address: Option<u32>,
+    hp_base: Option<u32>,
+) -> Option<PresenceMemoryProfile> {
+    let mut profiles = derive_presence_profiles(name_address, hp_base);
+    (profiles.len() == 1).then(|| profiles.remove(0))
+}
+
+pub fn derive_presence_profiles(
+    name_address: Option<u32>,
+    hp_base: Option<u32>,
+) -> Vec<PresenceMemoryProfile> {
+    let Some(name_address) = name_address else {
+        return Vec::new();
+    };
+
+    if let Some(hp) = hp_base {
+        let Some(delta) = name_address.checked_sub(hp) else {
+            return Vec::new();
+        };
+        if delta == INFINITY_NAME_MINUS_HP {
+            return Vec::new();
+        }
+        return LAYOUT_FAMILIES
+            .iter()
+            .copied()
+            .find(|family| family.name_minus_hp == Some(delta))
+            .and_then(|family| family.apply(name_address))
+            .into_iter()
+            .collect();
+    }
+
+    LAYOUT_FAMILIES
+        .iter()
+        .copied()
+        .filter_map(|family| family.apply(name_address))
+        .collect()
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PresenceAddressOverrides {
+    pub name: Option<u32>,
+    pub hp: Option<u32>,
+    pub level: Option<u32>,
+    pub job: Option<u32>,
+    pub map: Option<u32>,
+}
+
+pub fn explicit_presence_profile(
+    overrides: PresenceAddressOverrides,
+) -> Option<PresenceMemoryProfile> {
+    let name_address = overrides.name?;
+    let level_address = overrides.level?;
+    let map_address = overrides.map?;
+    Some(PresenceMemoryProfile {
+        id: "scanned".into(),
+        exe_names: Vec::new(),
+        executable_sha256: String::new(),
+        pe_build_timestamp: String::new(),
+        image_size: 0,
+        module_base: MODULE_BASE,
+        name_address,
+        level_address,
+        job_level_address: overrides
+            .job
+            .unwrap_or_else(|| level_address.saturating_add(8)),
+        map_address,
+    })
+}
+
+pub fn resolve_presence_memory_profiles(
+    hash_profile: Option<PresenceMemoryProfile>,
+    overrides: PresenceAddressOverrides,
+) -> (Option<PresenceMemoryProfile>, Vec<PresenceMemoryProfile>) {
+    if let Some(profile) = hash_profile {
+        return (Some(profile), Vec::new());
+    }
+    if let Some(profile) = explicit_presence_profile(overrides) {
+        return (None, vec![profile]);
+    }
+    (None, derive_presence_profiles(overrides.name, overrides.hp))
+}
+
+pub fn map_scan_needles(raw: &str) -> Option<Vec<Vec<u8>>> {
+    let name = normalize_map_name(raw)?;
+    Some(vec![
+        format!("{name}\0").into_bytes(),
+        format!("{name}.rsw\0").into_bytes(),
+    ])
+}
+
+pub fn map_label_matches(raw: &str, expected: &str) -> bool {
+    normalize_map_name(raw).as_deref() == Some(expected)
 }
 
 pub fn read_character_snapshot<R: MemoryReader>(
@@ -176,7 +319,7 @@ fn sanitize_text(value: &str) -> Option<String> {
     (!value.is_empty()).then(|| value.to_string())
 }
 
-fn normalize_map_name(value: &str) -> Option<String> {
+pub fn normalize_map_name(value: &str) -> Option<String> {
     let value = sanitize_text(value)?.to_ascii_lowercase();
     let value = value
         .strip_suffix(".rsw")
@@ -317,6 +460,28 @@ mod tests {
     }
 
     #[test]
+    fn wrong_layout_family_does_not_publish_false_ingame_data() {
+        let honey_name = 0x010D_F5D8;
+        let honey = RATHENA_2018_FAMILY.apply(honey_name).expect("honey");
+        let sakura_on_honey = SAKURA_2025_FAMILY.apply(honey_name).expect("wrong family");
+        let memory = FakeMemory {
+            u32_values: HashMap::from([(honey.level_address, 10), (honey.job_level_address, 7)]),
+            strings: HashMap::from([
+                (honey.name_address, "Hero".into()),
+                (honey.map_address, "prontera".into()),
+            ]),
+        };
+
+        let valid = read_character_snapshot(&memory, &honey).unwrap();
+        assert_eq!(valid.state, CharacterState::InGame);
+
+        let invalid = read_character_snapshot(&memory, &sakura_on_honey).unwrap();
+        assert_eq!(invalid.state, CharacterState::Unknown);
+        assert!(invalid.level.is_none());
+        assert!(invalid.map_name.is_none());
+    }
+
+    #[test]
     fn invalid_values_produce_an_unknown_snapshot_without_false_data() {
         let profile = profile();
         let memory = FakeMemory {
@@ -336,5 +501,180 @@ mod tests {
     fn matches_executable_globs_case_insensitively() {
         assert!(profile().matches_exe("honeyro.EXE"));
         assert!(!profile().matches_exe("other.exe"));
+    }
+
+    #[test]
+    fn rathena_family_reproduces_honey_vas_from_name() {
+        let profile = RATHENA_2018_FAMILY.apply(0x010D_F5D8).expect("honey name");
+        assert_eq!(profile.name_address, 0x010D_F5D8);
+        assert_eq!(profile.level_address, 0x010D_9400);
+        assert_eq!(profile.job_level_address, 0x010D_9408);
+        assert_eq!(profile.map_address, 0x010D_856C);
+        assert_eq!(profile.module_base, 0x0040_0000);
+    }
+
+    #[test]
+    fn sakura_family_reproduces_sakura_vas_from_name() {
+        let profile = SAKURA_2025_FAMILY.apply(0x0160_2568).expect("sakura name");
+        assert_eq!(profile.name_address, 0x0160_2568);
+        assert_eq!(profile.level_address, 0x015F_B9F0);
+        assert_eq!(profile.job_level_address, 0x015F_B9F8);
+        assert_eq!(profile.map_address, 0x015F_B9AC);
+    }
+
+    #[test]
+    fn name_only_tries_both_confirmed_families() {
+        let honey = derive_presence_profiles(Some(0x010D_F5D8), None);
+        assert!(honey.iter().any(|profile| {
+            profile.id == RATHENA_2018_FAMILY.id
+                && profile.level_address == 0x010D_9400
+                && profile.map_address == 0x010D_856C
+        }));
+        assert!(honey
+            .iter()
+            .any(|profile| profile.id == SAKURA_2025_FAMILY.id));
+
+        let sakura = derive_presence_profiles(Some(0x0160_2568), None);
+        assert!(sakura.iter().any(|profile| {
+            profile.id == SAKURA_2025_FAMILY.id
+                && profile.level_address == 0x015F_B9F0
+                && profile.map_address == 0x015F_B9AC
+        }));
+    }
+
+    #[test]
+    fn matching_rathena_hp_fingerprint_selects_only_that_family() {
+        let profiles = derive_presence_profiles(Some(0x010D_F5D8), Some(0x010D_CE10));
+        assert_eq!(profiles.len(), 1);
+        assert_eq!(profiles[0].id, RATHENA_2018_FAMILY.id);
+        assert_eq!(profiles[0].level_address, 0x010D_9400);
+        assert_eq!(
+            derive_presence_profile(Some(0x010D_F5D8), Some(0x010D_CE10))
+                .map(|profile| profile.map_address),
+            Some(0x010D_856C)
+        );
+    }
+
+    #[test]
+    fn hp_only_does_not_derive_a_presence_profile() {
+        assert!(derive_presence_profiles(None, Some(0x010D_CE10)).is_empty());
+        assert!(derive_presence_profile(None, Some(0x010D_CE10)).is_none());
+        assert!(derive_presence_profiles(None, Some(0x0146_F28C)).is_empty());
+    }
+
+    #[test]
+    fn infinity_hp_and_name_do_not_derive_a_publishable_profile() {
+        assert!(derive_presence_profiles(Some(0x0147_1CD8), Some(0x0146_F28C)).is_empty());
+        assert!(derive_presence_profile(Some(0x0147_1CD8), Some(0x0146_F28C)).is_none());
+    }
+
+    #[test]
+    fn hash_profile_wins_over_autopot_overrides() {
+        let hashed = profile();
+        let (locked, candidates) = resolve_presence_memory_profiles(
+            Some(hashed.clone()),
+            PresenceAddressOverrides {
+                name: Some(0x010D_F5D8),
+                hp: Some(0x010D_CE10),
+                ..PresenceAddressOverrides::default()
+            },
+        );
+        assert_eq!(
+            locked.as_ref().map(|profile| profile.id.as_str()),
+            Some("test")
+        );
+        assert!(candidates.is_empty());
+    }
+
+    #[test]
+    fn overrides_derive_when_hash_profile_is_missing() {
+        let (locked, candidates) = resolve_presence_memory_profiles(
+            None,
+            PresenceAddressOverrides {
+                name: Some(0x010D_F5D8),
+                hp: Some(0x010D_CE10),
+                ..PresenceAddressOverrides::default()
+            },
+        );
+        assert!(locked.is_none());
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].map_address, 0x010D_856C);
+    }
+
+    #[test]
+    fn klaipeda_style_name_hp_without_level_map_does_not_publish() {
+        let name = 0x0177_AE00;
+        let hp = 0x0177_8190;
+        assert_eq!(name - hp, 0x2C70);
+        let (locked, candidates) = resolve_presence_memory_profiles(
+            None,
+            PresenceAddressOverrides {
+                name: Some(name),
+                hp: Some(hp),
+                ..PresenceAddressOverrides::default()
+            },
+        );
+        assert!(locked.is_none());
+        assert!(candidates.is_empty());
+        assert!(explicit_presence_profile(PresenceAddressOverrides {
+            name: Some(name),
+            hp: Some(hp),
+            ..PresenceAddressOverrides::default()
+        })
+        .is_none());
+    }
+
+    #[test]
+    fn explicit_name_level_map_builds_one_profile_that_can_go_ingame() {
+        let overrides = PresenceAddressOverrides {
+            name: Some(0x0177_AE00),
+            hp: Some(0x0177_8190),
+            level: Some(0x0177_8000),
+            job: Some(0x0177_8008),
+            map: Some(0x0177_7000),
+        };
+        let (locked, candidates) = resolve_presence_memory_profiles(None, overrides);
+        assert!(locked.is_none());
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].id, "scanned");
+        assert_eq!(candidates[0].name_address, 0x0177_AE00);
+        assert_eq!(candidates[0].level_address, 0x0177_8000);
+        assert_eq!(candidates[0].job_level_address, 0x0177_8008);
+        assert_eq!(candidates[0].map_address, 0x0177_7000);
+
+        let memory = FakeMemory {
+            u32_values: HashMap::from([(0x0177_8000, 12), (0x0177_8008, 8)]),
+            strings: HashMap::from([
+                (0x0177_AE00, "Klaipeda".into()),
+                (0x0177_7000, "malaya.rsw".into()),
+            ]),
+        };
+        let snapshot = read_character_snapshot(&memory, &candidates[0]).unwrap();
+        assert_eq!(snapshot.state, CharacterState::InGame);
+        assert_eq!(snapshot.character_name.as_deref(), Some("Klaipeda"));
+        assert_eq!(snapshot.level, Some(12));
+        assert_eq!(snapshot.map_name.as_deref(), Some("malaya"));
+    }
+
+    #[test]
+    fn map_refine_discards_secondary_buffers() {
+        assert!(map_label_matches("prontera.rsw", "prontera"));
+        assert!(map_label_matches("PRONTERA", "prontera"));
+        assert!(!map_label_matches("izlude.rsw", "prontera"));
+
+        let needles = map_scan_needles("Prontera.rsw").expect("map");
+        assert!(needles.iter().any(|needle| needle == b"prontera\0"));
+        assert!(needles.iter().any(|needle| needle == b"prontera.rsw\0"));
+
+        let leftovers: Vec<u32> = [
+            (0x1000u32, "prontera.rsw"),
+            (0x2000, "prontera"),
+            (0x3000, "izlude.rsw"),
+        ]
+        .into_iter()
+        .filter(|(_, raw)| map_label_matches(raw, "izlude"))
+        .map(|(address, _)| address)
+        .collect();
+        assert_eq!(leftovers, vec![0x3000]);
     }
 }

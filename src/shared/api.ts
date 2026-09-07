@@ -9,6 +9,8 @@ import type {
   DependencyStatus,
   DetectedNameAddress,
   GameClientSnapshot,
+  LevelScanProgress,
+  MapScanProgress,
   InstallDgVoodooResult,
   LaunchValues,
   MemoryScanProgress,
@@ -140,10 +142,41 @@ export const api = {
 
   cancelAutopotMemoryScan: () => invoke<void>('cancel_autopot_memory_scan'),
 
-  findAutopotNameAddress: (characterName: string) =>
+  findAutopotNameAddress: (characterName: string, hpBase?: string) =>
     invoke<DetectedNameAddress>('find_autopot_name_address', {
       characterName,
+      hpBase: hpBase ?? null,
     }),
+
+  beginAutopotLevelScan: (
+    currentLevel: number,
+    nameAddress?: string,
+    hpBase?: string,
+  ) =>
+    invoke<LevelScanProgress>('begin_autopot_level_scan', {
+      currentLevel,
+      nameAddress: nameAddress ?? null,
+      hpBase: hpBase ?? null,
+    }),
+
+  refineAutopotLevelScan: (currentLevel: number) =>
+    invoke<LevelScanProgress>('refine_autopot_level_scan', { currentLevel }),
+
+  beginAutopotMapScan: (
+    mapName: string,
+    nameAddress?: string,
+    hpBase?: string,
+    levelAddress?: string,
+  ) =>
+    invoke<MapScanProgress>('begin_autopot_map_scan', {
+      mapName,
+      nameAddress: nameAddress ?? null,
+      hpBase: hpBase ?? null,
+      levelAddress: levelAddress ?? null,
+    }),
+
+  refineAutopotMapScan: (mapName: string) =>
+    invoke<MapScanProgress>('refine_autopot_map_scan', { mapName }),
 
   startSpammer: (server: ServerConfig) => {
     assertValid(validateServerConfig(server))

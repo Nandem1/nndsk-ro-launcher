@@ -5,6 +5,6 @@ mod service;
 mod session;
 
 pub use profiles::{load_profiles, resolve_profile};
-pub use scanner::{DetectedNameAddress, MemoryScanProgress};
+pub use scanner::{DetectedNameAddress, LevelScanProgress, MapScanProgress, MemoryScanProgress};
 pub use service::AutopotHandle;
 pub use session::start_session;

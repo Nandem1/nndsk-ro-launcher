@@ -15,7 +15,7 @@ use crate::state::{GameProcessHandle, GameState, LaunchReservation};
 use crate::tools::autobuff::AutobuffHandle;
 use crate::tools::autopot::AutopotHandle;
 use crate::tools::input::InputGateway;
-use crate::tools::presence::PresenceHandle;
+use crate::tools::presence::{overrides_from_autopot, PresenceHandle};
 use crate::tools::runners::ensure_managed_runtime;
 use crate::tools::server_tools;
 use crate::tools::spammer::SpammerHandle;
@@ -192,9 +192,11 @@ pub async fn launch_game(
     );
     presence.register(
         snapshot.client_id.clone(),
+        snapshot.server_id.clone(),
         snapshot.server_name.clone(),
         identity,
         game_exe.clone(),
+        overrides_from_autopot(&server.autopot),
     );
 
     let autopot = autopot.clone();

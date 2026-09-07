@@ -121,6 +121,20 @@ pub fn scan_writable_u32(pid: u32, value: u32) -> Result<Vec<u32>, ToolsError> {
 /// los mappings en orden ascendente. Conserva un pequeño solapamiento entre chunks para no perder
 /// cadenas que crucen el límite de lectura.
 pub fn find_first_writable_bytes(pid: u32, needle: &[u8]) -> Result<Option<u32>, ToolsError> {
+    let mut found = collect_writable_bytes(pid, needle, true)?;
+    Ok(found.pop())
+}
+
+/// Devuelve todas las apariciones exactas de `needle` en memoria legible y escribible.
+pub fn find_all_writable_bytes(pid: u32, needle: &[u8]) -> Result<Vec<u32>, ToolsError> {
+    collect_writable_bytes(pid, needle, false)
+}
+
+fn collect_writable_bytes(
+    pid: u32,
+    needle: &[u8],
+    first_only: bool,
+) -> Result<Vec<u32>, ToolsError> {
     if needle.is_empty() {
         return Err(ToolsError::Other(
             "la cadena buscada no puede estar vacía".into(),
@@ -142,6 +156,7 @@ pub fn find_first_writable_bytes(pid: u32, needle: &[u8]) -> Result<Option<u32>,
     let mut overlap = Vec::with_capacity(needle.len().saturating_sub(1));
     let mut successful_reads = 0usize;
     let mut last_error = None;
+    let mut matches = Vec::new();
 
     for (region_start, region_end) in regions {
         overlap.clear();
@@ -156,12 +171,20 @@ pub fn find_first_writable_bytes(pid: u32, needle: &[u8]) -> Result<Option<u32>,
                     combined.clear();
                     combined.extend_from_slice(&overlap);
                     combined.extend_from_slice(&buffer[..read]);
-                    if let Some(offset) = find_subslice(&combined, needle) {
+                    for offset in find_all_subslices(&combined, needle) {
                         let match_address = address
                             .saturating_sub(overlap_len as u64)
                             .saturating_add(offset as u64);
                         if let Ok(address) = u32::try_from(match_address) {
-                            return Ok(Some(address));
+                            matches.push(address);
+                            if first_only {
+                                return Ok(matches);
+                            }
+                            if matches.len() > MAX_SCAN_CANDIDATES {
+                                return Err(ToolsError::Other(format!(
+                                    "la cadena aparece en más de {MAX_SCAN_CANDIDATES} direcciones"
+                                )));
+                            }
                         }
                     }
 
@@ -184,16 +207,20 @@ pub fn find_first_writable_bytes(pid: u32, needle: &[u8]) -> Result<Option<u32>,
             "no se pudo leer ninguna región escribible del cliente".into()
         })));
     }
-    Ok(None)
+    matches.sort_unstable();
+    matches.dedup();
+    Ok(matches)
 }
 
-fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
-    if needle.len() > haystack.len() {
-        return None;
+fn find_all_subslices(haystack: &[u8], needle: &[u8]) -> Vec<usize> {
+    if needle.is_empty() || needle.len() > haystack.len() {
+        return Vec::new();
     }
     haystack
         .windows(needle.len())
-        .position(|window| window == needle)
+        .enumerate()
+        .filter_map(|(offset, window)| (window == needle).then_some(offset))
+        .collect()
 }
 
 fn parse_writable_regions(maps: &str) -> Vec<(u64, u64)> {
@@ -385,7 +412,25 @@ mod tests {
 
     #[test]
     fn byte_search_finds_an_exact_unaligned_string() {
-        assert_eq!(find_subslice(b"xxNombrePJ\0yy", b"NombrePJ\0"), Some(2));
-        assert_eq!(find_subslice(b"xxNombrePJyy", b"NombrePJ\0"), None);
+        assert_eq!(
+            find_all_subslices(b"xxNombrePJ\0yy", b"NombrePJ\0"),
+            vec![2]
+        );
+        assert_eq!(
+            find_all_subslices(b"xxNombrePJyy", b"NombrePJ\0"),
+            Vec::<usize>::new()
+        );
+    }
+
+    #[test]
+    fn byte_search_collects_every_exact_match() {
+        assert_eq!(
+            find_all_subslices(b"prontera\0xxprontera\0", b"prontera\0"),
+            vec![0, 11]
+        );
+        assert_eq!(
+            find_all_subslices(b"izlude\0", b"prontera\0"),
+            Vec::<usize>::new()
+        );
     }
 }

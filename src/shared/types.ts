@@ -47,6 +47,9 @@ export interface AutopotConfig {
   profileId?: string
   hpBaseOverride?: string
   nameAddressOverride?: string
+  levelAddressOverride?: string
+  jobLevelAddressOverride?: string
+  mapAddressOverride?: string
 }
 
 export interface AutopotStatusEvent {
@@ -254,6 +257,37 @@ export interface DetectedNameAddress {
   pid: number
   characterName: string
   nameAddress: string
+}
+
+export interface DetectedLevelAddress {
+  levelAddress: string
+  jobLevelAddress?: string | null
+  currentLevel: number
+}
+
+export interface LevelScanProgress {
+  pid: number
+  candidateCount: number
+  confirmed?: DetectedLevelAddress | null
+}
+
+export interface DetectedMapAddress {
+  mapAddress: string
+  mapName: string
+}
+
+export interface MapScanProgress {
+  pid: number
+  candidateCount: number
+  confirmed?: DetectedMapAddress | null
+}
+
+export interface MemoryScanResult {
+  hpBase: string
+  nameAddress?: string
+  levelAddress?: string
+  jobLevelAddress?: string
+  mapAddress?: string
 }
 
 export interface RunnerInfo {

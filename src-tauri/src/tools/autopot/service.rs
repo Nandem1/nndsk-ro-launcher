@@ -12,7 +12,10 @@ use crate::tools::input::{InputGateway, InputSource};
 use crate::tools::session::SessionController;
 use crate::utils::emit_tool_log_opt;
 
-use super::scanner::{DetectedNameAddress, MemoryScanProgress, MemoryScannerHandle};
+use super::scanner::{
+    DetectedNameAddress, LevelScanProgress, MapScanProgress, MemoryScanProgress,
+    MemoryScannerHandle,
+};
 
 pub struct AutopotHandle {
     session: SessionController,
@@ -85,8 +88,42 @@ impl AutopotHandle {
         &self,
         pid: u32,
         character_name: String,
+        hp_base: Option<u32>,
     ) -> Result<DetectedNameAddress, String> {
-        self.scanner.find_name(pid, character_name).await
+        self.scanner.find_name(pid, character_name, hp_base).await
+    }
+
+    pub async fn begin_level_scan(
+        &self,
+        pid: u32,
+        current_level: u32,
+        name_address: Option<u32>,
+        hp_base: Option<u32>,
+    ) -> Result<LevelScanProgress, String> {
+        self.scanner
+            .begin_level(pid, current_level, name_address, hp_base)
+            .await
+    }
+
+    pub async fn refine_level_scan(&self, current_level: u32) -> Result<LevelScanProgress, String> {
+        self.scanner.refine_level(current_level).await
+    }
+
+    pub async fn begin_map_scan(
+        &self,
+        pid: u32,
+        map_name: String,
+        name_address: Option<u32>,
+        hp_base: Option<u32>,
+        level_address: Option<u32>,
+    ) -> Result<MapScanProgress, String> {
+        self.scanner
+            .begin_map(pid, map_name, name_address, hp_base, level_address)
+            .await
+    }
+
+    pub async fn refine_map_scan(&self, map_name: String) -> Result<MapScanProgress, String> {
+        self.scanner.refine_map(map_name).await
     }
 
     pub async fn start(

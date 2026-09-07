@@ -3,19 +3,33 @@ import { createPortal } from 'react-dom'
 import { api } from '../../shared/api'
 import { runSafely } from '../../shared/async'
 import type {
+  DetectedLevelAddress,
+  DetectedMapAddress,
   DetectedNameAddress,
   DetectedMemoryLayout,
+  LevelScanProgress,
+  MapScanProgress,
   MemoryScanProgress,
+  MemoryScanResult,
 } from '../../shared/types'
 
 interface Props {
   serverName: string
   existingHpBase?: string
   onCancel: () => void
-  onConfirm: (hpBase: string, nameAddress?: string) => Promise<void>
+  onConfirm: (result: MemoryScanResult) => Promise<void>
 }
 
-type ScanStep = 'initial' | 'refine' | 'name' | 'confirmed'
+type ScanStep =
+  | 'initial'
+  | 'refine'
+  | 'name'
+  | 'discord'
+  | 'level'
+  | 'levelRefine'
+  | 'map'
+  | 'mapRefine'
+  | 'confirmed'
 
 export function parseHp(value: string): number | null {
   if (!/^\d+$/.test(value.trim())) return null
@@ -23,6 +37,22 @@ export function parseHp(value: string): number | null {
   return Number.isSafeInteger(parsed) && parsed > 0 && parsed <= 0xffffffff
     ? parsed
     : null
+}
+
+export function parseLevel(value: string): number | null {
+  if (!/^\d+$/.test(value.trim())) return null
+  const parsed = Number(value)
+  return Number.isSafeInteger(parsed) && parsed >= 1 && parsed <= 300
+    ? parsed
+    : null
+}
+
+export function parseMapName(value: string): string | null {
+  const trimmed = value.trim().toLowerCase()
+  const stripped = trimmed.replace(/\.(rsw|gat)$/i, '')
+  if (!stripped || stripped.length > 39) return null
+  if (!/^[a-z0-9_@-]+$/.test(stripped)) return null
+  return stripped
 }
 
 export function MemoryScannerModal({
@@ -37,15 +67,28 @@ export function MemoryScannerModal({
   )
   const [hp, setHp] = useState('')
   const [progress, setProgress] = useState<MemoryScanProgress | null>(null)
+  const [levelProgress, setLevelProgress] = useState<LevelScanProgress | null>(
+    null,
+  )
+  const [mapProgress, setMapProgress] = useState<MapScanProgress | null>(null)
   const [confirmed, setConfirmed] = useState<DetectedMemoryLayout | null>(null)
   const [name, setName] = useState('')
   const [detectedName, setDetectedName] = useState<DetectedNameAddress | null>(
     null,
   )
+  const [level, setLevel] = useState('')
+  const [detectedLevel, setDetectedLevel] =
+    useState<DetectedLevelAddress | null>(null)
+  const [mapName, setMapName] = useState('')
+  const [detectedMap, setDetectedMap] = useState<DetectedMapAddress | null>(null)
   const [lastHp, setLastHp] = useState<number | null>(null)
+  const [lastLevel, setLastLevel] = useState<number | null>(null)
+  const [lastMap, setLastMap] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const parsedHp = parseHp(hp)
+  const parsedLevel = parseLevel(level)
+  const parsedMap = parseMapName(mapName)
   const resolvedHpBase = confirmed?.hpBase ?? existingHpBase
 
   const cancel = () => {
@@ -64,9 +107,23 @@ export function MemoryScannerModal({
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [onCancel])
 
+  const skipPresence = () => {
+    void api.cancelAutopotMemoryScan().catch(() => undefined)
+    setDetectedLevel(null)
+    setDetectedMap(null)
+    setLevel('')
+    setMapName('')
+    setLevelProgress(null)
+    setMapProgress(null)
+    setLastLevel(null)
+    setLastMap(null)
+    setError(null)
+    setStep('confirmed')
+  }
+
   const submitHp = async (event: React.FormEvent) => {
     event.preventDefault()
-    if (parsedHp === null || busy || step === 'confirmed') return
+    if (parsedHp === null || busy) return
     if (step === 'refine' && parsedHp === lastHp) {
       setError('El HP no cambió. Pierde o recupera HP antes de continuar')
       return
@@ -109,7 +166,7 @@ export function MemoryScannerModal({
     setBusy(true)
     setError(null)
     const result = await runSafely(() =>
-      api.findAutopotNameAddress(characterName),
+      api.findAutopotNameAddress(characterName, resolvedHpBase),
     )
     setBusy(false)
     if (!result.ok) {
@@ -117,7 +174,92 @@ export function MemoryScannerModal({
       return
     }
     setDetectedName(result.value)
-    setStep('confirmed')
+    setStep('discord')
+  }
+
+  const submitLevel = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (parsedLevel === null || busy) return
+    if (step === 'levelRefine' && parsedLevel === lastLevel) {
+      setError('El nivel no cambió. Sube de nivel antes de continuar')
+      return
+    }
+    setBusy(true)
+    setError(null)
+    const result = await runSafely(() =>
+      step === 'level'
+        ? api.beginAutopotLevelScan(
+            parsedLevel,
+            detectedName?.nameAddress,
+            resolvedHpBase,
+          )
+        : api.refineAutopotLevelScan(parsedLevel),
+    )
+    setBusy(false)
+    if (!result.ok) {
+      setError(result.error)
+      if (step === 'levelRefine') {
+        void api.cancelAutopotMemoryScan()
+        setStep('level')
+        setLevelProgress(null)
+        setLastLevel(null)
+      }
+      return
+    }
+
+    setLevelProgress(result.value)
+    setLastLevel(parsedLevel)
+    if (result.value.confirmed) {
+      setDetectedLevel(result.value.confirmed)
+      setStep('map')
+      setLevel('')
+    } else {
+      setStep('levelRefine')
+      setLevel('')
+    }
+  }
+
+  const submitMap = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (!parsedMap || busy) return
+    if (step === 'mapRefine' && parsedMap === lastMap) {
+      setError('El mapa no cambió. Cambia de mapa antes de continuar')
+      return
+    }
+    setBusy(true)
+    setError(null)
+    const result = await runSafely(() =>
+      step === 'map'
+        ? api.beginAutopotMapScan(
+            parsedMap,
+            detectedName?.nameAddress,
+            resolvedHpBase,
+            detectedLevel?.levelAddress,
+          )
+        : api.refineAutopotMapScan(parsedMap),
+    )
+    setBusy(false)
+    if (!result.ok) {
+      setError(result.error)
+      if (step === 'mapRefine') {
+        void api.cancelAutopotMemoryScan()
+        setStep('map')
+        setMapProgress(null)
+        setLastMap(null)
+      }
+      return
+    }
+
+    setMapProgress(result.value)
+    setLastMap(parsedMap)
+    if (result.value.confirmed) {
+      setDetectedMap(result.value.confirmed)
+      setStep('confirmed')
+      setMapName('')
+    } else {
+      setStep('mapRefine')
+      setMapName('')
+    }
   }
 
   const save = async () => {
@@ -125,7 +267,17 @@ export function MemoryScannerModal({
     setBusy(true)
     setError(null)
     const result = await runSafely(() =>
-      onConfirm(resolvedHpBase, detectedName?.nameAddress),
+      onConfirm({
+        hpBase: resolvedHpBase,
+        nameAddress: detectedName?.nameAddress,
+        ...(detectedLevel
+          ? {
+              levelAddress: detectedLevel.levelAddress,
+              jobLevelAddress: detectedLevel.jobLevelAddress ?? undefined,
+            }
+          : {}),
+        ...(detectedMap ? { mapAddress: detectedMap.mapAddress } : {}),
+      }),
     )
     setBusy(false)
     if (!result.ok) {
@@ -135,6 +287,17 @@ export function MemoryScannerModal({
     onCancel()
   }
 
+  const onSubmit =
+    step === 'name'
+      ? submitName
+      : step === 'level' || step === 'levelRefine'
+        ? submitLevel
+        : step === 'map' || step === 'mapRefine'
+          ? submitMap
+          : step === 'initial' || step === 'refine'
+            ? submitHp
+            : (event: React.FormEvent) => event.preventDefault()
+
   const description =
     step === 'initial'
       ? 'Escribe el HP exacto que muestra el juego. Se buscará sólo en la memoria escribible del cliente.'
@@ -142,9 +305,32 @@ export function MemoryScannerModal({
         ? `${progress?.candidateCount.toLocaleString() ?? 0} candidatos. Pierde o recupera HP y escribe el nuevo valor para releer las mismas direcciones.`
         : step === 'name'
           ? existingHpBase && !confirmed
-            ? `HP base ${existingHpBase} ya configurado. Escribe el nombre exacto para buscar directamente su primera dirección.`
-            : 'HP/SP confirmado. Escribe el nombre exacto del personaje para guardar también su primera dirección en memoria.'
-          : 'El bloque HP/SP coincide con el layout esperado. Revisa los valores antes de guardarlo para este servidor.'
+            ? `HP base ${existingHpBase} ya configurado. Escribe el nombre exacto; se elige la copia más cercana al HP.`
+            : 'HP/SP confirmado. Escribe el nombre exacto del personaje. Se elige la copia más cercana al HP, no la primera de memoria.'
+          : step === 'discord'
+            ? 'Opcional y sólo para Discord. AutoPot no necesita nivel ni mapa.'
+            : step === 'level'
+              ? 'Escribe el nivel base que ves ahora. Se buscará cerca de HP y nombre para evitar valores fijos.'
+              : step === 'levelRefine'
+                ? `${levelProgress?.candidateCount.toLocaleString() ?? 0} candidatos. Sube de nivel y escribe el nuevo valor.`
+                : step === 'map'
+                  ? 'Escribe el mapa actual (ej. prontera). Después cambia de mapa una vez para comparar las mismas direcciones.'
+                  : step === 'mapRefine'
+                    ? `${mapProgress?.candidateCount.toLocaleString() ?? 0} candidatos. Cambia de mapa una vez y escribe el nuevo nombre.`
+                    : 'Revisa las direcciones antes de guardarlas para este servidor.'
+
+  const busyLabel =
+    step === 'initial'
+      ? 'Escaneando memoria escribible…'
+      : step === 'refine'
+        ? 'Comparando candidatos…'
+        : step === 'name'
+          ? 'Buscando el nombre exacto…'
+          : step === 'level' || step === 'levelRefine'
+            ? 'Buscando el nivel…'
+            : step === 'map' || step === 'mapRefine'
+              ? 'Buscando el mapa…'
+              : 'Guardando direcciones…'
 
   return createPortal(
     <div
@@ -155,7 +341,7 @@ export function MemoryScannerModal({
       }}
     >
       <form
-        onSubmit={step === 'name' ? submitName : submitHp}
+        onSubmit={onSubmit}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
@@ -203,6 +389,41 @@ export function MemoryScannerModal({
               className="rounded-lg border border-zinc-700/80 bg-zinc-950/70 px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-amber-500/60 disabled:opacity-50"
             />
           </label>
+        ) : step === 'level' || step === 'levelRefine' ? (
+          <label className="mt-4 flex flex-col gap-1.5">
+            <span className="text-[11px] uppercase tracking-wider text-zinc-500">
+              {step === 'level' ? 'Nivel actual' : 'Nuevo nivel'}
+            </span>
+            <input
+              autoFocus
+              type="number"
+              min={1}
+              max={300}
+              inputMode="numeric"
+              value={level}
+              disabled={busy}
+              onChange={(event) => setLevel(event.target.value)}
+              placeholder={step === 'level' ? 'Ej. 99' : 'Ej. 100'}
+              className="input-no-spinner rounded-lg border border-zinc-700/80 bg-zinc-950/70 px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-amber-500/60 disabled:opacity-50"
+            />
+          </label>
+        ) : step === 'map' || step === 'mapRefine' ? (
+          <label className="mt-4 flex flex-col gap-1.5">
+            <span className="text-[11px] uppercase tracking-wider text-zinc-500">
+              {step === 'map' ? 'Mapa actual' : 'Nuevo mapa'}
+            </span>
+            <input
+              autoFocus
+              type="text"
+              maxLength={39}
+              value={mapName}
+              disabled={busy}
+              onChange={(event) => setMapName(event.target.value)}
+              placeholder={step === 'map' ? 'Ej. prontera' : 'Ej. izlude'}
+              spellCheck={false}
+              className="rounded-lg border border-zinc-700/80 bg-zinc-950/70 px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-amber-500/60 disabled:opacity-50"
+            />
+          </label>
         ) : step === 'confirmed' && resolvedHpBase ? (
           <div className="mt-4 space-y-2 rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3">
             <div className="flex items-center justify-between gap-3">
@@ -217,6 +438,24 @@ export function MemoryScannerModal({
                 {detectedName?.nameAddress ?? 'No configurado'}
               </code>
             </div>
+            {detectedLevel && (
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-[11px] text-zinc-500">Nivel Discord</span>
+                <code className="text-xs text-zinc-300">
+                  {detectedLevel.levelAddress}
+                </code>
+              </div>
+            )}
+            {detectedMap && (
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-[11px] text-zinc-500">
+                  Mapa '{detectedMap.mapName}'
+                </span>
+                <code className="text-xs text-zinc-300">
+                  {detectedMap.mapAddress}
+                </code>
+              </div>
+            )}
             {confirmed && (
               <>
                 <div className="flex items-center justify-between gap-3 text-[11px]">
@@ -243,13 +482,7 @@ export function MemoryScannerModal({
 
         {busy && (
           <p className="mt-3 text-[11px] text-amber-400/80 animate-pulse-dot">
-            {step === 'initial'
-              ? 'Escaneando memoria escribible…'
-              : step === 'refine'
-                ? 'Comparando candidatos…'
-                : step === 'name'
-                  ? 'Buscando el nombre exacto…'
-                  : 'Guardando direcciones…'}
+            {busyLabel}
           </p>
         )}
         {error && <p className="mt-3 text-[11px] text-red-400">{error}</p>}
@@ -296,6 +529,54 @@ export function MemoryScannerModal({
                 className="flex-1 rounded-xl bg-amber-500 py-2.5 text-xs font-semibold text-zinc-950 disabled:opacity-40"
               >
                 Buscar nombre
+              </button>
+            </>
+          ) : step === 'discord' ? (
+            <>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={skipPresence}
+                className="flex-1 rounded-xl border border-zinc-700 py-2.5 text-xs text-zinc-400 hover:text-zinc-100 disabled:opacity-40"
+              >
+                Saltar
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  setError(null)
+                  setStep('level')
+                }}
+                className="flex-1 rounded-xl bg-amber-500 py-2.5 text-xs font-semibold text-zinc-950 disabled:opacity-40"
+              >
+                Ubicar Discord
+              </button>
+            </>
+          ) : step === 'level' ||
+            step === 'levelRefine' ||
+            step === 'map' ||
+            step === 'mapRefine' ? (
+            <>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={skipPresence}
+                className="flex-1 rounded-xl border border-zinc-700 py-2.5 text-xs text-zinc-400 hover:text-zinc-100 disabled:opacity-40"
+              >
+                Saltar
+              </button>
+              <button
+                type="submit"
+                disabled={
+                  busy ||
+                  (step === 'level' || step === 'levelRefine'
+                    ? parsedLevel === null
+                    : !parsedMap)
+                }
+                className="flex-1 rounded-xl bg-amber-500 py-2.5 text-xs font-semibold text-zinc-950 disabled:opacity-40"
+              >
+                {step === 'level' || step === 'map' ? 'Buscar' : 'Comparar'}
               </button>
             </>
           ) : (

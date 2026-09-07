@@ -49,6 +49,15 @@ pub struct AutopotConfig {
     /// Optional manual character-name address override (hex string).
     #[serde(default)]
     pub name_address_override: Option<String>,
+    /// Optional Presence-only base-level address (hex). AutoPot ignores this.
+    #[serde(default)]
+    pub level_address_override: Option<String>,
+    /// Optional Presence-only job-level address (hex). AutoPot ignores this.
+    #[serde(default)]
+    pub job_level_address_override: Option<String>,
+    /// Optional Presence-only map-name address (hex). AutoPot ignores this.
+    #[serde(default)]
+    pub map_address_override: Option<String>,
 }
 
 impl Default for AutopotConfig {
@@ -64,6 +73,9 @@ impl Default for AutopotConfig {
             profile_id: None,
             hp_base_override: None,
             name_address_override: None,
+            level_address_override: None,
+            job_level_address_override: None,
+            map_address_override: None,
         }
     }
 }
@@ -98,6 +110,15 @@ impl AutopotConfig {
         if let Some(address) = &self.name_address_override {
             parse_hex(address).map_err(ToolsError::Other)?;
         }
+        if let Some(address) = &self.level_address_override {
+            parse_hex(address).map_err(ToolsError::Other)?;
+        }
+        if let Some(address) = &self.job_level_address_override {
+            parse_hex(address).map_err(ToolsError::Other)?;
+        }
+        if let Some(address) = &self.map_address_override {
+            parse_hex(address).map_err(ToolsError::Other)?;
+        }
         Ok(())
     }
 }
@@ -115,5 +136,18 @@ mod tests {
         let expected: AutopotConfig =
             serde_json::from_value(fixtures["defaults"]["autopot"].clone()).unwrap();
         assert_eq!(AutopotConfig::default(), expected);
+    }
+
+    #[test]
+    fn presence_overrides_are_optional_hex() {
+        let mut config = AutopotConfig {
+            level_address_override: Some("0x01778000".into()),
+            job_level_address_override: Some("0x01778008".into()),
+            map_address_override: Some("0x01777000".into()),
+            ..AutopotConfig::default()
+        };
+        assert!(config.validate().is_ok());
+        config.map_address_override = Some("not-hex".into());
+        assert!(config.validate().is_err());
     }
 }

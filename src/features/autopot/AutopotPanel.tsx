@@ -81,7 +81,10 @@ export function AutopotPanel() {
   const [profiles, setProfiles] = useState<ClientProfile[]>([])
   const [showMemoryScanner, setShowMemoryScanner] = useState(false)
   const hasMemoryOverride =
-    !!config.hpBaseOverride || !!config.nameAddressOverride
+    !!config.hpBaseOverride ||
+    !!config.nameAddressOverride ||
+    !!config.levelAddressOverride ||
+    !!config.mapAddressOverride
 
   useEffect(() => {
     void api.listClientProfiles().then(setProfiles).catch(console.error)
@@ -258,6 +261,9 @@ export function AutopotPanel() {
                 profileId: val || undefined,
                 hpBaseOverride: undefined,
                 nameAddressOverride: undefined,
+                levelAddressOverride: undefined,
+                jobLevelAddressOverride: undefined,
+                mapAddressOverride: undefined,
               })
             }}
             options={[
@@ -367,10 +373,13 @@ export function AutopotPanel() {
           serverName={server.name}
           existingHpBase={config.hpBaseOverride}
           onCancel={() => setShowMemoryScanner(false)}
-          onConfirm={async (hpBaseOverride, nameAddressOverride) => {
+          onConfirm={async (result) => {
             await updateField({
-              hpBaseOverride,
-              nameAddressOverride,
+              hpBaseOverride: result.hpBase,
+              nameAddressOverride: result.nameAddress,
+              levelAddressOverride: result.levelAddress,
+              jobLevelAddressOverride: result.jobLevelAddress,
+              mapAddressOverride: result.mapAddress,
               profileId: undefined,
             })
           }}
