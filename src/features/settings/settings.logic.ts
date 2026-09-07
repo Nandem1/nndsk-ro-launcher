@@ -1,4 +1,5 @@
 import type { RunnerInfo } from '../../shared/types'
+import { MANAGED_RUNTIME_ID } from '../../shared/constants'
 
 export interface RunnerResolution {
   path: string
@@ -13,6 +14,10 @@ export function resolveRunnerAfterLoad(
 ): RunnerResolution | null {
   if (runners.length === 0) return null
 
-  const managed = runners[0]
-  return { path: managed.path, persist: current !== managed.path }
+  const preferred =
+    runners.find((runner) => runner.id === MANAGED_RUNTIME_ID) ?? runners[0]
+  if (current && runners.some((runner) => runner.path === current)) {
+    return { path: current, persist: false }
+  }
+  return { path: preferred.path, persist: current !== preferred.path }
 }

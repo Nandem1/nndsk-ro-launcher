@@ -19,10 +19,22 @@ describe('resolveRunnerAfterLoad', () => {
     })
   })
 
-  it('migra cualquier runner anterior al runtime administrado', () => {
+  it('migra una ruta que ya no está disponible al runtime administrado', () => {
     expect(resolveRunnerAfterLoad('/custom/proton', runners)).toEqual({
       path: proton.path,
       persist: true,
+    })
+  })
+
+  it('conserva un runner alternativo detectado', () => {
+    const alternative: RunnerInfo = {
+      id: 'external:wine',
+      name: 'Wine',
+      path: '/usr/bin/wine',
+    }
+    expect(resolveRunnerAfterLoad(alternative.path, [proton, alternative])).toEqual({
+      path: alternative.path,
+      persist: false,
     })
   })
 

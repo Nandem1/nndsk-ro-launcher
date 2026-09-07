@@ -13,6 +13,7 @@ import { SpammerPanel } from '../features/spammer/SpammerPanel'
 import { AutobuffPanel } from '../features/autobuff/AutobuffPanel'
 import { UnifiedLogPanel } from '../features/logs/LogPanels'
 import { AdvancedSettings } from '../features/settings/AdvancedSettings'
+import { RunnerSelector } from '../features/settings/RunnerSelector'
 import { PrefixResetButton } from '../features/settings/PrefixResetButton'
 import { DiscordPresenceToggle } from '../features/settings/DiscordPresenceToggle'
 import { useLauncherEvents } from '../features/launcher/useLauncherEvents'
@@ -87,6 +88,7 @@ export function App() {
               <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-2.5 pr-0.5">
                 <ServerList />
                 <ActiveClients />
+                <RunnerSelector />
                 <AdvancedSettings />
                 <DiscordPresenceToggle />
               </div>

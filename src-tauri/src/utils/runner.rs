@@ -354,7 +354,7 @@ pub fn validate_runtime_prefix(ctx: &WineContext) -> Result<PrefixHealth, String
 
 pub async fn resolve_wine_context(
     wine_prefix: Option<String>,
-    _runner: Option<String>,
+    runner: Option<String>,
 ) -> Result<WineContext, String> {
     let prefix = effective_prefix(wine_prefix.clone());
     Ok(WineContext {
@@ -369,16 +369,16 @@ pub async fn resolve_wine_context(
             server_id: None,
         },
         prefix,
-        resolved: resolve_effective_runner(None).await?,
+        resolved: resolve_effective_runner(runner).await?,
     })
 }
 
 pub async fn resolve_server_wine_context_with_runner(
     server: Option<&ServerConfig>,
-    _default_runner: Option<String>,
+    default_runner: Option<String>,
 ) -> Result<WineContext, String> {
     let location = resolve_server_prefix(server)?;
-    let resolved = resolve_effective_runner(None).await?;
+    let resolved = resolve_effective_runner(default_runner).await?;
     Ok(WineContext {
         prefix: location.path.clone(),
         location,
@@ -387,8 +387,16 @@ pub async fn resolve_server_wine_context_with_runner(
 }
 
 pub async fn resolve_effective_runner(
-    _override_path: Option<String>,
+    override_path: Option<String>,
 ) -> Result<ResolvedRunner, String> {
+    if let Some(path) = override_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|path| !path.is_empty())
+    {
+        return resolve_runner(path);
+    }
+
     let proton = managed_proton_path();
     let umu = managed_umu_path();
     resolve_runner_with_umu(proton.to_string_lossy().as_ref(), &umu)
