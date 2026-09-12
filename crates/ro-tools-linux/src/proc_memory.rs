@@ -281,8 +281,10 @@ impl MemoryReader for ProcMemoryReader {
             });
         }
         Ok(bytes
-            .chunks_exact(4)
-            .map(|chunk| u32::from_le_bytes(chunk.try_into().expect("exact chunk")))
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|chunk| u32::from_le_bytes(*chunk))
             .collect())
     }
 }

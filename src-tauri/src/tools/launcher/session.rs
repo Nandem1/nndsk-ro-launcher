@@ -15,6 +15,7 @@ use crate::state::{GameProcessHandle, GameState, LaunchReservation};
 use crate::tools::autobuff::AutobuffHandle;
 use crate::tools::autopot::AutopotHandle;
 use crate::tools::input::InputGateway;
+use crate::tools::prefix::DXVK_SAREK_COMPONENT;
 use crate::tools::presence::{overrides_from_autopot, PresenceHandle};
 use crate::tools::runners::ensure_managed_runtime;
 use crate::tools::server_tools;
@@ -62,7 +63,7 @@ pub async fn launch_game(
     let ctx = resolve_server_wine_context_with_runner(Some(&server), runner).await?;
     let prefix_operation =
         OperationGuard::acquire_shared("prefix", std::path::Path::new(&ctx.prefix))?;
-    validate_runtime_prefix(&ctx)?;
+    let prefix_health = validate_runtime_prefix(&ctx)?;
     let missing_components =
         server_tools::missing_runtime_components(&server, std::path::Path::new(&ctx.prefix));
     if !missing_components.is_empty() {
@@ -106,16 +107,40 @@ pub async fn launch_game(
     let game_dir = required_game_dir(&server.executable_path)?;
     let dgvoodoo_operation =
         OperationGuard::acquire_shared("dgvoodoo", std::path::Path::new(&game_dir))?;
-    let use_dgvoodoo = server_tools::scan_status(&app, &server)
-        .map(|status| status.dgvoodoo.configured)
-        .unwrap_or(false);
+    let tools_status = server_tools::scan_status(&app, &server).ok();
+    let use_dgvoodoo = tools_status
+        .as_ref()
+        .is_some_and(|status| status.dgvoodoo.configured);
+    let wine_7_16 = ctx.resolved.is_wine_7_16();
+    let use_dxvk_sarek = wine_7_16
+        && prefix_health.manifest.as_ref().is_some_and(|manifest| {
+            manifest
+                .components
+                .iter()
+                .any(|component| component == DXVK_SAREK_COMPONENT)
+        });
+    if wine_7_16 && !use_dxvk_sarek {
+        return Err(
+            "El entorno Wine 7.16 no registra DXVK-Sarek 1.10.x; rearma este entorno antes de jugar"
+                .to_string(),
+        );
+    }
+    if use_dxvk_sarek {
+        emit_tool_log_opt(
+            Some(&app),
+            format!(
+                "[Graphics] Wine 7.16 old WoW64 + DXVK-Sarek 1.10.x | logs={}",
+                crate::utils::dxvk_sarek_log_path(&ctx.prefix).display()
+            ),
+        );
+    }
     if game.stop_requested(reservation) {
         return Err("El lanzamiento fue cancelado por el usuario".to_string());
     }
     let mut cmd =
         ctx.resolved
             .game_command(&ctx.prefix, &launch_exe, rendered_args.iter(), &work_dir);
-    apply_game_env(&mut cmd, use_dgvoodoo);
+    apply_game_env(&mut cmd, use_dgvoodoo, use_dxvk_sarek, &ctx.prefix);
     pipe_output(&mut cmd);
 
     let mut child = cmd

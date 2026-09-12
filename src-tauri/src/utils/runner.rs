@@ -9,8 +9,8 @@ use crate::utils::prefix::effective_prefix;
 use crate::utils::{
     apply_prefix_env, ensure_custom_setup_allowed, ensure_managed_path_safe, find_umu_run,
     inspect_prefix, is_executable_file, manifest_matches_location, manifest_matches_runner,
-    proton_vkd3d_companions_available, resolve_server_prefix, winetricks_path, PrefixHealth,
-    PrefixLocation, PrefixScope, PREFIX_SCHEMA_VERSION, UMU_RUN_BIN,
+    proton_vkd3d_companions_available, resolve_server_prefix_with_runner, sanitize_appimage_env,
+    winetricks_path, PrefixHealth, PrefixLocation, PrefixScope, PREFIX_SCHEMA_VERSION, UMU_RUN_BIN,
 };
 
 const DEFAULT_GAME_ID: &str = "0";
@@ -66,6 +66,42 @@ impl ResolvedRunner {
         }
     }
 
+    pub fn reported_version(&self) -> Option<String> {
+        match &self.strategy {
+            RunnerStrategy::Wine { wine_bin, .. } => {
+                let mut command = Command::new(wine_bin);
+                sanitize_appimage_env(&mut command);
+                command.arg("--version");
+                command
+                    .as_std_mut()
+                    .output()
+                    .ok()
+                    .filter(|output| output.status.success())
+                    .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
+                    .filter(|version| !version.is_empty())
+            }
+            RunnerStrategy::Proton { proton_dir, .. } => {
+                std::fs::read_to_string(proton_dir.join("version"))
+                    .ok()
+                    .and_then(|version| {
+                        version
+                            .lines()
+                            .next()
+                            .map(str::trim)
+                            .filter(|version| !version.is_empty())
+                            .map(str::to_owned)
+                    })
+            }
+        }
+    }
+
+    pub fn is_wine_7_16(&self) -> bool {
+        self.kind() == RunnerKind::Wine
+            && self
+                .reported_version()
+                .is_some_and(|version| is_wine_7_16_version(&version))
+    }
+
     pub fn proton_root(&self) -> Option<&Path> {
         match &self.strategy {
             RunnerStrategy::Proton { proton_dir, .. } => Some(proton_dir),
@@ -74,13 +110,7 @@ impl ResolvedRunner {
     }
 
     pub fn supports_winetricks_verb(&self, verb: &str) -> bool {
-        let script = match &self.strategy {
-            RunnerStrategy::Proton { proton_dir, .. } => {
-                Some(proton_dir.join("protonfixes/winetricks"))
-            }
-            RunnerStrategy::Wine { .. } => winetricks_path(),
-        };
-        script
+        self.winetricks_script()
             .and_then(|script| std::fs::read_to_string(script).ok())
             .is_some_and(|content| {
                 content.lines().any(|line| {
@@ -88,6 +118,20 @@ impl ResolvedRunner {
                     words.next() == Some("w_metadata") && words.next() == Some(verb)
                 })
             })
+    }
+
+    pub fn has_winetricks(&self) -> bool {
+        self.winetricks_script()
+            .is_some_and(|path| is_executable_file(&path))
+    }
+
+    fn winetricks_script(&self) -> Option<PathBuf> {
+        match &self.strategy {
+            RunnerStrategy::Proton { proton_dir, .. } => {
+                Some(proton_dir.join("protonfixes/winetricks"))
+            }
+            RunnerStrategy::Wine { .. } => effective_wine_winetricks_path(),
+        }
     }
 
     pub fn game_command<I, S>(
@@ -189,8 +233,9 @@ impl ResolvedRunner {
                 wine_bin,
                 wineserver_bin,
             } => {
-                let mut cmd =
-                    Command::new(winetricks_path().unwrap_or_else(|| PathBuf::from("winetricks")));
+                let mut cmd = Command::new(
+                    effective_wine_winetricks_path().unwrap_or_else(|| PathBuf::from("winetricks")),
+                );
                 cmd.arg("-q").args(packages);
                 self.apply_wine_env(&mut cmd, prefix_path);
                 cmd.env("WINE", wine_bin).env("WINESERVER", wineserver_bin);
@@ -251,6 +296,26 @@ impl ResolvedRunner {
             .env("PROTON_VERB", verb.as_str());
         cmd
     }
+}
+
+fn is_wine_7_16_version(version: &str) -> bool {
+    version
+        .strip_prefix("wine-")
+        .is_some_and(|version| version == "7.16" || version.starts_with("7.16 "))
+}
+
+fn effective_wine_winetricks_path() -> Option<PathBuf> {
+    preferred_wine_winetricks_path(&managed_proton_path(), winetricks_path())
+}
+
+fn preferred_wine_winetricks_path(
+    managed_proton: &Path,
+    fallback: Option<PathBuf>,
+) -> Option<PathBuf> {
+    let bundled = managed_proton
+        .parent()
+        .map(|root| root.join("protonfixes/winetricks"));
+    bundled.filter(|path| is_executable_file(path)).or(fallback)
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -377,8 +442,14 @@ pub async fn resolve_server_wine_context_with_runner(
     server: Option<&ServerConfig>,
     default_runner: Option<String>,
 ) -> Result<WineContext, String> {
-    let location = resolve_server_prefix(server)?;
-    let resolved = resolve_effective_runner(default_runner).await?;
+    let selected_runner = server
+        .and_then(|server| server.runner.clone())
+        .or(default_runner);
+    let resolved = resolve_effective_runner(selected_runner).await?;
+    let runner_path = std::fs::canonicalize(resolved.runner_path())
+        .unwrap_or_else(|_| resolved.runner_path().to_path_buf());
+    let runner_path = runner_path.to_string_lossy();
+    let location = resolve_server_prefix_with_runner(server, Some(runner_path.as_ref()))?;
     Ok(WineContext {
         prefix: location.path.clone(),
         location,
@@ -486,9 +557,18 @@ fn prepend_path(cmd: &mut Command, bin_dir: &Path) {
 mod tests {
     use super::*;
     use std::ffi::{OsStr, OsString};
+    use std::os::unix::fs::PermissionsExt;
     use std::sync::atomic::{AtomicU64, Ordering};
 
     static TEST_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+    #[test]
+    fn identifies_only_the_validated_wine_7_16_line() {
+        assert!(is_wine_7_16_version("wine-7.16"));
+        assert!(is_wine_7_16_version("wine-7.16 (Staging)"));
+        assert!(!is_wine_7_16_version("wine-7.1"));
+        assert!(!is_wine_7_16_version("wine-10.0"));
+    }
 
     fn test_wine_runner() -> ResolvedRunner {
         ResolvedRunner {
@@ -610,6 +690,30 @@ mod tests {
             OsStr::new("/opt/test-wine/bin/wineserver")
         );
         assert_eq!(args(&command), [OsString::from("-k")]);
+    }
+
+    #[test]
+    fn wine_prefers_the_managed_winetricks_script() {
+        let root = std::env::temp_dir().join(format!(
+            "ro-launcher-wine-winetricks-{}-{}",
+            std::process::id(),
+            TEST_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+        ));
+        let script = root.join("protonfixes/winetricks");
+        std::fs::create_dir_all(script.parent().unwrap()).unwrap();
+        std::fs::write(&script, "#!/bin/sh\n").unwrap();
+        let mut permissions = std::fs::metadata(&script).unwrap().permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(&script, permissions).unwrap();
+
+        assert_eq!(
+            preferred_wine_winetricks_path(
+                &root.join("proton"),
+                Some(PathBuf::from("/usr/bin/winetricks")),
+            ),
+            Some(script)
+        );
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

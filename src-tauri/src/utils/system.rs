@@ -45,10 +45,6 @@ pub fn find_umu_run() -> Option<PathBuf> {
     preferred_or_path(Path::new(UMU_RUN_BIN), "umu-run")
 }
 
-pub fn winetricks_available() -> bool {
-    winetricks_path().is_some()
-}
-
 pub fn is_executable_file(path: &Path) -> bool {
     let Ok(metadata) = path.metadata() else {
         return false;

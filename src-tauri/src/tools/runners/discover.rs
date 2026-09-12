@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use crate::models::runner::RunnerInfo;
 use crate::tools::runners::{managed_proton_path, MANAGED_RUNNER_ID, MANAGED_RUNNER_LABEL};
-use crate::utils::{discovered_system_wines, is_executable_file, resolve_runner};
+use crate::utils::{app_data_dir, discovered_system_wines, is_executable_file, resolve_runner};
 
 /// Expone primero el runtime administrado y después los runners compatibles ya instalados.
 ///
@@ -44,6 +44,10 @@ fn installed_runner_paths() -> Vec<PathBuf> {
         .collect();
     paths.push(PathBuf::from("/opt/wine-cachyos/bin/wine"));
 
+    // Runners portables administrados por el usuario/launcher. Sólo se inspecciona un nivel y
+    // nunca se ejecuta ni modifica su contenido durante el descubrimiento.
+    collect_portable_wine_paths(&app_data_dir().join("runners"), &mut paths);
+
     let Some(home) = std::env::var_os("HOME").map(PathBuf::from) else {
         return paths;
     };
@@ -64,6 +68,18 @@ fn installed_runner_paths() -> Vec<PathBuf> {
     }
 
     paths
+}
+
+fn collect_portable_wine_paths(root: &Path, paths: &mut Vec<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            paths.push(path.join("bin/wine"));
+        }
+    }
 }
 
 fn collect_child_runner_paths(root: &Path, paths: &mut Vec<PathBuf>) {
@@ -102,6 +118,20 @@ fn runner_name(path: &Path) -> String {
         .and_then(|name| name.to_str())
         .unwrap_or("");
     if file_name.starts_with("wine") {
+        if let Some(root) = path.parent().and_then(Path::parent) {
+            if root.starts_with(app_data_dir().join("runners")) {
+                let name = root
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or("Wine portable");
+                let mode = if root.join("lib/wine/i386-unix").is_dir() {
+                    "old WoW64"
+                } else {
+                    "WoW64 desconocido"
+                };
+                return format!("{name} · portable · {mode}");
+            }
+        }
         if path.starts_with("/opt/wine-cachyos") {
             return "Wine CachyOS".to_string();
         }

@@ -32,7 +32,9 @@ describe('resolveRunnerAfterLoad', () => {
       name: 'Wine',
       path: '/usr/bin/wine',
     }
-    expect(resolveRunnerAfterLoad(alternative.path, [proton, alternative])).toEqual({
+    expect(
+      resolveRunnerAfterLoad(alternative.path, [proton, alternative]),
+    ).toEqual({
       path: alternative.path,
       persist: false,
     })

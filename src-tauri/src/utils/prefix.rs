@@ -73,6 +73,20 @@ pub fn isolated_prefix_path(server_id: &str) -> String {
         .to_string()
 }
 
+/// Prefix estable para una combinación exacta servidor/runner.
+///
+/// Impide abrir con un runner un entorno creado por otro y permite perfiles de compatibilidad.
+pub fn isolated_prefix_path_for_runner(server_id: &str, runner_path: &str) -> String {
+    isolated_prefix_root()
+        .join(format!(
+            "{:016x}-{:016x}",
+            stable_id_hash(server_id),
+            stable_id_hash(runner_path)
+        ))
+        .to_string_lossy()
+        .to_string()
+}
+
 /// Compatibilidad temporal para call sites legacy. La resolución completa por servidor vive en
 /// `resolve_server_prefix` una vez que se dispone del modo shared/isolated/custom.
 pub fn effective_prefix(wine_prefix: Option<String>) -> String {
@@ -80,6 +94,14 @@ pub fn effective_prefix(wine_prefix: Option<String>) -> String {
 }
 
 pub fn resolve_server_prefix(server: Option<&ServerConfig>) -> Result<PrefixLocation, String> {
+    let runner = server.and_then(|server| server.runner.as_deref());
+    resolve_server_prefix_with_runner(server, runner)
+}
+
+pub fn resolve_server_prefix_with_runner(
+    server: Option<&ServerConfig>,
+    effective_runner: Option<&str>,
+) -> Result<PrefixLocation, String> {
     let Some(server) = server else {
         return Ok(PrefixLocation {
             path: prefix_path(),
@@ -89,6 +111,13 @@ pub fn resolve_server_prefix(server: Option<&ServerConfig>) -> Result<PrefixLoca
         });
     };
 
+    let runner_identity = effective_runner.map(|runner| {
+        std::fs::canonicalize(runner)
+            .unwrap_or_else(|_| PathBuf::from(runner))
+            .to_string_lossy()
+            .to_string()
+    });
+
     match server.effective_prefix_mode() {
         PrefixMode::Shared => Ok(PrefixLocation {
             path: prefix_path(),
@@ -97,7 +126,10 @@ pub fn resolve_server_prefix(server: Option<&ServerConfig>) -> Result<PrefixLoca
             server_id: None,
         }),
         PrefixMode::Isolated => Ok(PrefixLocation {
-            path: isolated_prefix_path(&server.id),
+            path: runner_identity
+                .as_deref()
+                .map(|runner| isolated_prefix_path_for_runner(&server.id, runner))
+                .unwrap_or_else(|| isolated_prefix_path(&server.id)),
             scope: PrefixScope::Isolated,
             managed: true,
             server_id: Some(server.id.clone()),
@@ -338,7 +370,12 @@ pub fn ensure_managed_path_safe(location: &PrefixLocation) -> Result<(), String>
                 .server_id
                 .as_deref()
                 .ok_or_else(|| "El entorno aislado no tiene serverId".to_string())?;
-            PathBuf::from(isolated_prefix_path(server_id))
+            let legacy = PathBuf::from(isolated_prefix_path(server_id));
+            if path == legacy || is_runner_scoped_prefix_path(path, server_id) {
+                path.to_path_buf()
+            } else {
+                legacy
+            }
         }
         PrefixScope::Custom => unreachable!(),
     };
@@ -349,6 +386,20 @@ pub fn ensure_managed_path_safe(location: &PrefixLocation) -> Result<(), String>
         return Err("El manifiesto del entorno no puede ser un symlink".to_string());
     }
     Ok(())
+}
+
+fn is_runner_scoped_prefix_path(path: &Path, server_id: &str) -> bool {
+    if path.parent() != Some(isolated_prefix_root().as_path()) {
+        return false;
+    }
+    let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+        return false;
+    };
+    let prefix = format!("{:016x}-", stable_id_hash(server_id));
+    let Some(runner_hash) = name.strip_prefix(&prefix) else {
+        return false;
+    };
+    runner_hash.len() == 16 && runner_hash.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 pub fn ensure_custom_setup_allowed(location: &PrefixLocation) -> Result<(), String> {
@@ -419,6 +470,23 @@ mod tests {
         for id in ["../../escape", "/tmp/escape", "servidor 💣"] {
             let path = PathBuf::from(isolated_prefix_path(id));
             assert_eq!(path.parent(), Some(root.as_path()));
+        }
+    }
+
+    #[test]
+    fn runner_profiles_use_distinct_safe_prefixes() {
+        let first = isolated_prefix_path_for_runner("sakura", "/opt/wine-7.16/bin/wine");
+        let second = isolated_prefix_path_for_runner("sakura", "/opt/wine-current/bin/wine");
+        assert_ne!(first, second);
+
+        for path in [first, second] {
+            let location = PrefixLocation {
+                path,
+                scope: PrefixScope::Isolated,
+                managed: true,
+                server_id: Some("sakura".to_string()),
+            };
+            assert!(ensure_managed_path_safe(&location).is_ok());
         }
     }
 

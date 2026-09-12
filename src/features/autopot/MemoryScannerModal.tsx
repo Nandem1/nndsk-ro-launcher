@@ -80,7 +80,9 @@ export function MemoryScannerModal({
   const [detectedLevel, setDetectedLevel] =
     useState<DetectedLevelAddress | null>(null)
   const [mapName, setMapName] = useState('')
-  const [detectedMap, setDetectedMap] = useState<DetectedMapAddress | null>(null)
+  const [detectedMap, setDetectedMap] = useState<DetectedMapAddress | null>(
+    null,
+  )
   const [lastHp, setLastHp] = useState<number | null>(null)
   const [lastLevel, setLastLevel] = useState<number | null>(null)
   const [lastMap, setLastMap] = useState<string | null>(null)

@@ -41,7 +41,7 @@ export function createServerConfigDraft(
     patcherPath: server?.patcherPath ?? '',
     prefixMode: effectivePrefixMode(server),
     winePrefix: '',
-    runner: '',
+    runner: server?.runner ?? '',
     strategy: server?.launch?.strategy ?? 'direct',
     gameArgs: argsToText(server?.launch?.gameArgs),
     patcherArgs: argsToText(server?.launch?.patcherArgs),
@@ -97,7 +97,7 @@ export function serverFieldsFromDraft(
     patcherPath: draft.patcherPath.trim() || null,
     prefixMode: 'isolated',
     winePrefix: null,
-    runner: null,
+    runner: draft.runner.trim() || null,
     launch: {
       strategy: draft.strategy,
       gameArgs: textToArgs(draft.gameArgs),

@@ -96,6 +96,32 @@ pub fn managed_proton_path() -> PathBuf {
     managed_runner_root().join("proton")
 }
 
+/// DXVK 1.10.x incluido por Proton-CachyOS para GPUs/drivers que requieren una rama legacy.
+///
+/// Además de ese propósito original, es nuestra capa D3D/Vulkan compatible con Wine 7.16:
+/// mantiene el old WoW64 que necesita Gepard sin volver a WineD3D/OpenGL.
+pub fn managed_dxvk_sarek_root() -> PathBuf {
+    managed_runner_root().join("files/lib/wine/dxvk-sarek")
+}
+
+pub fn managed_dxvk_sarek_ready() -> bool {
+    let root = managed_dxvk_sarek_root();
+    let version_ok = std::fs::read_to_string(root.join("version"))
+        .is_ok_and(|version| version.contains("v1.10.x"));
+    version_ok
+        && ["x86_64-windows", "i386-windows"].iter().all(|arch| {
+            [
+                "d3d8.dll",
+                "d3d9.dll",
+                "d3d10core.dll",
+                "d3d11.dll",
+                "dxgi.dll",
+            ]
+            .iter()
+            .all(|dll| root.join(arch).join(dll).is_file())
+        })
+}
+
 pub fn managed_umu_root() -> PathBuf {
     managed_runtime_dir().join(UMU_ID)
 }

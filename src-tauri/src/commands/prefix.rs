@@ -4,7 +4,7 @@ use tauri::AppHandle;
 
 use crate::models::server::ServerConfig;
 use crate::tools::prefix;
-use crate::tools::runners::ensure_managed_runtime;
+use crate::tools::runners::{ensure_managed_runtime, managed_dxvk_sarek_ready};
 use crate::tools::server_tools;
 use crate::utils::{
     ensure_custom_setup_allowed, ensure_managed_path_safe, ensure_managed_reset_allowed,
@@ -22,7 +22,7 @@ pub async fn setup_prefix(
     ensure_managed_runtime(&app).await?;
     let ctx = resolve_context(server.as_ref(), runner).await?;
     let _operation = OperationGuard::acquire("prefix", Path::new(&ctx.prefix))?;
-    let requirements = runtime_requirements(server.as_ref());
+    let requirements = runtime_requirements(server.as_ref(), &ctx);
     validate_requirement_support(&ctx, requirements)?;
     ensure_managed_path_safe(&ctx.location)?;
     ensure_custom_setup_allowed(&ctx.location)?;
@@ -86,21 +86,33 @@ pub async fn reset_prefix(
     ensure_managed_runtime(&app).await?;
     let ctx = resolve_context(server.as_ref(), runner).await?;
     let _operation = OperationGuard::acquire("prefix", Path::new(&ctx.prefix))?;
-    let requirements = runtime_requirements(server.as_ref());
+    let requirements = runtime_requirements(server.as_ref(), &ctx);
     validate_requirement_support(&ctx, requirements)?;
     ensure_managed_reset_allowed(&ctx.location)?;
     prefix::reset_runtime_prefix(&app, &ctx, requirements).await
 }
 
-fn runtime_requirements(server: Option<&ServerConfig>) -> prefix::RuntimeRequirements {
+fn runtime_requirements(
+    server: Option<&ServerConfig>,
+    ctx: &WineContext,
+) -> prefix::RuntimeRequirements {
     let webview2 = server.is_some_and(server_tools::requires_webview2);
-    prefix::RuntimeRequirements { webview2 }
+    prefix::RuntimeRequirements {
+        webview2,
+        dxvk: prefix::DxvkProvision::for_runner(&ctx.resolved),
+    }
 }
 
 fn validate_requirement_support(
     ctx: &WineContext,
     requirements: prefix::RuntimeRequirements,
 ) -> Result<(), String> {
+    if requirements.dxvk == prefix::DxvkProvision::Sarek && !managed_dxvk_sarek_ready() {
+        return Err(
+            "El runtime administrado no contiene DXVK-Sarek 1.10.x completo para Wine 7.16"
+                .to_string(),
+        );
+    }
     if let Some(root) = ctx.resolved.proton_root() {
         if !proton_runner_vkd3d_companions_available(root) {
             return Err(
@@ -111,7 +123,7 @@ fn validate_requirement_support(
     }
 
     let mut verbs = vec!["vcrun2019", "d3dx9", "corefonts"];
-    if !ctx.resolved.is_proton() {
+    if requirements.dxvk == prefix::DxvkProvision::Winetricks {
         verbs.push("dxvk");
     }
     if requirements.webview2 {

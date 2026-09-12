@@ -13,7 +13,7 @@ const server: ServerConfig = {
 }
 
 describe('withResolvedRunner', () => {
-  it('normaliza cualquier configuración legacy al entorno administrado', () => {
+  it('normaliza el prefix y conserva un runner explícito por servidor', () => {
     expect(
       withResolvedRunner(
         {
@@ -27,20 +27,28 @@ describe('withResolvedRunner', () => {
     ).toMatchObject({
       prefixMode: 'isolated',
       winePrefix: null,
-      runner: null,
+      runner: '/opt/wine',
+    })
+  })
+
+  it('materializa el runner predeterminado para que las herramientas usen el mismo prefix', () => {
+    expect(withResolvedRunner(server, '/opt/proton/proton')).toMatchObject({
+      prefixMode: 'isolated',
+      winePrefix: null,
+      runner: '/opt/proton/proton',
     })
   })
 })
 
 describe('runtime snapshots', () => {
-  it('incluye únicamente el runtime global administrado', () => {
+  it('prefiere el runner del servidor y lo incluye en el snapshot', () => {
     const isolated = { ...server, prefixMode: 'isolated' as const }
     expect(runtimeStatusKey(isolated, '/opt/proton-a')).not.toBe(
       runtimeStatusKey(isolated, '/opt/proton-b'),
     )
 
     const overridden = { ...isolated, runner: '/opt/server-runner' }
-    expect(runtimeStatusKey(overridden, '/opt/proton-a')).not.toBe(
+    expect(runtimeStatusKey(overridden, '/opt/proton-a')).toBe(
       runtimeStatusKey(overridden, '/opt/proton-b'),
     )
   })

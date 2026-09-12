@@ -54,7 +54,8 @@ pub fn inspect_client(
         || (launches_through_patcher && patcher_requires_webview2);
     let pe_analysis_conclusive =
         parsed_root.is_some() && (!launches_through_patcher || patcher_info.is_some());
-    let gepard_present = find_file_case_insensitive(game_dir, "gepard.dll").is_some();
+    let gepard = super::gepard::inspect_gepard(game_dir);
+    let gepard_present = gepard.is_some();
     let gameguard_present = find_file_case_insensitive(game_dir, "gameguard.des").is_some();
 
     let mut warnings = Vec::new();
@@ -100,6 +101,26 @@ pub fn inspect_client(
             "Se detectó anti-cheat. Confirma con el servidor si Wine, DXVK y la versión de dgVoodoo están permitidos."
                 .to_string(),
         );
+    }
+    if let Some(gepard) = gepard {
+        if let Some(build) = gepard.build {
+            warnings.push(format!(
+                "Gepard Shield {} (FileVersion {}, SHA-256 {}…) reconocido: perfil validado {}.",
+                build.product_version,
+                build.file_version,
+                &build.sha256[..12],
+                build.runner.stack_label(),
+            ));
+        } else {
+            let fingerprint = gepard
+                .sha256
+                .as_deref()
+                .map(|sha256| format!(" (SHA-256 {}…)", &sha256[..12]))
+                .unwrap_or_default();
+            warnings.push(format!(
+                "Build de Gepard no validada{fingerprint}; conserva un prefix separado al probar runners."
+            ));
+        }
     }
 
     ClientDiagnostics {

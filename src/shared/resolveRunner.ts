@@ -1,10 +1,10 @@
 import type { ServerConfig } from './types'
 
 export function resolveRunner(
-  _server: ServerConfig,
+  server: ServerConfig,
   selectedRunner: string,
 ): string | null {
-  return selectedRunner || null
+  return server.runner?.trim() || selectedRunner || null
 }
 
 /** Normaliza campos legacy antes de enviar un servidor al runtime. */
@@ -12,12 +12,11 @@ export function withResolvedRunner(
   server: ServerConfig,
   selectedRunner: string,
 ): ServerConfig {
-  void selectedRunner
   return {
     ...server,
     prefixMode: 'isolated',
     winePrefix: null,
-    runner: null,
+    runner: server.runner?.trim() || selectedRunner.trim() || null,
   }
 }
 
@@ -30,6 +29,7 @@ export function runtimeConfigKey(server: ServerConfig): string {
     server.patcherPath ?? '',
     server.launch?.strategy ?? 'direct',
     server.launch?.requireWebview2 ?? false,
+    server.runner ?? '',
   ])
 }
 

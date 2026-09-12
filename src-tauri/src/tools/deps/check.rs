@@ -2,26 +2,27 @@ use std::path::Path;
 
 use crate::models::dependency::{DependencyStatus, RuntimeCheck, RuntimeCheckSeverity};
 use crate::models::server::ServerConfig;
-use crate::tools::runners::{managed_proton_path, managed_runtime_ready, MANAGED_RUNNER_LABEL};
+use crate::tools::prefix::{DxvkProvision, DXVK_SAREK_COMPONENT};
+use crate::tools::runners::{managed_dxvk_sarek_ready, managed_proton_path, managed_runtime_ready};
 use crate::tools::server_tools;
 use crate::utils::audio;
 use crate::utils::{
     ensure_custom_setup_allowed, ensure_managed_path_safe, ensure_managed_reset_allowed,
     inspect_prefix, is_dxvk_installed, manifest_matches_location, manifest_matches_runner,
     proton_runner_vkd3d_companions_available, proton_vkd3d_companions_available,
-    resolve_server_prefix, resolve_server_wine_context_with_runner, resolve_wine_context,
-    runtime_prefix_blockers, winetricks_available, PrefixScope, WineContext, PREFIX_SCHEMA_VERSION,
+    resolve_server_prefix_with_runner, resolve_server_wine_context_with_runner,
+    resolve_wine_context, runtime_prefix_blockers, PrefixScope, WineContext, PREFIX_SCHEMA_VERSION,
 };
 use ro_tools_linux::{detect_input_permissions, detect_uinput_permissions};
 
 pub async fn check_dependencies(
     server: Option<ServerConfig>,
-    legacy_runner: Option<String>,
+    runner: Option<String>,
 ) -> Result<DependencyStatus, String> {
     if !managed_runtime_ready() {
-        return managed_runtime_pending(server.as_ref());
+        return managed_runtime_pending(server.as_ref(), runner.as_deref());
     }
-    let ctx = resolve_context(server.as_ref(), legacy_runner).await?;
+    let ctx = resolve_context(server.as_ref(), runner).await?;
     let health = inspect_prefix(&ctx.prefix);
     let externally_managed = ctx.location.scope == PrefixScope::Custom;
     let prefix_configured = if externally_managed {
@@ -72,13 +73,32 @@ pub async fn check_dependencies(
             .push("Proton no expone las DLL compañeras libvkd3d para x86 y x86_64".to_string());
     }
 
-    let dxvk = if let Some(root) = ctx.resolved.proton_root() {
-        is_dxvk_installed(&ctx.prefix) || proton_dxvk_available(root)
-    } else {
-        is_dxvk_installed(&ctx.prefix)
-    };
     let mut blockers = runtime_prefix_blockers(&ctx, &health);
     let webview2_required = server.as_ref().is_some_and(server_tools::requires_webview2);
+    let dxvk_provision = DxvkProvision::for_runner(&ctx.resolved);
+    let manifest_has_component = |component: &str| {
+        health.manifest.as_ref().is_some_and(|manifest| {
+            manifest
+                .components
+                .iter()
+                .any(|installed| installed == component)
+        })
+    };
+    let dxvk = match dxvk_provision {
+        DxvkProvision::Runner => ctx
+            .resolved
+            .proton_root()
+            .is_some_and(proton_dxvk_available),
+        DxvkProvision::Winetricks => {
+            manifest_has_component("dxvk") || (externally_managed && is_dxvk_installed(&ctx.prefix))
+        }
+        DxvkProvision::Sarek => manifest_has_component(DXVK_SAREK_COMPONENT),
+    };
+    let dxvk_sarek_available = dxvk_provision != DxvkProvision::Sarek || managed_dxvk_sarek_ready();
+    if !dxvk_sarek_available {
+        prefix_issues
+            .push("El runtime no contiene DXVK-Sarek 1.10.x completo para Wine 7.16".to_string());
+    }
     let missing_components = server
         .as_ref()
         .map(|server| server_tools::missing_runtime_components(server, Path::new(&ctx.prefix)))
@@ -93,7 +113,6 @@ pub async fn check_dependencies(
     prefix_issues.sort();
     prefix_issues.dedup();
 
-    let runner_setup_available = ctx.resolved.is_proton() || winetricks_available();
     let path_safe = ensure_managed_path_safe(&ctx.location).is_ok()
         && ensure_custom_setup_allowed(&ctx.location).is_ok();
     let incompatible_manifest = health.manifest.as_ref().is_some_and(|manifest| {
@@ -103,7 +122,7 @@ pub async fn check_dependencies(
                 && !manifest_matches_runner(manifest, &runner_kind, &runner_path))
     });
     let mut required_verbs = vec!["vcrun2019", "d3dx9", "corefonts"];
-    if !ctx.resolved.is_proton() {
+    if dxvk_provision == DxvkProvision::Winetricks {
         required_verbs.push("dxvk");
     }
     if webview2_required {
@@ -115,6 +134,7 @@ pub async fn check_dependencies(
         .filter(|verb| !ctx.resolved.supports_winetricks_verb(verb))
         .collect();
     let required_verbs_available = missing_verbs.is_empty();
+    let runner_setup_available = ctx.resolved.has_winetricks();
     if !missing_verbs.is_empty() {
         prefix_issues.push(format!(
             "El winetricks efectivo no incluye: {}",
@@ -148,10 +168,11 @@ pub async fn check_dependencies(
         && required_verbs_available
         && path_safe
         && runner_vkd3d_ok
+        && dxvk_sarek_available
         && (!requires_rebuild || rebuild_allowed)
         && !managed_unclaimed;
     let prefix_ok = blockers.is_empty() && prefix_configured && manifest_compatible && vkd3d_ok;
-    let ready_to_launch = prefix_ok;
+    let ready_to_launch = prefix_ok && dxvk;
 
     let prefix_warning = (!prefix_issues.is_empty()).then(|| prefix_issues.join(" · "));
     let dxvk_warning = if dxvk {
@@ -181,6 +202,39 @@ pub async fn check_dependencies(
         remediation: (!runner_vkd3d_ok)
             .then(|| "Cambia o reinstala la distribución Proton".to_string()),
     }];
+    if let Some(build) = server
+        .as_ref()
+        .and_then(server_tools::recommended_gepard_build)
+    {
+        let compatible = match build.runner {
+            server_tools::GepardRunnerProfile::ModernProton => ctx.resolved.is_proton(),
+            server_tools::GepardRunnerProfile::Wine716Legacy => ctx.resolved.is_wine_7_16(),
+        };
+        checks.push(RuntimeCheck {
+            id: "gepard-runner".to_string(),
+            severity: if compatible {
+                RuntimeCheckSeverity::Ok
+            } else {
+                RuntimeCheckSeverity::Warning
+            },
+            message: if compatible {
+                format!(
+                    "Gepard {} build {} · perfil validado {}",
+                    build.product_version,
+                    build.file_version,
+                    build.runner.stack_label()
+                )
+            } else {
+                format!(
+                    "Gepard {} build {} recomienda el perfil validado {}",
+                    build.product_version,
+                    build.file_version,
+                    build.runner.stack_label()
+                )
+            },
+            remediation: (!compatible).then(|| build.runner.remediation().to_string()),
+        });
+    }
     if !missing_verbs.is_empty() {
         checks.push(RuntimeCheck {
             id: "winetricks-verbs".to_string(),
@@ -222,7 +276,9 @@ pub async fn check_dependencies(
         } else {
             RuntimeCheckSeverity::Warning
         },
-        message: if dxvk {
+        message: if dxvk && dxvk_provision == DxvkProvision::Sarek {
+            "Direct3D 8/9/11 disponible mediante DXVK-Sarek 1.10.x".to_string()
+        } else if dxvk {
             "Direct3D 9 disponible mediante DXVK".to_string()
         } else {
             "DXVK D3D9 no detectado".to_string()
@@ -263,11 +319,7 @@ pub async fn check_dependencies(
     Ok(DependencyStatus {
         // Campos legacy: `wine` ahora significa que la estrategia seleccionada se resolvió.
         wine: true,
-        winetricks: if ctx.resolved.is_proton() {
-            true
-        } else {
-            winetricks_available()
-        },
+        winetricks: runner_setup_available,
         dxvk,
         prefix_configured,
         audio_ok,
@@ -282,7 +334,7 @@ pub async fn check_dependencies(
         prefix_warning,
         dxvk_ok: dxvk || !prefix_configured,
         dxvk_warning,
-        runner_kind: MANAGED_RUNNER_LABEL.to_string(),
+        runner_kind,
         runner_ok: runner_vkd3d_ok,
         runner_warning: (!runner_vkd3d_ok)
             .then(|| "La distribución Proton no contiene el runtime VKD3D completo".to_string()),
@@ -294,13 +346,21 @@ pub async fn check_dependencies(
         can_reset: runner_setup_available
             && required_verbs_available
             && runner_vkd3d_ok
+            && dxvk_sarek_available
             && ensure_managed_reset_allowed(&ctx.location).is_ok(),
         checks,
     })
 }
 
-fn managed_runtime_pending(server: Option<&ServerConfig>) -> Result<DependencyStatus, String> {
-    let location = resolve_server_prefix(server)?;
+fn managed_runtime_pending(
+    server: Option<&ServerConfig>,
+    selected_runner: Option<&str>,
+) -> Result<DependencyStatus, String> {
+    let effective_runner = server
+        .and_then(|server| server.runner.as_deref())
+        .or(selected_runner)
+        .filter(|runner| !runner.trim().is_empty());
+    let location = resolve_server_prefix_with_runner(server, effective_runner)?;
     let health = inspect_prefix(&location.path);
     let prefix_root = Path::new(&location.path);
     let managed_unclaimed = location.managed
@@ -311,14 +371,26 @@ fn managed_runtime_pending(server: Option<&ServerConfig>) -> Result<DependencySt
         && health.manifest.is_none()
         && !health.legacy_marker;
     let path_safe = ensure_managed_path_safe(&location).is_ok();
-    let managed_runner_path = managed_proton_path();
+    let expected_runner_path = effective_runner
+        .map(Path::new)
+        .map(|path| std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf()))
+        .unwrap_or_else(managed_proton_path);
+    let expected_runner_kind = if expected_runner_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        == Some("proton")
+    {
+        "proton"
+    } else {
+        "wine"
+    };
     let manifest_compatible = health.manifest.as_ref().is_some_and(|manifest| {
         manifest.schema_version == PREFIX_SCHEMA_VERSION
             && manifest_matches_location(manifest, &location)
             && manifest_matches_runner(
                 manifest,
-                "proton",
-                managed_runner_path.to_string_lossy().as_ref(),
+                expected_runner_kind,
+                expected_runner_path.to_string_lossy().as_ref(),
             )
     });
     let requires_rebuild = health.legacy_marker
@@ -368,7 +440,7 @@ fn managed_runtime_pending(server: Option<&ServerConfig>) -> Result<DependencySt
         prefix_warning,
         dxvk_ok: false,
         dxvk_warning: Some("DXVK está incluido en el runtime administrado".to_string()),
-        runner_kind: MANAGED_RUNNER_LABEL.to_string(),
+        runner_kind: expected_runner_kind.to_string(),
         runner_ok: false,
         runner_warning: Some(runtime_warning.clone()),
         prefix_path: location.path.clone(),
@@ -381,7 +453,10 @@ fn managed_runtime_pending(server: Option<&ServerConfig>) -> Result<DependencySt
             RuntimeCheck {
                 id: "runner".to_string(),
                 severity: RuntimeCheckSeverity::Pending,
-                message: format!("{MANAGED_RUNNER_LABEL} pendiente"),
+                message: format!(
+                    "Runner {} · runtime gráfico administrado pendiente",
+                    expected_runner_path.display()
+                ),
                 remediation: Some(runtime_warning),
             },
             RuntimeCheck {
@@ -402,12 +477,12 @@ fn managed_runtime_pending(server: Option<&ServerConfig>) -> Result<DependencySt
 
 async fn resolve_context(
     server: Option<&ServerConfig>,
-    legacy_runner: Option<String>,
+    runner: Option<String>,
 ) -> Result<WineContext, String> {
     if server.is_some() {
-        resolve_server_wine_context_with_runner(server, legacy_runner).await
+        resolve_server_wine_context_with_runner(server, runner).await
     } else {
-        resolve_wine_context(None, legacy_runner).await
+        resolve_wine_context(None, runner).await
     }
 }
 

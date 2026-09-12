@@ -2,17 +2,48 @@ use std::path::Path;
 
 use tauri::AppHandle;
 
+use crate::tools::runners::{managed_dxvk_sarek_ready, managed_dxvk_sarek_root};
 use crate::utils::audio;
 use crate::utils::gecko::install_gecko_for_runner;
 use crate::utils::process::run_logged_command_ok;
 use crate::utils::{
-    emit_log, emit_progress, inspect_prefix, resolve_runner, write_prefix_manifest, PrefixManifest,
-    ResolvedRunner, WineContext, PREFIX_SCHEMA_VERSION,
+    dxvk_sarek_cache_path, dxvk_sarek_config_path, dxvk_sarek_log_path, emit_log, emit_progress,
+    inspect_prefix, resolve_runner, write_prefix_manifest, PrefixManifest, ResolvedRunner,
+    WineContext, PREFIX_SCHEMA_VERSION,
 };
 
-#[derive(Debug, Clone, Copy, Default)]
+pub const DXVK_SAREK_COMPONENT: &str = "dxvk-sarek-1.10.x";
+const DXVK_SAREK_DLLS: [&str; 5] = [
+    "d3d8.dll",
+    "d3d9.dll",
+    "d3d10core.dll",
+    "d3d11.dll",
+    "dxgi.dll",
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DxvkProvision {
+    Runner,
+    Winetricks,
+    Sarek,
+}
+
+impl DxvkProvision {
+    pub fn for_runner(runner: &ResolvedRunner) -> Self {
+        if runner.is_proton() {
+            Self::Runner
+        } else if runner.is_wine_7_16() {
+            Self::Sarek
+        } else {
+            Self::Winetricks
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
 pub struct RuntimeRequirements {
     pub webview2: bool,
+    pub dxvk: DxvkProvision,
 }
 
 pub async fn setup_runtime_prefix(
@@ -72,11 +103,11 @@ pub async fn setup_resolved_prefix(
     emit_progress(app, "Preparando Wine Gecko...", 50)?;
     install_gecko_for_runner(app, prefix, resolved).await?;
 
-    emit_progress(app, "Preparando DXVK...", 55)?;
-    if resolved.is_proton() {
-        emit_log(app, "DXVK administrado por Proton/UMU.")?;
-    } else {
-        run_winetricks(app, prefix, resolved, &["dxvk"]).await?;
+    emit_progress(app, "Preparando gráficos...", 55)?;
+    match requirements.dxvk {
+        DxvkProvision::Runner => emit_log(app, "DXVK administrado por Proton/UMU.")?,
+        DxvkProvision::Winetricks => run_winetricks(app, prefix, resolved, &["dxvk"]).await?,
+        DxvkProvision::Sarek => install_dxvk_sarek(app, prefix)?,
     }
 
     emit_progress(app, "Instalando vcredist_2019...", 65)?;
@@ -178,6 +209,14 @@ async fn shutdown_existing_prefix_for_reset(
     app: &AppHandle,
     ctx: &WineContext,
 ) -> Result<(), String> {
+    if ro_tools_linux::find_prefix_processes(&ctx.prefix).is_empty() {
+        emit_log(
+            app,
+            "El entorno ya estaba detenido; se puede rearmar sin invocar su runner anterior.",
+        )?;
+        return Ok(());
+    }
+
     let health = inspect_prefix(&ctx.prefix);
     let recorded = health.manifest.as_ref().filter(|manifest| {
         manifest.schema_version == PREFIX_SCHEMA_VERSION && manifest.runner_kind != "unknown"
@@ -288,12 +327,15 @@ fn write_runtime_manifest(
     requirements: RuntimeRequirements,
 ) -> Result<(), String> {
     let mut components = vec![
-        "dxvk".to_string(),
         "vcrun2019".to_string(),
         "d3dx9".to_string(),
         "corefonts".to_string(),
         "font-fallbacks".to_string(),
     ];
+    match requirements.dxvk {
+        DxvkProvision::Sarek => components.push(DXVK_SAREK_COMPONENT.to_string()),
+        DxvkProvision::Runner | DxvkProvision::Winetricks => components.push("dxvk".to_string()),
+    }
     if requirements.webview2 {
         components.push("webview2".to_string());
     }
@@ -310,6 +352,112 @@ fn write_runtime_manifest(
             components,
         },
     )
+}
+
+fn install_dxvk_sarek(app: &AppHandle, prefix: &str) -> Result<(), String> {
+    if !managed_dxvk_sarek_ready() {
+        return Err(
+            "El runtime administrado no contiene DXVK-Sarek 1.10.x completo para x86 y x86_64"
+                .to_string(),
+        );
+    }
+
+    let prefix_root = Path::new(prefix);
+    let windows = prefix_root.join("drive_c/windows");
+    let system_reg = std::fs::read_to_string(prefix_root.join("system.reg"))
+        .map_err(|error| format!("No se pudo leer la arquitectura del prefix: {error}"))?;
+    let prefix_arch = system_reg
+        .lines()
+        .find_map(|line| line.strip_prefix("#arch="))
+        .ok_or_else(|| "El prefix no declara #arch en system.reg".to_string())?;
+
+    let source = managed_dxvk_sarek_root();
+    let targets = match prefix_arch {
+        "win64" => vec![
+            (source.join("x86_64-windows"), windows.join("system32")),
+            (source.join("i386-windows"), windows.join("syswow64")),
+        ],
+        "win32" => vec![(source.join("i386-windows"), windows.join("system32"))],
+        other => {
+            return Err(format!(
+                "Arquitectura de prefix no soportada por DXVK: {other}"
+            ))
+        }
+    };
+
+    for (source_dir, target_dir) in targets {
+        std::fs::create_dir_all(&target_dir).map_err(|error| {
+            format!(
+                "No se pudo preparar el destino DXVK {}: {error}",
+                target_dir.display()
+            )
+        })?;
+        for dll in DXVK_SAREK_DLLS {
+            install_runtime_file(&source_dir.join(dll), &target_dir.join(dll))?;
+        }
+    }
+
+    let config = dxvk_sarek_config_path(prefix);
+    let logs = dxvk_sarek_log_path(prefix);
+    let cache = dxvk_sarek_cache_path(prefix);
+    let state_root = config
+        .parent()
+        .ok_or_else(|| "La ruta de configuración DXVK no tiene padre".to_string())?;
+    std::fs::create_dir_all(state_root)
+        .map_err(|error| format!("No se pudo crear el estado de DXVK: {error}"))?;
+    std::fs::create_dir_all(&logs)
+        .map_err(|error| format!("No se pudo crear el directorio de logs DXVK: {error}"))?;
+    std::fs::create_dir_all(&cache)
+        .map_err(|error| format!("No se pudo crear el cache DXVK: {error}"))?;
+    std::fs::write(
+        &config,
+        "# RO-Launcher · Wine 7.16 legacy\nd3d9.forceSamplerTypeSpecConstants = True\n",
+    )
+    .map_err(|error| format!("No se pudo escribir dxvk.conf: {error}"))?;
+
+    emit_log(
+        app,
+        format!(
+            "DXVK-Sarek 1.10.x instalado para {prefix_arch}; Vulkan activo y old WoW64 preservado."
+        ),
+    )
+}
+
+fn install_runtime_file(source: &Path, destination: &Path) -> Result<(), String> {
+    if !source.is_file() || source.is_symlink() {
+        return Err(format!(
+            "El componente DXVK no es un archivo regular: {}",
+            source.display()
+        ));
+    }
+    let file_name = destination
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| format!("Destino DXVK inválido: {}", destination.display()))?;
+    let temporary =
+        destination.with_file_name(format!(".{file_name}.ro-launcher-{}", std::process::id()));
+    if temporary.exists() {
+        std::fs::remove_file(&temporary).map_err(|error| {
+            format!(
+                "No se pudo limpiar el staging DXVK {}: {error}",
+                temporary.display()
+            )
+        })?;
+    }
+    std::fs::copy(source, &temporary).map_err(|error| {
+        format!(
+            "No se pudo copiar {} a {}: {error}",
+            source.display(),
+            temporary.display()
+        )
+    })?;
+    std::fs::rename(&temporary, destination).map_err(|error| {
+        let _ = std::fs::remove_file(&temporary);
+        format!(
+            "No se pudo activar {} en el prefix: {error}",
+            destination.display()
+        )
+    })
 }
 
 async fn run_winetricks(
@@ -338,7 +486,11 @@ async fn shutdown_runner(prefix: &str, runner: &ResolvedRunner) -> Result<(), St
         .status()
         .await
         .map_err(|error| format!("No se pudo detener {}: {error}", runner.kind_label()))?;
-    if !status.success() {
+    // `wineserver -k` puede devolver 1 cuando la sesión ya terminó entre la detección y
+    // el comando. El apagado es idempotente: si no queda ningún proceso del prefix, se logró
+    // el estado solicitado aunque el ejecutable haya informado un código distinto de cero.
+    let active_processes = ro_tools_linux::find_prefix_processes(prefix).len();
+    if !shutdown_is_complete(status.success(), active_processes) {
         return Err(format!(
             "{} no pudo detener el entorno (código {})",
             runner.kind_label(),
@@ -346,6 +498,10 @@ async fn shutdown_runner(prefix: &str, runner: &ResolvedRunner) -> Result<(), St
         ));
     }
     Ok(())
+}
+
+fn shutdown_is_complete(status_success: bool, active_processes: usize) -> bool {
+    status_success || active_processes == 0
 }
 
 #[cfg(test)]
@@ -375,5 +531,12 @@ mod tests {
         assert!(prefix_has_state(path.to_str().unwrap()));
 
         fs::remove_dir_all(path).unwrap();
+    }
+
+    #[test]
+    fn shutdown_is_idempotent_when_the_prefix_is_already_stopped() {
+        assert!(shutdown_is_complete(false, 0));
+        assert!(shutdown_is_complete(true, 1));
+        assert!(!shutdown_is_complete(false, 1));
     }
 }

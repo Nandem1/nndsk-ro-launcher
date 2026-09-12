@@ -6,6 +6,7 @@ import { basename, nameFromExePath } from '../../shared/path'
 import type { ServerConfig } from '../../shared/types'
 import { Button, IconButton } from '../../shared/ui/Button'
 import { DarkSelect } from '../../shared/ui/DarkSelect'
+import { useSettingsStore } from '../settings/settings.store'
 import {
   createServerConfigDraft,
   serverFieldsFromDraft,
@@ -161,6 +162,21 @@ export function ServerConfigModal({ mode, server, onSave, onClose }: Props) {
   )
   const [validationError, setValidationError] = useState<string | null>(null)
   const { error, run, isBusy, busyKey } = useAsyncAction<ActionKey>()
+  const runners = useSettingsStore((state) => state.runners)
+  const selectedRunner = useSettingsStore((state) => state.selectedRunner)
+  const runnerOptions = [
+    {
+      value: '',
+      label: `Predeterminado${selectedRunner ? ` · ${basename(selectedRunner)}` : ''}`,
+    },
+    ...runners.map((runner) => ({ value: runner.path, label: runner.name })),
+  ]
+  if (draft.runner && !runners.some((runner) => runner.path === draft.runner)) {
+    runnerOptions.push({
+      value: draft.runner,
+      label: `No detectado · ${draft.runner}`,
+    })
+  }
 
   const title = mode === 'add' ? 'Agregar servidor' : 'Editar servidor'
   const saveLabel = mode === 'add' ? 'Agregar' : 'Guardar cambios'
@@ -302,12 +318,24 @@ export function ServerConfigModal({ mode, server, onSave, onClose }: Props) {
             </h4>
             <div className="rounded-lg border border-amber-500/15 bg-amber-500/5 px-3 py-2.5">
               <p className="text-xs text-zinc-300">
-                Runtime Ragnarok administrado automáticamente
+                Entorno Ragnarok administrado automáticamente
               </p>
               <p className="mt-1 text-[10px] leading-relaxed text-zinc-500">
                 Este servidor tendrá su propio entorno aislado. El launcher
-                descargará el runner compatible y preparará sus dependencias al
-                jugar por primera vez.
+                descargará el runtime predeterminado y preparará las
+                dependencias del runner elegido al jugar por primera vez.
+              </p>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <FieldLabel>Runner de este servidor</FieldLabel>
+              <DarkSelect
+                value={draft.runner}
+                options={runnerOptions}
+                onChange={(value) => setField('runner', value)}
+              />
+              <p className="text-[10px] leading-relaxed text-zinc-500">
+                Al fijar uno, el launcher usa un prefix distinto para cada
+                runner. El entorno anterior no se modifica.
               </p>
             </div>
           </section>

@@ -67,7 +67,7 @@ describe('server config draft', () => {
     )
   })
 
-  it('ignores legacy runner overrides', () => {
+  it('accepts runner overrides for isolated compatibility profiles', () => {
     const draft = {
       ...createServerConfigDraft(server),
       runner: '/opt/proton/proton',
@@ -119,7 +119,7 @@ describe('server config draft', () => {
       patcherPath: '/games/sakura/SakuraRO Launcher.exe',
       prefixMode: 'isolated',
       winePrefix: null,
-      runner: null,
+      runner: '/opt/proton/proton',
       launch: {
         strategy: 'patcher',
         gameArgs: ['${username}', '${password}'],
