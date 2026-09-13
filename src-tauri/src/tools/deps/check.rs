@@ -2,8 +2,8 @@ use std::path::Path;
 
 use crate::models::dependency::{DependencyStatus, RuntimeCheck, RuntimeCheckSeverity};
 use crate::models::server::ServerConfig;
-use crate::tools::prefix::{DxvkProvision, DXVK_SAREK_COMPONENT};
-use crate::tools::runners::{managed_dxvk_sarek_ready, managed_proton_path, managed_runtime_ready};
+use crate::tools::prefix::{DxvkProvision, MANAGED_DXVK_COMPONENT};
+use crate::tools::runners::{managed_dxvk_ready, managed_proton_path, managed_runtime_ready};
 use crate::tools::server_tools;
 use crate::utils::audio;
 use crate::utils::{
@@ -92,12 +92,13 @@ pub async fn check_dependencies(
         DxvkProvision::Winetricks => {
             manifest_has_component("dxvk") || (externally_managed && is_dxvk_installed(&ctx.prefix))
         }
-        DxvkProvision::Sarek => manifest_has_component(DXVK_SAREK_COMPONENT),
+        DxvkProvision::Managed => manifest_has_component(MANAGED_DXVK_COMPONENT),
     };
-    let dxvk_sarek_available = dxvk_provision != DxvkProvision::Sarek || managed_dxvk_sarek_ready();
-    if !dxvk_sarek_available {
-        prefix_issues
-            .push("El runtime no contiene DXVK-Sarek 1.10.x completo para Wine 7.16".to_string());
+    let managed_dxvk_available = dxvk_provision != DxvkProvision::Managed || managed_dxvk_ready();
+    if !managed_dxvk_available {
+        prefix_issues.push(
+            "DXVK 2.6.2 se descargará y verificará al preparar el entorno Wine 7.16".to_string(),
+        );
     }
     let missing_components = server
         .as_ref()
@@ -168,7 +169,6 @@ pub async fn check_dependencies(
         && required_verbs_available
         && path_safe
         && runner_vkd3d_ok
-        && dxvk_sarek_available
         && (!requires_rebuild || rebuild_allowed)
         && !managed_unclaimed;
     let prefix_ok = blockers.is_empty() && prefix_configured && manifest_compatible && vkd3d_ok;
@@ -276,8 +276,8 @@ pub async fn check_dependencies(
         } else {
             RuntimeCheckSeverity::Warning
         },
-        message: if dxvk && dxvk_provision == DxvkProvision::Sarek {
-            "Direct3D 8/9/11 disponible mediante DXVK-Sarek 1.10.x".to_string()
+        message: if dxvk && dxvk_provision == DxvkProvision::Managed {
+            "Direct3D 8/9/10/11 disponible mediante DXVK 2.6.2".to_string()
         } else if dxvk {
             "Direct3D 9 disponible mediante DXVK".to_string()
         } else {
@@ -346,7 +346,6 @@ pub async fn check_dependencies(
         can_reset: runner_setup_available
             && required_verbs_available
             && runner_vkd3d_ok
-            && dxvk_sarek_available
             && ensure_managed_reset_allowed(&ctx.location).is_ok(),
         checks,
     })

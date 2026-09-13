@@ -25,6 +25,7 @@ libc = "0.2"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 sha2 = "0.10"
 tar = "0.4"
+flate2 = "1"
 xz2 = "0.1"
 ro-tools-core = { path = "../crates/ro-tools-core" }
 ro-tools-linux = { path = "../crates/ro-tools-linux" }

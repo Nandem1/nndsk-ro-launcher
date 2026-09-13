@@ -12,6 +12,7 @@ use crate::utils::{app_data_dir, emit_log, emit_progress, replace_json, Operatio
 
 pub const MANAGED_RUNNER_ID: &str = "ro-proton-cachyos-11.0-20260702-slr";
 pub const MANAGED_RUNNER_LABEL: &str = "proton-cachyos-11.0-20260702-slr-x86_64";
+const MANAGED_DXVK_ID: &str = "dxvk-2.6.2";
 
 const RUNTIME_SCHEMA: u32 = 1;
 const RUNTIME_DIR: &str = "runtime";
@@ -30,10 +31,32 @@ const UMU_URL: &str = "https://github.com/Open-Wine-Components/umu-launcher/rele
 const UMU_SHA256: &str = "138ce4b8843608a257d4bee88191ca78a989778bcefd8abb3c1d1aaac3ac6fb8";
 const UMU_SIZE: u64 = 430_080;
 
+const DXVK_ARCHIVE_NAME: &str = "dxvk-2.6.2.tar.gz";
+const DXVK_ARCHIVE_ROOT: &str = "dxvk-2.6.2";
+const DXVK_URL: &str =
+    "https://github.com/doitsujin/dxvk/releases/download/v2.6.2/dxvk-2.6.2.tar.gz";
+const DXVK_SHA256: &str = "17761876556afd55736cb895d184f5a1c55d43350f1b1e3b129f8d28706d7992";
+const DXVK_SIZE: u64 = 10_107_492;
+
+const DXVK_DLLS: [&str; 5] = [
+    "d3d8.dll",
+    "d3d9.dll",
+    "d3d10core.dll",
+    "d3d11.dll",
+    "dxgi.dll",
+];
+
 #[derive(Clone, Copy)]
 enum ArchiveKind {
     Tar,
+    TarGz,
     TarXz,
+}
+
+#[derive(Clone, Copy)]
+enum ArtifactPayload {
+    Executable(&'static str),
+    Dxvk,
 }
 
 #[derive(Clone, Copy)]
@@ -51,7 +74,7 @@ struct Artifact {
     digest: ExpectedDigest,
     size: u64,
     kind: ArchiveKind,
-    executable: &'static str,
+    payload: ArtifactPayload,
 }
 
 const UMU_ARTIFACT: Artifact = Artifact {
@@ -62,7 +85,7 @@ const UMU_ARTIFACT: Artifact = Artifact {
     digest: ExpectedDigest::Sha256(UMU_SHA256),
     size: UMU_SIZE,
     kind: ArchiveKind::Tar,
-    executable: "umu-run",
+    payload: ArtifactPayload::Executable("umu-run"),
 };
 
 const PROTON_ARTIFACT: Artifact = Artifact {
@@ -73,7 +96,18 @@ const PROTON_ARTIFACT: Artifact = Artifact {
     digest: ExpectedDigest::Sha512(PROTON_SHA512),
     size: PROTON_SIZE,
     kind: ArchiveKind::TarXz,
-    executable: "proton",
+    payload: ArtifactPayload::Executable("proton"),
+};
+
+const DXVK_ARTIFACT: Artifact = Artifact {
+    id: MANAGED_DXVK_ID,
+    archive_name: DXVK_ARCHIVE_NAME,
+    archive_root: DXVK_ARCHIVE_ROOT,
+    url: DXVK_URL,
+    digest: ExpectedDigest::Sha256(DXVK_SHA256),
+    size: DXVK_SIZE,
+    kind: ArchiveKind::TarGz,
+    payload: ArtifactPayload::Dxvk,
 };
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -96,30 +130,12 @@ pub fn managed_proton_path() -> PathBuf {
     managed_runner_root().join("proton")
 }
 
-/// DXVK 1.10.x incluido por Proton-CachyOS para GPUs/drivers que requieren una rama legacy.
-///
-/// Además de ese propósito original, es nuestra capa D3D/Vulkan compatible con Wine 7.16:
-/// mantiene el old WoW64 que necesita Gepard sin volver a WineD3D/OpenGL.
-pub fn managed_dxvk_sarek_root() -> PathBuf {
-    managed_runner_root().join("files/lib/wine/dxvk-sarek")
+pub fn managed_dxvk_root() -> PathBuf {
+    managed_runtime_dir().join(MANAGED_DXVK_ID)
 }
 
-pub fn managed_dxvk_sarek_ready() -> bool {
-    let root = managed_dxvk_sarek_root();
-    let version_ok = std::fs::read_to_string(root.join("version"))
-        .is_ok_and(|version| version.contains("v1.10.x"));
-    version_ok
-        && ["x86_64-windows", "i386-windows"].iter().all(|arch| {
-            [
-                "d3d8.dll",
-                "d3d9.dll",
-                "d3d10core.dll",
-                "d3d11.dll",
-                "dxgi.dll",
-            ]
-            .iter()
-            .all(|dll| root.join(arch).join(dll).is_file())
-        })
+pub fn managed_dxvk_ready() -> bool {
+    artifact_ready(&DXVK_ARTIFACT)
 }
 
 pub fn managed_umu_root() -> PathBuf {
@@ -154,6 +170,20 @@ pub async fn ensure_managed_runtime(app: &AppHandle) -> Result<(), String> {
         ),
     )?;
     Ok(())
+}
+
+/// Instala DXVK sólo cuando un Wine legacy lo necesita. Los usuarios de Proton no descargan este
+/// componente adicional porque Proton ya administra su propia versión.
+pub async fn ensure_managed_dxvk(app: &AppHandle) -> Result<(), String> {
+    let runtime_dir = managed_runtime_dir();
+    std::fs::create_dir_all(&runtime_dir).map_err(|error| {
+        format!(
+            "No se pudo crear el directorio del runtime {}: {error}",
+            runtime_dir.display()
+        )
+    })?;
+    let _operation = OperationGuard::acquire("runtime", &runtime_dir)?;
+    ensure_artifact(app, &DXVK_ARTIFACT, 40, 54).await
 }
 
 async fn ensure_artifact(
@@ -312,6 +342,13 @@ fn extract_artifact(
                 .unpack(staging_dir)
                 .map_err(|error| format!("No se pudo extraer {}: {error}", artifact.id))?;
         }
+        ArchiveKind::TarGz => {
+            let decoder = flate2::read::GzDecoder::new(BufReader::new(file));
+            let mut archive = tar::Archive::new(decoder);
+            archive
+                .unpack(staging_dir)
+                .map_err(|error| format!("No se pudo extraer {}: {error}", artifact.id))?;
+        }
         ArchiveKind::TarXz => {
             let decoder = xz2::read::XzDecoder::new(BufReader::new(file));
             let mut archive = tar::Archive::new(decoder);
@@ -322,12 +359,10 @@ fn extract_artifact(
     }
 
     let extracted = staging_dir.join(artifact.archive_root);
-    let executable = extracted.join(artifact.executable);
-    if !extracted.is_dir() || !is_executable(&executable) {
+    if !extracted.is_dir() || !artifact_payload_ready(artifact, &extracted) {
         return Err(format!(
-            "El artefacto {} no contiene {}",
-            artifact.id,
-            executable.display()
+            "El contenido extraído de {} está incompleto o no es válido",
+            artifact.id
         ));
     }
     Ok(())
@@ -405,8 +440,18 @@ fn artifact_ready(artifact: &Artifact) -> bool {
 }
 
 fn artifact_payload_ready(artifact: &Artifact, root: &Path) -> bool {
-    if !is_executable(&root.join(artifact.executable)) {
-        return false;
+    match artifact.payload {
+        ArtifactPayload::Executable(executable) if !is_executable(&root.join(executable)) => {
+            return false;
+        }
+        ArtifactPayload::Dxvk => {
+            return ["x32", "x64"].iter().all(|arch| {
+                DXVK_DLLS
+                    .iter()
+                    .all(|dll| root.join(arch).join(dll).is_file())
+            });
+        }
+        ArtifactPayload::Executable(_) => {}
     }
     if artifact.id != MANAGED_RUNNER_ID {
         return true;
@@ -502,6 +547,8 @@ mod tests {
         );
         assert_eq!(PROTON_SHA512.len(), 128);
         assert_eq!(UMU_SHA256.len(), 64);
+        assert_eq!(DXVK_SHA256.len(), 64);
+        assert_eq!(DXVK_ARTIFACT.id, "dxvk-2.6.2");
     }
 
     #[test]
@@ -560,6 +607,27 @@ mod tests {
         }
 
         assert!(artifact_payload_ready(&PROTON_ARTIFACT, &root));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn managed_dxvk_requires_every_dll_for_both_architectures() {
+        let root = std::env::temp_dir().join(format!(
+            "ro-launcher-dxvk-payload-{}-{}",
+            std::process::id(),
+            unique_suffix()
+        ));
+        for arch in ["x32", "x64"] {
+            let directory = root.join(arch);
+            std::fs::create_dir_all(&directory).unwrap();
+            for dll in DXVK_DLLS {
+                std::fs::write(directory.join(dll), b"dxvk").unwrap();
+            }
+        }
+
+        assert!(artifact_payload_ready(&DXVK_ARTIFACT, &root));
+        std::fs::remove_file(root.join("x32/d3d9.dll")).unwrap();
+        assert!(!artifact_payload_ready(&DXVK_ARTIFACT, &root));
         std::fs::remove_dir_all(root).unwrap();
     }
 }

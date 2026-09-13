@@ -4,7 +4,7 @@ use tauri::AppHandle;
 
 use crate::models::server::ServerConfig;
 use crate::tools::prefix;
-use crate::tools::runners::{ensure_managed_runtime, managed_dxvk_sarek_ready};
+use crate::tools::runners::ensure_managed_runtime;
 use crate::tools::server_tools;
 use crate::utils::{
     ensure_custom_setup_allowed, ensure_managed_path_safe, ensure_managed_reset_allowed,
@@ -69,6 +69,15 @@ pub async fn setup_prefix(
                 );
             }
         }
+        let required_graphics = requirements.dxvk.manifest_component();
+        if ctx.location.managed
+            && !manifest
+                .components
+                .iter()
+                .any(|component| component == required_graphics)
+        {
+            rebuild_managed = true;
+        }
     }
     if rebuild_managed {
         ensure_managed_reset_allowed(&ctx.location)?;
@@ -107,12 +116,6 @@ fn validate_requirement_support(
     ctx: &WineContext,
     requirements: prefix::RuntimeRequirements,
 ) -> Result<(), String> {
-    if requirements.dxvk == prefix::DxvkProvision::Sarek && !managed_dxvk_sarek_ready() {
-        return Err(
-            "El runtime administrado no contiene DXVK-Sarek 1.10.x completo para Wine 7.16"
-                .to_string(),
-        );
-    }
     if let Some(root) = ctx.resolved.proton_root() {
         if !proton_runner_vkd3d_companions_available(root) {
             return Err(

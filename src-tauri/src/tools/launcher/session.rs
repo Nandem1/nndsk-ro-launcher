@@ -15,7 +15,7 @@ use crate::state::{GameProcessHandle, GameState, LaunchReservation};
 use crate::tools::autobuff::AutobuffHandle;
 use crate::tools::autopot::AutopotHandle;
 use crate::tools::input::InputGateway;
-use crate::tools::prefix::DXVK_SAREK_COMPONENT;
+use crate::tools::prefix::MANAGED_DXVK_COMPONENT;
 use crate::tools::presence::{overrides_from_autopot, PresenceHandle};
 use crate::tools::runners::ensure_managed_runtime;
 use crate::tools::server_tools;
@@ -112,25 +112,34 @@ pub async fn launch_game(
         .as_ref()
         .is_some_and(|status| status.dgvoodoo.configured);
     let wine_7_16 = ctx.resolved.is_wine_7_16();
-    let use_dxvk_sarek = wine_7_16
+    let use_managed_dxvk = wine_7_16
         && prefix_health.manifest.as_ref().is_some_and(|manifest| {
             manifest
                 .components
                 .iter()
-                .any(|component| component == DXVK_SAREK_COMPONENT)
+                .any(|component| component == MANAGED_DXVK_COMPONENT)
         });
-    if wine_7_16 && !use_dxvk_sarek {
+    if wine_7_16 && !use_managed_dxvk {
         return Err(
-            "El entorno Wine 7.16 no registra DXVK-Sarek 1.10.x; rearma este entorno antes de jugar"
+            "El entorno Wine 7.16 no registra DXVK 2.6.2; rearma este entorno antes de jugar"
                 .to_string(),
         );
     }
-    if use_dxvk_sarek {
+    if use_managed_dxvk {
         emit_tool_log_opt(
             Some(&app),
             format!(
-                "[Graphics] Wine 7.16 old WoW64 + DXVK-Sarek 1.10.x | logs={}",
-                crate::utils::dxvk_sarek_log_path(&ctx.prefix).display()
+                "[Graphics] Wine 7.16 old WoW64 + DXVK 2.6.2 | logs={}",
+                crate::utils::dxvk_log_path(&ctx.prefix).display()
+            ),
+        );
+    }
+    if wine_7_16 {
+        emit_tool_log_opt(
+            Some(&app),
+            format!(
+                "[Sync] Wine 7.16 · {}",
+                ctx.resolved.wine_sync_mode().label()
             ),
         );
     }
@@ -140,7 +149,7 @@ pub async fn launch_game(
     let mut cmd =
         ctx.resolved
             .game_command(&ctx.prefix, &launch_exe, rendered_args.iter(), &work_dir);
-    apply_game_env(&mut cmd, use_dgvoodoo, use_dxvk_sarek, &ctx.prefix);
+    apply_game_env(&mut cmd, use_dgvoodoo, use_managed_dxvk, &ctx.prefix);
     pipe_output(&mut cmd);
 
     let mut child = cmd

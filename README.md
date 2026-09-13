@@ -19,7 +19,7 @@ Las recomendaciones se aplican sólo cuando el SHA-256 de `gepard.dll` coincide 
 | Gepard | SHA-256 | Evidencia local | Perfil recomendado |
 |---|---|---|---|
 | 3.0 · `26.8.26.1` | `e2f624d2e3451e68e46783e86d75a8b6787567a96bd33357d74b184dfcec6c13` | HoneyRO; misma DLL en Dracarys | Proton-CachyOS 11 + DXVK 3.0.1 |
-| 3.0 · `26.9.3.1` | `db4653ddf6aea88a502f10e200a300a05e8e4d65e7cfe65eb5b2ff0779e2e4f5` | SakuraRO; `3::110::12` con new WoW64 | Wine 7.16 old-WoW64 + DXVK-Sarek 1.10.x |
+| 3.0 · `26.9.3.1` | `db4653ddf6aea88a502f10e200a300a05e8e4d65e7cfe65eb5b2ff0779e2e4f5` | SakuraRO; `3::110::12` con new WoW64 | Wine 7.16 old-WoW64 + DXVK 2.6.2 |
 | Cualquier otra build | — | No validada | Sin recomendación automática |
 
 Ambas DLL y clientes son PE32/i386. HoneyRO quedó validado con el runtime administrado
@@ -36,9 +36,11 @@ Direct3D 8/9/11 ─────────────────────�
 DirectDraw 1-7 ─→ dgVoodoo (opcional) ─→ D3D11 ───→ DXVK ─→ Vulkan
 ```
 
-Wine 7.16 recibe las DLL x86/x64 de DXVK-Sarek, además de configuración, cache y logs privados. El
+Wine 7.16 recibe las DLL oficiales x86/x64 de DXVK 2.6.2, además de configuración, cache y logs
+privados. El
 mismo backend se aplica al juego, OpenSetup y patcher para que todos enumeren la GPU real. No se
-habilitan `PROTON_USE_WOW64`, NTSync ni un HUD de diagnóstico.
+habilitan `PROTON_USE_WOW64`, NTSync ni un HUD de diagnóstico. DXVK se descarga desde su release
+oficial y se verifica por tamaño y SHA-256 antes de instalarlo.
 
 ## Wine 7.16 portable
 
@@ -53,6 +55,10 @@ El launcher descubre distribuciones con esta estructura:
 Para el perfil Sakura, `bin/wine --version` debe informar `wine-7.16` y debe existir el runtime Unix
 i386. `WINEARCH=win32` no convierte un Wine pure-WoW64 en Wine legacy. El launcher administra una
 distribución portable ya instalada; todavía no descarga Wine 7.16.
+
+Un Wine 7.16 TkG que declare los patches `fsync-unix-staging` y `fsync_futex_waitv` en
+`wine-tkg-config.txt` activa `WINEFSYNC=1` automáticamente. Una build staging sin FSYNC usa ESYNC y
+una build vanilla conserva wineserver. NTSync no se fuerza: Wine 7.16 no lo implementa.
 
 ## Uso
 
@@ -96,10 +102,10 @@ Todo vive en `~/.local/share/ro-launcher/`:
 
 - `servers.json` y `settings.json`: configuración.
 - `runners/`: Wine portable.
-- `runtime/`: Proton, UMU y DXVK-Sarek verificados.
+- `runtime/`: Proton, UMU y DXVK 2.6.2 verificados.
 - `prefixes/<server-hash>-<runner-hash>/`: entorno aislado.
 - `<prefix>/.ro-launcher-prefix.json`: runner y componentes instalados.
-- `<prefix>/.ro-launcher-dxvk/`: configuración, cache y logs de Sarek.
+- `<prefix>/.ro-launcher-dxvk/`: configuración, cache y logs de DXVK.
 
 **Rearmar entorno** conserva el anterior hasta terminar correctamente. Directorios sin manifiesto
 válido no se adoptan ni eliminan automáticamente.
@@ -107,7 +113,7 @@ válido no se adoptan ni eliminan automáticamente.
 ## Diagnóstico breve
 
 - `3::110::12`: confirma el hash y usa el perfil exacto de la tabla.
-- GPU genérica o rendimiento bajo: confirma que el diagnóstico indique DXVK/DXVK-Sarek, no WineD3D.
+- GPU genérica o rendimiento bajo: confirma que el diagnóstico indique DXVK, no WineD3D.
 - DirectDraw en blanco: instala dgVoodoo y conserva DXVK como backend D3D11.
 - Patcher en blanco: marca WebView2 como requisito y rearma el entorno.
 - UI negra en Wayland: usa `npm run tauri:dev`; el script fuerza X11 para WebKit.

@@ -7,7 +7,7 @@ use crate::models::server_tools::{
     InstallDgVoodooResult, ServerToolsStatus, UninstallDgVoodooResult,
 };
 use crate::models::tool_kind::ToolKind;
-use crate::tools::prefix::DXVK_SAREK_COMPONENT;
+use crate::tools::prefix::MANAGED_DXVK_COMPONENT;
 use crate::tools::runners::ensure_managed_runtime;
 use crate::utils::{
     apply_tool_env, drain_and_log, emit_log_opt, pipe_output, required_game_dir,
@@ -85,16 +85,16 @@ pub async fn launch_tool(
     let prefix_operation = OperationGuard::acquire("prefix", Path::new(&ctx.prefix))?;
     let prefix_health = validate_runtime_prefix(&ctx)?;
     let wine_7_16 = ctx.resolved.is_wine_7_16();
-    let use_dxvk_sarek = wine_7_16
+    let use_managed_dxvk = wine_7_16
         && prefix_health.manifest.as_ref().is_some_and(|manifest| {
             manifest
                 .components
                 .iter()
-                .any(|component| component == DXVK_SAREK_COMPONENT)
+                .any(|component| component == MANAGED_DXVK_COMPONENT)
         });
-    if wine_7_16 && !use_dxvk_sarek {
+    if wine_7_16 && !use_managed_dxvk {
         return Err(
-            "El entorno Wine 7.16 no registra DXVK-Sarek 1.10.x; rearma este entorno antes de abrir herramientas"
+            "El entorno Wine 7.16 no registra DXVK 2.6.2; rearma este entorno antes de abrir herramientas"
                 .to_string(),
         );
     }
@@ -124,7 +124,7 @@ pub async fn launch_tool(
     let mut cmd = ctx
         .resolved
         .tool_command(&ctx.prefix, &exe_path, args.iter(), &work_dir);
-    apply_tool_env(&mut cmd, use_dgvoodoo, use_dxvk_sarek, &ctx.prefix);
+    apply_tool_env(&mut cmd, use_dgvoodoo, use_managed_dxvk, &ctx.prefix);
     pipe_output(&mut cmd);
 
     let mut child = cmd

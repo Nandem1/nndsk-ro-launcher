@@ -2,18 +2,18 @@ use std::path::Path;
 
 use tauri::AppHandle;
 
-use crate::tools::runners::{managed_dxvk_sarek_ready, managed_dxvk_sarek_root};
+use crate::tools::runners::{ensure_managed_dxvk, managed_dxvk_ready, managed_dxvk_root};
 use crate::utils::audio;
 use crate::utils::gecko::install_gecko_for_runner;
 use crate::utils::process::run_logged_command_ok;
 use crate::utils::{
-    dxvk_sarek_cache_path, dxvk_sarek_config_path, dxvk_sarek_log_path, emit_log, emit_progress,
-    inspect_prefix, resolve_runner, write_prefix_manifest, PrefixManifest, ResolvedRunner,
-    WineContext, PREFIX_SCHEMA_VERSION,
+    dxvk_cache_path, dxvk_config_path, dxvk_log_path, emit_log, emit_progress, inspect_prefix,
+    resolve_runner, write_prefix_manifest, PrefixManifest, ResolvedRunner, WineContext,
+    PREFIX_SCHEMA_VERSION,
 };
 
-pub const DXVK_SAREK_COMPONENT: &str = "dxvk-sarek-1.10.x";
-const DXVK_SAREK_DLLS: [&str; 5] = [
+pub const MANAGED_DXVK_COMPONENT: &str = "dxvk-2.6.2";
+const MANAGED_DXVK_DLLS: [&str; 5] = [
     "d3d8.dll",
     "d3d9.dll",
     "d3d10core.dll",
@@ -25,7 +25,7 @@ const DXVK_SAREK_DLLS: [&str; 5] = [
 pub enum DxvkProvision {
     Runner,
     Winetricks,
-    Sarek,
+    Managed,
 }
 
 impl DxvkProvision {
@@ -33,9 +33,16 @@ impl DxvkProvision {
         if runner.is_proton() {
             Self::Runner
         } else if runner.is_wine_7_16() {
-            Self::Sarek
+            Self::Managed
         } else {
             Self::Winetricks
+        }
+    }
+
+    pub fn manifest_component(self) -> &'static str {
+        match self {
+            Self::Managed => MANAGED_DXVK_COMPONENT,
+            Self::Runner | Self::Winetricks => "dxvk",
         }
     }
 }
@@ -107,7 +114,10 @@ pub async fn setup_resolved_prefix(
     match requirements.dxvk {
         DxvkProvision::Runner => emit_log(app, "DXVK administrado por Proton/UMU.")?,
         DxvkProvision::Winetricks => run_winetricks(app, prefix, resolved, &["dxvk"]).await?,
-        DxvkProvision::Sarek => install_dxvk_sarek(app, prefix)?,
+        DxvkProvision::Managed => {
+            ensure_managed_dxvk(app).await?;
+            install_managed_dxvk(app, prefix)?;
+        }
     }
 
     emit_progress(app, "Instalando vcredist_2019...", 65)?;
@@ -332,10 +342,7 @@ fn write_runtime_manifest(
         "corefonts".to_string(),
         "font-fallbacks".to_string(),
     ];
-    match requirements.dxvk {
-        DxvkProvision::Sarek => components.push(DXVK_SAREK_COMPONENT.to_string()),
-        DxvkProvision::Runner | DxvkProvision::Winetricks => components.push("dxvk".to_string()),
-    }
+    components.push(requirements.dxvk.manifest_component().to_string());
     if requirements.webview2 {
         components.push("webview2".to_string());
     }
@@ -354,11 +361,10 @@ fn write_runtime_manifest(
     )
 }
 
-fn install_dxvk_sarek(app: &AppHandle, prefix: &str) -> Result<(), String> {
-    if !managed_dxvk_sarek_ready() {
+fn install_managed_dxvk(app: &AppHandle, prefix: &str) -> Result<(), String> {
+    if !managed_dxvk_ready() {
         return Err(
-            "El runtime administrado no contiene DXVK-Sarek 1.10.x completo para x86 y x86_64"
-                .to_string(),
+            "El runtime administrado no contiene DXVK 2.6.2 completo para x86 y x86_64".to_string(),
         );
     }
 
@@ -371,13 +377,13 @@ fn install_dxvk_sarek(app: &AppHandle, prefix: &str) -> Result<(), String> {
         .find_map(|line| line.strip_prefix("#arch="))
         .ok_or_else(|| "El prefix no declara #arch en system.reg".to_string())?;
 
-    let source = managed_dxvk_sarek_root();
+    let source = managed_dxvk_root();
     let targets = match prefix_arch {
         "win64" => vec![
-            (source.join("x86_64-windows"), windows.join("system32")),
-            (source.join("i386-windows"), windows.join("syswow64")),
+            (source.join("x64"), windows.join("system32")),
+            (source.join("x32"), windows.join("syswow64")),
         ],
-        "win32" => vec![(source.join("i386-windows"), windows.join("system32"))],
+        "win32" => vec![(source.join("x32"), windows.join("system32"))],
         other => {
             return Err(format!(
                 "Arquitectura de prefix no soportada por DXVK: {other}"
@@ -392,14 +398,14 @@ fn install_dxvk_sarek(app: &AppHandle, prefix: &str) -> Result<(), String> {
                 target_dir.display()
             )
         })?;
-        for dll in DXVK_SAREK_DLLS {
+        for dll in MANAGED_DXVK_DLLS {
             install_runtime_file(&source_dir.join(dll), &target_dir.join(dll))?;
         }
     }
 
-    let config = dxvk_sarek_config_path(prefix);
-    let logs = dxvk_sarek_log_path(prefix);
-    let cache = dxvk_sarek_cache_path(prefix);
+    let config = dxvk_config_path(prefix);
+    let logs = dxvk_log_path(prefix);
+    let cache = dxvk_cache_path(prefix);
     let state_root = config
         .parent()
         .ok_or_else(|| "La ruta de configuración DXVK no tiene padre".to_string())?;
@@ -411,15 +417,13 @@ fn install_dxvk_sarek(app: &AppHandle, prefix: &str) -> Result<(), String> {
         .map_err(|error| format!("No se pudo crear el cache DXVK: {error}"))?;
     std::fs::write(
         &config,
-        "# RO-Launcher · Wine 7.16 legacy\nd3d9.forceSamplerTypeSpecConstants = True\n",
+        "# RO-Launcher · DXVK 2.6.2 + Wine 7.16 old-WoW64\nd3d9.forceSamplerTypeSpecConstants = True\n",
     )
     .map_err(|error| format!("No se pudo escribir dxvk.conf: {error}"))?;
 
     emit_log(
         app,
-        format!(
-            "DXVK-Sarek 1.10.x instalado para {prefix_arch}; Vulkan activo y old WoW64 preservado."
-        ),
+        format!("DXVK 2.6.2 instalado para {prefix_arch}; Vulkan moderno y old WoW64 preservado."),
     )
 }
 

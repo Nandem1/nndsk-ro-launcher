@@ -21,6 +21,23 @@ pub enum RunnerKind {
     Proton,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WineSyncMode {
+    WineServer,
+    Esync,
+    Fsync,
+}
+
+impl WineSyncMode {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::WineServer => "wineserver",
+            Self::Esync => "esync",
+            Self::Fsync => "fsync/futex_waitv",
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 enum RunnerStrategy {
     Wine {
@@ -100,6 +117,20 @@ impl ResolvedRunner {
             && self
                 .reported_version()
                 .is_some_and(|version| is_wine_7_16_version(&version))
+    }
+
+    /// Activa únicamente mecanismos que el propio artefacto declara haber incorporado.
+    /// Un Wine vanilla conserva wineserver; nunca se le inyectan flags que no implementa.
+    pub fn wine_sync_mode(&self) -> WineSyncMode {
+        let RunnerStrategy::Wine { wine_bin, .. } = &self.strategy else {
+            return WineSyncMode::WineServer;
+        };
+        let config = wine_bin
+            .parent()
+            .and_then(Path::parent)
+            .map(|root| root.join("wine-tkg-config.txt"))
+            .and_then(|path| std::fs::read_to_string(path).ok());
+        sync_mode_from_tkg_config(config.as_deref())
     }
 
     pub fn proton_root(&self) -> Option<&Path> {
@@ -274,6 +305,15 @@ impl ResolvedRunner {
         };
 
         cmd.env("WINE", wine_bin).env("WINESERVER", wineserver_bin);
+        match self.wine_sync_mode() {
+            WineSyncMode::WineServer => {}
+            WineSyncMode::Esync => {
+                cmd.env("WINEESYNC", "1");
+            }
+            WineSyncMode::Fsync => {
+                cmd.env("WINEFSYNC", "1");
+            }
+        }
         if let Some(bin_dir) = wine_bin.parent() {
             prepend_path(cmd, bin_dir);
         }
@@ -299,9 +339,25 @@ impl ResolvedRunner {
 }
 
 fn is_wine_7_16_version(version: &str) -> bool {
-    version
-        .strip_prefix("wine-")
-        .is_some_and(|version| version == "7.16" || version.starts_with("7.16 "))
+    version.strip_prefix("wine-").is_some_and(|version| {
+        version == "7.16"
+            || version.starts_with("7.16 ")
+            || version.starts_with("7.16.")
+            || version.starts_with("7.16-")
+    })
+}
+
+fn sync_mode_from_tkg_config(config: Option<&str>) -> WineSyncMode {
+    let Some(config) = config else {
+        return WineSyncMode::WineServer;
+    };
+    if config.contains("fsync-unix-staging.patch") && config.contains("fsync_futex_waitv.patch") {
+        WineSyncMode::Fsync
+    } else if config.contains("Using wine-staging patchset") {
+        WineSyncMode::Esync
+    } else {
+        WineSyncMode::WineServer
+    }
 }
 
 fn effective_wine_winetricks_path() -> Option<PathBuf> {
@@ -566,8 +622,27 @@ mod tests {
     fn identifies_only_the_validated_wine_7_16_line() {
         assert!(is_wine_7_16_version("wine-7.16"));
         assert!(is_wine_7_16_version("wine-7.16 (Staging)"));
+        assert!(is_wine_7_16_version(
+            "wine-7.16.r0.gaa2eb6ee ( TkG Staging Esync Fsync )"
+        ));
         assert!(!is_wine_7_16_version("wine-7.1"));
+        assert!(!is_wine_7_16_version("wine-7.160"));
         assert!(!is_wine_7_16_version("wine-10.0"));
+    }
+
+    #[test]
+    fn enables_only_the_sync_implementation_declared_by_tkg() {
+        assert_eq!(sync_mode_from_tkg_config(None), WineSyncMode::WineServer);
+        assert_eq!(
+            sync_mode_from_tkg_config(Some("Using wine-staging patchset (version 7.16)")),
+            WineSyncMode::Esync
+        );
+        assert_eq!(
+            sync_mode_from_tkg_config(Some(
+                "Using wine-staging patchset\nfsync-unix-staging.patch\nfsync_futex_waitv.patch"
+            )),
+            WineSyncMode::Fsync
+        );
     }
 
     fn test_wine_runner() -> ResolvedRunner {
@@ -628,6 +703,36 @@ mod tests {
             env(&command, "WINESERVER"),
             Some("/opt/test-wine/bin/wineserver".into())
         );
+    }
+
+    #[test]
+    fn tkg_fsync_is_applied_to_every_wine_command() {
+        let root = std::env::temp_dir().join(format!(
+            "ro-launcher-wine-fsync-{}-{}",
+            std::process::id(),
+            TEST_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+        ));
+        std::fs::create_dir_all(root.join("bin")).unwrap();
+        std::fs::write(
+            root.join("wine-tkg-config.txt"),
+            "Using wine-staging patchset\nfsync-unix-staging.patch\nfsync_futex_waitv.patch\n",
+        )
+        .unwrap();
+        let runner = ResolvedRunner {
+            strategy: RunnerStrategy::Wine {
+                wine_bin: root.join("bin/wine"),
+                wineserver_bin: root.join("bin/wineserver"),
+            },
+        };
+
+        let game = runner.game_command("/tmp/p", "/games/ragexe.exe", ["-1rag1"], "/games");
+        let shutdown = runner.shutdown_command("/tmp/p");
+        assert_eq!(runner.wine_sync_mode(), WineSyncMode::Fsync);
+        assert_eq!(env(&game, "WINEFSYNC"), Some("1".into()));
+        assert_eq!(env(&game, "WINEESYNC"), None);
+        assert_eq!(env(&shutdown, "WINEFSYNC"), Some("1".into()));
+
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

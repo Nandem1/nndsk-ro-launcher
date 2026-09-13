@@ -17,7 +17,7 @@ impl GepardRunnerProfile {
     pub fn stack_label(self) -> &'static str {
         match self {
             Self::ModernProton => "Proton-CachyOS 11 + DXVK 3.0.1",
-            Self::Wine716Legacy => "Wine 7.16 old-WoW64 + DXVK-Sarek 1.10.x",
+            Self::Wine716Legacy => "Wine 7.16 old-WoW64 + DXVK 2.6.2",
         }
     }
 
@@ -27,7 +27,7 @@ impl GepardRunnerProfile {
                 "Selecciona el Proton-CachyOS 11 administrado o un Proton moderno"
             }
             Self::Wine716Legacy => {
-                "Selecciona Wine 7.16 portable old-WoW64; DXVK-Sarek conservará Vulkan"
+                "Selecciona Wine 7.16 portable old-WoW64; DXVK 2.6.2 conservará Vulkan moderno"
             }
         }
     }

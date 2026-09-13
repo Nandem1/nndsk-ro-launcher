@@ -12,41 +12,39 @@ pub fn apply_prefix_env(cmd: &mut Command, prefix_path: &str) {
 pub fn apply_game_env(
     cmd: &mut Command,
     use_dgvoodoo: bool,
-    use_dxvk_sarek: bool,
+    use_managed_dxvk: bool,
     prefix_path: &str,
 ) {
     cmd.env("WINE_LARGE_ADDRESS_AWARE", "1");
 
-    if use_dxvk_sarek {
+    if use_managed_dxvk {
         let overrides = if use_dgvoodoo {
             "d3dimm=n,b;ddraw=n,b;d3d8=n,b;d3d9=n,b;d3d10core=n,b;d3d11=n,b;dxgi=n,b"
         } else {
             "d3d8=n,b;d3d9=n,b;d3d10core=n,b;d3d11=n,b;dxgi=n,b"
         };
         cmd.env("WINEDLLOVERRIDES", overrides)
-            // DXVK_ASYNC sólo tiene efecto en esta rama legacy; no activa DXVK por sí mismo.
-            .env("DXVK_ASYNC", "1")
-            .env("DXVK_CONFIG_FILE", dxvk_sarek_config_path(prefix_path))
-            .env("DXVK_LOG_PATH", dxvk_sarek_log_path(prefix_path))
-            .env("DXVK_STATE_CACHE_PATH", dxvk_sarek_cache_path(prefix_path));
+            .env("DXVK_CONFIG_FILE", dxvk_config_path(prefix_path))
+            .env("DXVK_LOG_PATH", dxvk_log_path(prefix_path))
+            .env("DXVK_STATE_CACHE_PATH", dxvk_cache_path(prefix_path));
     } else if use_dgvoodoo {
         cmd.env("WINEDLLOVERRIDES", "d3dimm=n,b;ddraw=n,b");
     }
 }
 
-pub fn dxvk_sarek_config_path(prefix_path: &str) -> PathBuf {
-    dxvk_sarek_state_root(prefix_path).join("dxvk.conf")
+pub fn dxvk_config_path(prefix_path: &str) -> PathBuf {
+    dxvk_state_root(prefix_path).join("dxvk.conf")
 }
 
-pub fn dxvk_sarek_log_path(prefix_path: &str) -> PathBuf {
-    dxvk_sarek_state_root(prefix_path).join("logs")
+pub fn dxvk_log_path(prefix_path: &str) -> PathBuf {
+    dxvk_state_root(prefix_path).join("logs")
 }
 
-pub fn dxvk_sarek_cache_path(prefix_path: &str) -> PathBuf {
-    dxvk_sarek_state_root(prefix_path).join("cache")
+pub fn dxvk_cache_path(prefix_path: &str) -> PathBuf {
+    dxvk_state_root(prefix_path).join("cache")
 }
 
-pub fn dxvk_sarek_state_root(prefix_path: &str) -> PathBuf {
+pub fn dxvk_state_root(prefix_path: &str) -> PathBuf {
     Path::new(prefix_path).join(".ro-launcher-dxvk")
 }
 
@@ -54,10 +52,10 @@ pub fn dxvk_sarek_state_root(prefix_path: &str) -> PathBuf {
 pub fn apply_tool_env(
     cmd: &mut Command,
     use_dgvoodoo: bool,
-    use_dxvk_sarek: bool,
+    use_managed_dxvk: bool,
     prefix_path: &str,
 ) {
-    apply_game_env(cmd, use_dgvoodoo, use_dxvk_sarek, prefix_path);
+    apply_game_env(cmd, use_dgvoodoo, use_managed_dxvk, prefix_path);
 }
 
 pub fn pipe_output(cmd: &mut Command) {
@@ -229,7 +227,7 @@ mod tests {
     }
 
     #[test]
-    fn dxvk_sarek_uses_native_graphics_dlls_and_a_real_config_file() {
+    fn managed_dxvk_uses_native_graphics_dlls_and_a_real_config_file() {
         let mut command = Command::new("/usr/bin/true");
         apply_game_env(&mut command, true, true, "/tmp/prefix");
 
@@ -244,6 +242,7 @@ mod tests {
             ))
         );
         assert_eq!(command_env(&command, "DXVK_HUD"), None);
+        assert_eq!(command_env(&command, "DXVK_ASYNC"), None);
         assert_eq!(command_env(&command, "PROTON_USE_WOW64"), None);
     }
 }
