@@ -52,6 +52,8 @@ pub fn run() {
             spammer: SpammerHandle::new(),
             input: InputGateway::new(),
             presence: PresenceHandle::new(),
+            sessions: tools::runner_sessions::RunnerSessionRegistry::new(),
+            memory: tools::memory_sessions::MemorySessionRegistry::new(),
         })
         .manage(ServerRepository::default())
         .manage(SettingsRepository)
@@ -109,6 +111,7 @@ pub fn run() {
                             state.autobuff.stop(),
                             state.spammer.stop()
                         );
+                        let _ = state.sessions.shutdown_all().await;
                     });
                     state.input.shutdown();
                 }

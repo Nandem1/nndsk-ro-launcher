@@ -14,9 +14,9 @@
     "format:check": "prettier --check src vite.config.ts",
     "preview": "vite preview",
     "tauri": "tauri",
-    "tauri:dev": "cargo build -p ro-inputd && GDK_BACKEND=x11 WEBKIT_DISABLE_DMABUF_RENDERER=1 tauri dev",
-    "tauri:build": "cargo build -p ro-inputd --release && tauri build",
-    "tauri:build:appimage": "cargo build -p ro-inputd --release && NO_STRIP=true tauri build --bundles appimage"
+    "tauri:dev": "cargo build -p ro-inputd -p ro-sessiond && GDK_BACKEND=x11 WEBKIT_DISABLE_DMABUF_RENDERER=1 tauri dev",
+    "tauri:build": "cargo build -p ro-inputd -p ro-sessiond --release && tauri build",
+    "tauri:build:appimage": "cargo build -p ro-inputd -p ro-sessiond --release && NO_STRIP=true tauri build --bundles appimage"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

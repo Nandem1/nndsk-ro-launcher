@@ -34,7 +34,7 @@ jobs:
       - run: npm run lint
       - run: npm run format:check
       - run: cargo fmt --all -- --check
-      - name: Build ro-inputd sidecar
-        run: cargo build -p ro-inputd
+      - name: Build sidecars
+        run: cargo build -p ro-inputd -p ro-sessiond
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace

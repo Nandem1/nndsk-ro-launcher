@@ -8,7 +8,9 @@ pub use game_process::{GameProcessHandle, LaunchReservation};
 use crate::tools::autobuff::AutobuffHandle;
 use crate::tools::autopot::AutopotHandle;
 use crate::tools::input::InputGateway;
+use crate::tools::memory_sessions::MemorySessionRegistry;
 use crate::tools::presence::PresenceHandle;
+use crate::tools::runner_sessions::RunnerSessionRegistry;
 use crate::tools::spammer::SpammerHandle;
 use crate::{
     models::{
@@ -31,6 +33,9 @@ pub struct GameState {
     pub spammer: SpammerHandle,
     pub input: InputGateway,
     pub presence: PresenceHandle,
+    pub sessions: RunnerSessionRegistry,
+    #[allow(dead_code)]
+    pub memory: MemorySessionRegistry,
 }
 
 pub struct ServerRepository {

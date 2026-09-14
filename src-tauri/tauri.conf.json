@@ -34,7 +34,7 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "externalBin": ["binaries/ro-inputd"],
+    "externalBin": ["binaries/ro-inputd", "binaries/ro-sessiond"],
     "resources": {
       "resources/dgvoodoo/": "dgvoodoo/"
     }

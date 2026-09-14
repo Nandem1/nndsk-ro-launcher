@@ -29,6 +29,8 @@ flate2 = "1"
 xz2 = "0.1"
 ro-tools-core = { path = "../crates/ro-tools-core" }
 ro-tools-linux = { path = "../crates/ro-tools-linux" }
+ro-session-protocol = { path = "../crates/ro-session-protocol" }
+uuid = { version = "1", features = ["v4"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["test-util"] }
