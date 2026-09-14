@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 use ro_tools_linux::ProcessIdentity;
 
 use crate::models::game_client::{GameClientSnapshot, GameClientStatus};
+use crate::tools::runner_sessions::ClientRuntimeGuard;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LaunchReservation {
@@ -18,7 +19,7 @@ struct ClientMetadata {
     server_name: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug)]
 enum ProcessState {
     Launching {
         metadata: ClientMetadata,
@@ -29,6 +30,8 @@ enum ProcessState {
         metadata: ClientMetadata,
         identity: ProcessIdentity,
         controller: Option<ProcessIdentity>,
+        #[allow(dead_code)]
+        runtime: ClientRuntimeGuard,
         stop_requested: bool,
     },
 }
@@ -154,6 +157,7 @@ impl GameProcessHandle {
         &self,
         reservation: LaunchReservation,
         identity: ProcessIdentity,
+        runtime: ClientRuntimeGuard,
     ) -> Result<GameClientSnapshot, String> {
         let mut state = self.lock()?;
         if state.clients.iter().any(|(generation, client)| {
@@ -175,6 +179,7 @@ impl GameProcessHandle {
                     metadata: metadata.clone(),
                     identity,
                     controller: *controller,
+                    runtime,
                     stop_requested: false,
                 };
                 Ok(client.snapshot())
@@ -359,6 +364,20 @@ impl GameProcessHandle {
         Ok(identities.into_iter().collect())
     }
 
+    pub fn contains_identity(&self, candidate: &ProcessIdentity) -> bool {
+        let Ok(state) = self.state.lock() else {
+            return false;
+        };
+        state.clients.values().any(|client| match client {
+            ProcessState::Launching { controller, .. } => controller == &Some(*candidate),
+            ProcessState::Running {
+                identity,
+                controller,
+                ..
+            } => *identity == *candidate || controller == &Some(*candidate),
+        })
+    }
+
     pub fn stop_requested(&self, reservation: LaunchReservation) -> bool {
         let Ok(state) = self.state.lock() else {
             return true;
@@ -479,6 +498,14 @@ impl Default for GameProcessHandle {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tools::runner_sessions::SessionOwnership;
+
+    fn direct_runtime() -> ClientRuntimeGuard {
+        ClientRuntimeGuard {
+            session: SessionOwnership::Direct,
+            memory: None,
+        }
+    }
 
     fn identity(pid: u32) -> ProcessIdentity {
         ProcessIdentity {
@@ -500,10 +527,14 @@ mod tests {
         assert!(process
             .begin_launch("parallel".into(), "server".into(), "Server".into())
             .is_err());
-        process.mark_running(first, identity(42)).unwrap();
+        process
+            .mark_running(first, identity(42), direct_runtime())
+            .unwrap();
 
         let second = launch(&process, "second");
-        process.mark_running(second, identity(84)).unwrap();
+        process
+            .mark_running(second, identity(84), direct_runtime())
+            .unwrap();
 
         assert_eq!(process.snapshots().unwrap().len(), 2);
         assert!(process.sole_running_pid().is_err());
@@ -515,7 +546,9 @@ mod tests {
         let first = launch(&process, "first");
         process.cancel_launch(first);
         let second = launch(&process, "second");
-        process.mark_running(second, identity(84)).unwrap();
+        process
+            .mark_running(second, identity(84), direct_runtime())
+            .unwrap();
         assert_eq!(process.snapshots().unwrap()[0].client_id, "second");
     }
 
@@ -523,9 +556,13 @@ mod tests {
     fn stop_and_finish_are_scoped_to_one_client() {
         let process = GameProcessHandle::new();
         let first = launch(&process, "first");
-        process.mark_running(first, identity(42)).unwrap();
+        process
+            .mark_running(first, identity(42), direct_runtime())
+            .unwrap();
         let second = launch(&process, "second");
-        process.mark_running(second, identity(84)).unwrap();
+        process
+            .mark_running(second, identity(84), direct_runtime())
+            .unwrap();
 
         let stop = process.request_stop("first").unwrap();
         assert_eq!(stop.identities, vec![identity(42)]);
@@ -540,13 +577,31 @@ mod tests {
     fn handoff_never_claims_another_client_or_races_a_launch() {
         let process = GameProcessHandle::new();
         let first = launch(&process, "first");
-        process.mark_running(first, identity(42)).unwrap();
+        process
+            .mark_running(first, identity(42), direct_runtime())
+            .unwrap();
 
         let second = launch(&process, "second");
         assert!(!process.candidate_available_for_handoff(first, identity(84)));
-        process.mark_running(second, identity(84)).unwrap();
+        process
+            .mark_running(second, identity(84), direct_runtime())
+            .unwrap();
         assert!(!process.candidate_available_for_handoff(first, identity(84)));
         assert!(!process.replace_running(first, identity(42), identity(84)));
+    }
+
+    #[test]
+    fn contains_identity_matches_controller_and_running_client() {
+        let process = GameProcessHandle::new();
+        let reservation = launch(&process, "first");
+        let controller = identity(10);
+        process.mark_controller(reservation, controller).unwrap();
+        assert!(process.contains_identity(&controller));
+        process
+            .mark_running(reservation, identity(42), direct_runtime())
+            .unwrap();
+        assert!(process.contains_identity(&identity(42)));
+        assert!(!process.contains_identity(&identity(99)));
     }
 
     #[test]
@@ -555,7 +610,9 @@ mod tests {
         let reservation = process
             .begin_launch("first".into(), "sakura".into(), "Sakura".into())
             .unwrap();
-        process.mark_running(reservation, identity(42)).unwrap();
+        process
+            .mark_running(reservation, identity(42), direct_runtime())
+            .unwrap();
 
         assert_eq!(process.sole_running_pid_for("sakura").unwrap(), 42);
         assert!(process.sole_running_pid_for("other").is_err());

@@ -263,6 +263,67 @@ pub fn is_descendant_of(pid: u32, ancestor: u32) -> bool {
     false
 }
 
+const PREFIX_LEFTOVER_EXECUTABLES: &[&str] = &[
+    "wineserver",
+    "winedevice.exe",
+    "plugplay.exe",
+    "services.exe",
+    "rpcss.exe",
+    "svchost.exe",
+    "explorer.exe",
+    "wineboot.exe",
+    "start.exe",
+];
+
+pub fn is_prefix_leftover_executable(name: &str) -> bool {
+    PREFIX_LEFTOVER_EXECUTABLES
+        .iter()
+        .any(|allowed| name.eq_ignore_ascii_case(allowed))
+}
+
+/// Clasificación pura para tests: leftover solo si `comm` está en la allowlist y,
+/// cuando hay argv0, su basename también está en la allowlist.
+pub fn is_leftover_from_comm_and_argv0(comm: &str, argv0_basename: Option<&str>) -> bool {
+    if !is_prefix_leftover_executable(comm) {
+        return false;
+    }
+    match argv0_basename {
+        None => true,
+        Some(argv0) => is_prefix_leftover_executable(argv0),
+    }
+}
+
+fn argv0_basename_from_cmdline(pid: u32) -> Option<String> {
+    read_proc_nul_fields(pid, "cmdline").and_then(|fields| {
+        fields
+            .first()
+            .map(|arg| windows_basename(String::from_utf8_lossy(arg).trim_matches('"')).to_string())
+    })
+}
+
+pub fn process_executable_label(pid: u32) -> Option<String> {
+    let comm = fs::read_to_string(format!("/proc/{pid}/comm"))
+        .ok()?
+        .trim()
+        .to_string();
+    let argv0_base = argv0_basename_from_cmdline(pid);
+    if is_leftover_from_comm_and_argv0(&comm, argv0_base.as_deref()) {
+        return Some(comm);
+    }
+    argv0_base.or(Some(comm))
+}
+
+pub fn is_prefix_leftover_process(pid: u32) -> bool {
+    let comm = fs::read_to_string(format!("/proc/{pid}/comm"))
+        .ok()
+        .map(|value| value.trim().to_string());
+    let argv0_base = argv0_basename_from_cmdline(pid);
+    match comm {
+        Some(comm) => is_leftover_from_comm_and_argv0(&comm, argv0_base.as_deref()),
+        None => false,
+    }
+}
+
 #[allow(clippy::result_unit_err)]
 pub fn read_ppid(pid: u32) -> Result<u32, ()> {
     let stat = fs::read_to_string(format!("/proc/{pid}/stat")).map_err(|_| ())?;
@@ -309,6 +370,39 @@ mod tests {
             parse_nul_fields(b"wine\0Z:\\Games\\RO\\ragexe.exe\0arg with spaces\0"),
             fields(&["wine", "Z:\\Games\\RO\\ragexe.exe", "arg with spaces"])
         );
+    }
+
+    #[test]
+    fn leftover_allowlist_matches_expected_wine_daemons() {
+        assert!(is_prefix_leftover_executable("wineserver"));
+        assert!(is_prefix_leftover_executable("Wineserver"));
+        assert!(is_prefix_leftover_executable("explorer.exe"));
+        assert!(!is_prefix_leftover_executable("ragexe.exe"));
+        assert!(!is_prefix_leftover_executable("SakuraRO Launcher.exe"));
+        assert!(!is_prefix_leftover_executable("msiexec.exe"));
+    }
+
+    #[test]
+    fn leftover_classification_requires_comm_and_argv0_when_present() {
+        assert!(is_leftover_from_comm_and_argv0("wineserver", None));
+        assert!(is_leftover_from_comm_and_argv0(
+            "wineserver",
+            Some("wineserver")
+        ));
+        assert!(is_leftover_from_comm_and_argv0(
+            "explorer.exe",
+            Some("explorer.exe")
+        ));
+        assert!(!is_leftover_from_comm_and_argv0("ragexe.exe", None));
+        assert!(!is_leftover_from_comm_and_argv0(
+            "SakuraRO Launcher.exe",
+            None
+        ));
+        assert!(!is_leftover_from_comm_and_argv0("msiexec.exe", None));
+        assert!(!is_leftover_from_comm_and_argv0(
+            "wineserver",
+            Some("ragexe.exe")
+        ));
     }
 
     #[test]

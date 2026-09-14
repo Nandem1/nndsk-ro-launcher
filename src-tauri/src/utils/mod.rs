@@ -31,7 +31,7 @@ pub use servers::*;
 pub use settings::*;
 pub use system::*;
 pub use webview::*;
-pub use wine::*;
+pub use wine::{ProcessEnv, *};
 
 use tauri::AppHandle;
 use tokio::io::AsyncBufReadExt;

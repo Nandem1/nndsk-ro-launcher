@@ -12,8 +12,8 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{ChildStdin, ChildStdout};
 use tokio::sync::{oneshot, Mutex, Notify};
 
-use super::RunnerInvocation;
 use super::SessionError;
+use crate::utils::RunnerInvocation;
 
 pub fn invocation_to_spec(
     invocation: &RunnerInvocation,
@@ -224,6 +224,22 @@ impl SessionProtocol {
         self.mark_stopped();
     }
 
+    #[cfg(test)]
+    pub(crate) fn set_fatal_for_test(self: &Arc<Self>, err: SessionError) {
+        self.set_fatal(err);
+    }
+
+    fn completed_exit_for(&self, request_id: &str) -> Option<ControllerExit> {
+        self.completed_exits
+            .lock()
+            .ok()
+            .and_then(|map| map.get(request_id).cloned())
+    }
+
+    pub fn try_fatal(&self) -> Option<SessionError> {
+        self.fatal.lock().ok().and_then(|slot| slot.clone())
+    }
+
     fn dispatch(&self, event: SessionEvent) {
         match event {
             SessionEvent::LaunchAccepted {
@@ -421,33 +437,56 @@ impl SessionProtocol {
         }
     }
 
+    pub fn try_controller_exit(&self, request_id: &str) -> Option<ControllerExit> {
+        if let Some(exit) = self.completed_exit_for(request_id) {
+            return Some(exit);
+        }
+        if self.try_fatal().is_some() {
+            return Some(ControllerExit {
+                exit_code: None,
+                signal: None,
+            });
+        }
+        None
+    }
+
+    fn resolve_controller_exit_wait(
+        &self,
+        request_id: &str,
+    ) -> Result<Option<ControllerExit>, SessionError> {
+        if let Some(exit) = self.completed_exit_for(request_id) {
+            return Ok(Some(exit));
+        }
+        if let Some(err) = self.try_fatal() {
+            return Err(err);
+        }
+        Ok(None)
+    }
+
     pub async fn wait_controller_exit(
         &self,
         request_id: String,
     ) -> Result<ControllerExit, SessionError> {
-        if let Some(exit) = self
-            .completed_exits
-            .lock()
-            .unwrap()
-            .get(&request_id)
-            .cloned()
-        {
-            return Ok(exit);
+        match self.resolve_controller_exit_wait(&request_id) {
+            Ok(Some(exit)) => return Ok(exit),
+            Err(err) => return Err(err),
+            Ok(None) => {}
         }
         let (tx, rx) = oneshot::channel();
         self.exit_waiters
             .lock()
             .unwrap()
             .insert(request_id.clone(), tx);
-        if let Some(exit) = self
-            .completed_exits
-            .lock()
-            .unwrap()
-            .get(&request_id)
-            .cloned()
-        {
-            self.exit_waiters.lock().unwrap().remove(&request_id);
-            return Ok(exit);
+        match self.resolve_controller_exit_wait(&request_id) {
+            Ok(Some(exit)) => {
+                self.exit_waiters.lock().unwrap().remove(&request_id);
+                return Ok(exit);
+            }
+            Err(err) => {
+                self.exit_waiters.lock().unwrap().remove(&request_id);
+                return Err(err);
+            }
+            Ok(None) => {}
         }
         match rx.await {
             Ok(result) => result,
@@ -589,6 +628,97 @@ mod tests {
         };
         let err = invocation_to_spec(&inv, &owned).unwrap_err();
         assert!(err.message.contains("WINEPREFIX"));
+    }
+
+    #[tokio::test]
+    async fn try_controller_exit_reads_completed_exits_without_wait() {
+        use std::process::Stdio;
+
+        let mut child = tokio::process::Command::new("/bin/cat")
+            .stdin(Stdio::piped())
+            .spawn()
+            .expect("spawn cat");
+        let stdin = child.stdin.take().expect("stdin");
+        let protocol = SessionProtocol::new(stdin);
+        protocol.dispatch(SessionEvent::ControllerExited {
+            request_id: "req-1".to_string(),
+            exit_code: Some(7),
+            signal: None,
+            controller_pid: 0,
+        });
+        let exit = protocol
+            .try_controller_exit("req-1")
+            .expect("exit should be visible");
+        assert_eq!(exit.exit_code, Some(7));
+        assert!(protocol.try_controller_exit("other").is_none());
+        let _ = child.kill().await;
+    }
+
+    #[tokio::test]
+    async fn try_controller_exit_reflects_fatal_without_controller_exited() {
+        use std::process::Stdio;
+
+        let mut child = tokio::process::Command::new("/bin/cat")
+            .stdin(Stdio::piped())
+            .spawn()
+            .expect("spawn cat");
+        let stdin = child.stdin.take().expect("stdin");
+        let protocol = SessionProtocol::new(stdin);
+        protocol.set_fatal_for_test(SessionError::protocol("supervisor stdout closed"));
+        let exit = protocol
+            .try_controller_exit("any-request")
+            .expect("fatal should surface as synthetic exit");
+        assert_eq!(exit.exit_code, None);
+        assert_eq!(exit.signal, None);
+        let _ = child.kill().await;
+    }
+
+    #[tokio::test]
+    async fn controller_exited_wins_over_fatal_for_request_id() {
+        use std::process::Stdio;
+
+        let mut child = tokio::process::Command::new("/bin/cat")
+            .stdin(Stdio::piped())
+            .spawn()
+            .expect("spawn cat");
+        let stdin = child.stdin.take().expect("stdin");
+        let protocol = SessionProtocol::new(stdin);
+        protocol.set_fatal_for_test(SessionError::protocol("sidecar died"));
+        protocol.dispatch(SessionEvent::ControllerExited {
+            request_id: "req-1".to_string(),
+            exit_code: Some(3),
+            signal: None,
+            controller_pid: 0,
+        });
+        let exit = protocol
+            .try_controller_exit("req-1")
+            .expect("completed exit");
+        assert_eq!(exit.exit_code, Some(3));
+        let _ = child.kill().await;
+    }
+
+    #[tokio::test]
+    async fn wait_controller_exit_returns_fatal_without_hanging() {
+        use std::process::Stdio;
+        use std::time::Duration;
+
+        let mut child = tokio::process::Command::new("/bin/cat")
+            .stdin(Stdio::piped())
+            .spawn()
+            .expect("spawn cat");
+        let stdin = child.stdin.take().expect("stdin");
+        let protocol = SessionProtocol::new(stdin);
+        let fatal = SessionError::protocol("supervisor stdout closed");
+        protocol.set_fatal_for_test(fatal.clone());
+        let result = tokio::time::timeout(
+            Duration::from_millis(200),
+            protocol.wait_controller_exit("req-late".to_string()),
+        )
+        .await
+        .expect("wait_controller_exit should not hang");
+        let err = result.expect_err("fatal should fail the waiter");
+        assert_eq!(err.message, fatal.message);
+        let _ = child.kill().await;
     }
 
     #[tokio::test]

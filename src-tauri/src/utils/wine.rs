@@ -3,19 +3,41 @@ use std::path::{Path, PathBuf};
 
 use tokio::process::Command;
 
-pub fn apply_prefix_env(cmd: &mut Command, prefix_path: &str) {
-    sanitize_appimage_env(cmd);
-    cmd.env("WINEPREFIX", prefix_path)
-        .env("WAYLAND_DISPLAY", "");
+pub trait ProcessEnv {
+    fn set_env(&mut self, key: impl AsRef<OsStr>, val: impl AsRef<OsStr>);
+    #[allow(dead_code)]
+    fn unset_env(&mut self, key: impl AsRef<OsStr>);
 }
 
-pub fn apply_game_env(
-    cmd: &mut Command,
+impl ProcessEnv for Command {
+    fn set_env(&mut self, key: impl AsRef<OsStr>, val: impl AsRef<OsStr>) {
+        self.env(key, val);
+    }
+
+    fn unset_env(&mut self, key: impl AsRef<OsStr>) {
+        self.env_remove(key);
+    }
+}
+
+pub fn apply_prefix_env<E: ProcessEnv>(env: &mut E, prefix_path: &str) {
+    env.set_env("WINEPREFIX", prefix_path);
+    env.set_env("WAYLAND_DISPLAY", "");
+}
+
+/// Variante para `Command` directo: sanea AppImage además del prefix.
+#[allow(dead_code)]
+pub fn apply_prefix_env_command(cmd: &mut Command, prefix_path: &str) {
+    sanitize_appimage_env(cmd);
+    apply_prefix_env(cmd, prefix_path);
+}
+
+pub fn apply_game_env<E: ProcessEnv>(
+    env: &mut E,
     use_dgvoodoo: bool,
     use_managed_dxvk: bool,
     prefix_path: &str,
 ) {
-    cmd.env("WINE_LARGE_ADDRESS_AWARE", "1");
+    env.set_env("WINE_LARGE_ADDRESS_AWARE", "1");
 
     if use_managed_dxvk {
         let overrides = if use_dgvoodoo {
@@ -23,12 +45,12 @@ pub fn apply_game_env(
         } else {
             "d3d8=n,b;d3d9=n,b;d3d10core=n,b;d3d11=n,b;dxgi=n,b"
         };
-        cmd.env("WINEDLLOVERRIDES", overrides)
-            .env("DXVK_CONFIG_FILE", dxvk_config_path(prefix_path))
-            .env("DXVK_LOG_PATH", dxvk_log_path(prefix_path))
-            .env("DXVK_STATE_CACHE_PATH", dxvk_cache_path(prefix_path));
+        env.set_env("WINEDLLOVERRIDES", overrides);
+        env.set_env("DXVK_CONFIG_FILE", dxvk_config_path(prefix_path));
+        env.set_env("DXVK_LOG_PATH", dxvk_log_path(prefix_path));
+        env.set_env("DXVK_STATE_CACHE_PATH", dxvk_cache_path(prefix_path));
     } else if use_dgvoodoo {
-        cmd.env("WINEDLLOVERRIDES", "d3dimm=n,b;ddraw=n,b");
+        env.set_env("WINEDLLOVERRIDES", "d3dimm=n,b;ddraw=n,b");
     }
 }
 
@@ -49,13 +71,13 @@ pub fn dxvk_state_root(prefix_path: &str) -> PathBuf {
 }
 
 /// OpenSetup y el patcher deben enumerar la misma GPU y backend que usará el juego.
-pub fn apply_tool_env(
-    cmd: &mut Command,
+pub fn apply_tool_env<E: ProcessEnv>(
+    env: &mut E,
     use_dgvoodoo: bool,
     use_managed_dxvk: bool,
     prefix_path: &str,
 ) {
-    apply_game_env(cmd, use_dgvoodoo, use_managed_dxvk, prefix_path);
+    apply_game_env(env, use_dgvoodoo, use_managed_dxvk, prefix_path);
 }
 
 pub fn pipe_output(cmd: &mut Command) {

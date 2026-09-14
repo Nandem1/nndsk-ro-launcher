@@ -1,4 +1,4 @@
-use std::ffi::OsStr;
+use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 
 use tokio::process::Command;
@@ -10,10 +10,118 @@ use crate::utils::{
     apply_prefix_env, ensure_custom_setup_allowed, ensure_managed_path_safe, find_umu_run,
     inspect_prefix, is_executable_file, manifest_matches_location, manifest_matches_runner,
     proton_vkd3d_companions_available, resolve_server_prefix_with_runner, sanitize_appimage_env,
-    winetricks_path, PrefixHealth, PrefixLocation, PrefixScope, PREFIX_SCHEMA_VERSION, UMU_RUN_BIN,
+    winetricks_path, PrefixHealth, PrefixLocation, PrefixScope, ProcessEnv, PREFIX_SCHEMA_VERSION,
+    UMU_RUN_BIN,
 };
 
 const DEFAULT_GAME_ID: &str = "0";
+
+#[derive(Debug, Clone)]
+pub struct RunnerInvocation {
+    pub program: PathBuf,
+    pub args: Vec<OsString>,
+    pub cwd: PathBuf,
+    pub env: Vec<(OsString, Option<OsString>)>,
+}
+
+impl ProcessEnv for RunnerInvocation {
+    fn set_env(&mut self, key: impl AsRef<OsStr>, val: impl AsRef<OsStr>) {
+        let key = key.as_ref().to_os_string();
+        self.env.retain(|(existing, _)| existing != &key);
+        self.env.push((key, Some(val.as_ref().to_os_string())));
+    }
+
+    fn unset_env(&mut self, key: impl AsRef<OsStr>) {
+        let key = key.as_ref().to_os_string();
+        self.env.retain(|(existing, _)| existing != &key);
+        self.env.push((key, None));
+    }
+}
+
+impl RunnerInvocation {
+    pub fn into_command(self) -> Command {
+        let mut cmd = Command::new(&self.program);
+        cmd.args(self.args).current_dir(self.cwd);
+        for (key, value) in self.env {
+            match value {
+                Some(val) => {
+                    cmd.env(key, val);
+                }
+                None => {
+                    cmd.env_remove(key);
+                }
+            }
+        }
+        sanitize_appimage_env(&mut cmd);
+        cmd
+    }
+}
+
+fn absolute_program(path: &Path) -> Result<PathBuf, String> {
+    if !path.is_absolute() {
+        return Err(format!(
+            "El programa del runner debe ser una ruta absoluta: {}",
+            path.display()
+        ));
+    }
+    Ok(std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf()))
+}
+
+fn invocation_cwd(work_dir: &str) -> PathBuf {
+    let path = Path::new(work_dir);
+    std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+}
+
+fn invocation_cwd_for_prefix(prefix_path: &str) -> PathBuf {
+    let path = Path::new(prefix_path);
+    if path.is_dir() {
+        std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+    } else if let Ok(cwd) = std::env::current_dir() {
+        std::fs::canonicalize(&cwd).unwrap_or(cwd)
+    } else {
+        path.to_path_buf()
+    }
+}
+
+fn resolve_winetricks_executable() -> Result<PathBuf, String> {
+    let path = effective_wine_winetricks_path()
+        .or(winetricks_path())
+        .ok_or_else(|| {
+            "winetricks no encontrado en PATH ni en el runtime administrado; instálalo en el sistema"
+                .to_string()
+        })?;
+    if path.is_absolute() {
+        return absolute_program(&path);
+    }
+    which_in_path(&path)
+}
+
+fn which_in_path(name: &Path) -> Result<PathBuf, String> {
+    let file_name = name
+        .file_name()
+        .ok_or_else(|| format!("Ruta inválida: {}", name.display()))?;
+    let path_var = std::env::var_os("PATH").unwrap_or_default();
+    for dir in std::env::split_paths(&path_var) {
+        let candidate = dir.join(file_name);
+        if is_executable_file(&candidate) {
+            return absolute_program(&candidate);
+        }
+    }
+    Err(format!(
+        "No se encontró {} en PATH",
+        file_name.to_string_lossy()
+    ))
+}
+
+fn prepend_path_env<E: ProcessEnv>(env: &mut E, bin_dir: &Path) {
+    let mut paths = vec![bin_dir.to_path_buf()];
+    if let Some(existing) = std::env::var_os("PATH") {
+        paths.extend(std::env::split_paths(&existing));
+    }
+    if let Ok(path) = std::env::join_paths(paths) {
+        env.set_env("PATH", path);
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RunnerKind {
@@ -165,6 +273,45 @@ impl ResolvedRunner {
         }
     }
 
+    pub fn game_invocation<I, S>(
+        &self,
+        prefix_path: &str,
+        exe_path: &str,
+        args: I,
+        work_dir: &str,
+    ) -> Result<RunnerInvocation, String>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<OsStr>,
+    {
+        let mut invocation = match &self.strategy {
+            RunnerStrategy::Wine { wine_bin, .. } => {
+                let program = absolute_program(wine_bin)?;
+                let mut args_vec = vec![OsString::from(exe_path)];
+                args_vec.extend(args.into_iter().map(|a| a.as_ref().to_os_string()));
+                RunnerInvocation {
+                    program,
+                    args: args_vec,
+                    cwd: invocation_cwd(work_dir),
+                    env: Vec::new(),
+                }
+            }
+            RunnerStrategy::Proton { .. } => {
+                let mut invocation =
+                    self.proton_invocation(prefix_path, ProtonVerb::WaitForExitAndRun)?;
+                invocation.args.push(OsString::from(exe_path));
+                invocation
+                    .args
+                    .extend(args.into_iter().map(|a| a.as_ref().to_os_string()));
+                invocation.cwd = invocation_cwd(work_dir);
+                invocation
+            }
+        };
+        self.apply_wine_env(&mut invocation, prefix_path)?;
+        Ok(invocation)
+    }
+
+    #[allow(dead_code)] // fase 4 y tests; producción usa *_invocation.
     pub fn game_command<I, S>(
         &self,
         prefix_path: &str,
@@ -176,21 +323,46 @@ impl ResolvedRunner {
         I: IntoIterator<Item = S>,
         S: AsRef<OsStr>,
     {
-        let mut cmd = match &self.strategy {
+        self.game_invocation(prefix_path, exe_path, args, work_dir)
+            .expect("game_invocation")
+            .into_command()
+    }
+
+    pub fn tool_invocation<I, S>(
+        &self,
+        prefix_path: &str,
+        exe_path: &str,
+        args: I,
+        work_dir: &str,
+    ) -> Result<RunnerInvocation, String>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<OsStr>,
+    {
+        let mut invocation = match &self.strategy {
             RunnerStrategy::Wine { wine_bin, .. } => {
-                let mut cmd = Command::new(wine_bin);
-                cmd.arg(exe_path).args(args);
-                self.apply_wine_env(&mut cmd, prefix_path);
-                cmd
+                let program = absolute_program(wine_bin)?;
+                let mut args_vec = vec![OsString::from(exe_path)];
+                args_vec.extend(args.into_iter().map(|a| a.as_ref().to_os_string()));
+                RunnerInvocation {
+                    program,
+                    args: args_vec,
+                    cwd: invocation_cwd(work_dir),
+                    env: Vec::new(),
+                }
             }
             RunnerStrategy::Proton { .. } => {
-                let mut cmd = self.proton_command(prefix_path, ProtonVerb::WaitForExitAndRun);
-                cmd.arg(exe_path).args(args);
-                cmd
+                let mut invocation = self.proton_invocation(prefix_path, ProtonVerb::Run)?;
+                invocation.args.push(OsString::from(exe_path));
+                invocation
+                    .args
+                    .extend(args.into_iter().map(|a| a.as_ref().to_os_string()));
+                invocation.cwd = invocation_cwd(work_dir);
+                invocation
             }
         };
-        cmd.current_dir(work_dir);
-        cmd
+        self.apply_wine_env(&mut invocation, prefix_path)?;
+        Ok(invocation)
     }
 
     pub fn tool_command<I, S>(
@@ -204,57 +376,82 @@ impl ResolvedRunner {
         I: IntoIterator<Item = S>,
         S: AsRef<OsStr>,
     {
-        let mut cmd = match &self.strategy {
-            RunnerStrategy::Wine { wine_bin, .. } => {
-                let mut cmd = Command::new(wine_bin);
-                cmd.arg(exe_path).args(args);
-                self.apply_wine_env(&mut cmd, prefix_path);
-                cmd
-            }
-            RunnerStrategy::Proton { .. } => {
-                let mut cmd = self.proton_command(prefix_path, ProtonVerb::Run);
-                cmd.arg(exe_path).args(args);
-                cmd
-            }
-        };
-        cmd.current_dir(work_dir);
-        cmd
+        self.tool_invocation(prefix_path, exe_path, args, work_dir)
+            .expect("tool_invocation")
+            .into_command()
     }
 
     /// Ejecuta un programa incorporado de Wine (`reg`, `msiexec`, `wineboot`, etc.).
+    pub fn builtin_invocation<I, S>(
+        &self,
+        prefix_path: &str,
+        program: &str,
+        args: I,
+    ) -> Result<RunnerInvocation, String>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<OsStr>,
+    {
+        let mut invocation = match &self.strategy {
+            RunnerStrategy::Wine { wine_bin, .. } => {
+                let program_path = absolute_program(wine_bin)?;
+                RunnerInvocation {
+                    program: program_path,
+                    args: std::iter::once(OsString::from(program))
+                        .chain(args.into_iter().map(|a| a.as_ref().to_os_string()))
+                        .collect(),
+                    cwd: invocation_cwd_for_prefix(prefix_path),
+                    env: Vec::new(),
+                }
+            }
+            RunnerStrategy::Proton { .. } => {
+                let mut invocation =
+                    self.proton_invocation(prefix_path, ProtonVerb::RunInPrefix)?;
+                invocation.args.push(OsString::from(program));
+                invocation
+                    .args
+                    .extend(args.into_iter().map(|a| a.as_ref().to_os_string()));
+                invocation.cwd = invocation_cwd_for_prefix(prefix_path);
+                invocation
+            }
+        };
+        self.apply_wine_env(&mut invocation, prefix_path)?;
+        Ok(invocation)
+    }
+
     pub fn builtin_command<I, S>(&self, prefix_path: &str, program: &str, args: I) -> Command
     where
         I: IntoIterator<Item = S>,
         S: AsRef<OsStr>,
     {
+        self.builtin_invocation(prefix_path, program, args)
+            .expect("builtin_invocation")
+            .into_command()
+    }
+
+    pub fn create_prefix_invocation(&self, prefix_path: &str) -> Result<RunnerInvocation, String> {
         match &self.strategy {
-            RunnerStrategy::Wine { wine_bin, .. } => {
-                let mut cmd = Command::new(wine_bin);
-                cmd.arg(program).args(args);
-                self.apply_wine_env(&mut cmd, prefix_path);
-                cmd
-            }
+            RunnerStrategy::Wine { .. } => self.builtin_invocation(prefix_path, "wineboot", ["-i"]),
             RunnerStrategy::Proton { .. } => {
-                let mut cmd = self.proton_command(prefix_path, ProtonVerb::RunInPrefix);
-                cmd.arg(program).args(args);
-                cmd
+                let mut invocation =
+                    self.proton_invocation(prefix_path, ProtonVerb::WaitForExitAndRun)?;
+                invocation.args.push(OsString::new());
+                Ok(invocation)
             }
         }
     }
 
     pub fn create_prefix_command(&self, prefix_path: &str) -> Command {
-        match &self.strategy {
-            RunnerStrategy::Wine { .. } => self.builtin_command(prefix_path, "wineboot", ["-i"]),
-            RunnerStrategy::Proton { .. } => {
-                let mut cmd = self.proton_command(prefix_path, ProtonVerb::WaitForExitAndRun);
-                // UMU documenta un argumento vacío como la operación para crear el prefix.
-                cmd.arg("");
-                cmd
-            }
-        }
+        self.create_prefix_invocation(prefix_path)
+            .expect("create_prefix_invocation")
+            .into_command()
     }
 
-    pub fn winetricks_command<I, S>(&self, prefix_path: &str, packages: I) -> Command
+    pub fn winetricks_invocation<I, S>(
+        &self,
+        prefix_path: &str,
+        packages: I,
+    ) -> Result<RunnerInvocation, String>
     where
         I: IntoIterator<Item = S>,
         S: AsRef<OsStr>,
@@ -264,77 +461,125 @@ impl ResolvedRunner {
                 wine_bin,
                 wineserver_bin,
             } => {
-                let mut cmd = Command::new(
-                    effective_wine_winetricks_path().unwrap_or_else(|| PathBuf::from("winetricks")),
-                );
-                cmd.arg("-q").args(packages);
-                self.apply_wine_env(&mut cmd, prefix_path);
-                cmd.env("WINE", wine_bin).env("WINESERVER", wineserver_bin);
-                cmd
+                let program = resolve_winetricks_executable()?;
+                let mut invocation = RunnerInvocation {
+                    program,
+                    args: std::iter::once(OsString::from("-q"))
+                        .chain(packages.into_iter().map(|p| p.as_ref().to_os_string()))
+                        .collect(),
+                    cwd: invocation_cwd_for_prefix(prefix_path),
+                    env: Vec::new(),
+                };
+                self.apply_wine_env(&mut invocation, prefix_path)?;
+                invocation.set_env("WINE", wine_bin.as_os_str());
+                invocation.set_env("WINESERVER", wineserver_bin.as_os_str());
+                Ok(invocation)
             }
             RunnerStrategy::Proton { .. } => {
-                let mut cmd = self.proton_command(prefix_path, ProtonVerb::WaitForExitAndRun);
-                // UMU selecciona el winetricks incluido en la distribución Proton y agrega -q.
-                cmd.arg("winetricks").args(packages);
-                cmd
+                let mut invocation =
+                    self.proton_invocation(prefix_path, ProtonVerb::WaitForExitAndRun)?;
+                invocation.args.push(OsString::from("winetricks"));
+                invocation
+                    .args
+                    .extend(packages.into_iter().map(|p| p.as_ref().to_os_string()));
+                Ok(invocation)
+            }
+        }
+    }
+
+    pub fn winetricks_command<I, S>(&self, prefix_path: &str, packages: I) -> Command
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<OsStr>,
+    {
+        self.winetricks_invocation(prefix_path, packages)
+            .expect("winetricks_invocation")
+            .into_command()
+    }
+
+    pub fn shutdown_invocation(&self, prefix_path: &str) -> Result<RunnerInvocation, String> {
+        match &self.strategy {
+            RunnerStrategy::Wine { wineserver_bin, .. } => {
+                let program = absolute_program(wineserver_bin)?;
+                let mut invocation = RunnerInvocation {
+                    program,
+                    args: vec![OsString::from("-k")],
+                    cwd: invocation_cwd_for_prefix(prefix_path),
+                    env: Vec::new(),
+                };
+                self.apply_wine_env(&mut invocation, prefix_path)?;
+                Ok(invocation)
+            }
+            RunnerStrategy::Proton { .. } => {
+                self.builtin_invocation(prefix_path, "wineboot", ["-k"])
             }
         }
     }
 
     pub fn shutdown_command(&self, prefix_path: &str) -> Command {
-        match &self.strategy {
-            RunnerStrategy::Wine { wineserver_bin, .. } => {
-                let mut cmd = Command::new(wineserver_bin);
-                cmd.arg("-k");
-                self.apply_wine_env(&mut cmd, prefix_path);
-                cmd
-            }
-            RunnerStrategy::Proton { .. } => self.builtin_command(prefix_path, "wineboot", ["-k"]),
-        }
+        self.shutdown_invocation(prefix_path)
+            .expect("shutdown_invocation")
+            .into_command()
     }
 
-    fn apply_wine_env(&self, cmd: &mut Command, prefix_path: &str) {
-        apply_prefix_env(cmd, prefix_path);
+    fn apply_wine_env(
+        &self,
+        invocation: &mut RunnerInvocation,
+        prefix_path: &str,
+    ) -> Result<(), String> {
+        apply_prefix_env(invocation, prefix_path);
 
         let RunnerStrategy::Wine {
             wine_bin,
             wineserver_bin,
         } = &self.strategy
         else {
-            return;
+            return Ok(());
         };
 
-        cmd.env("WINE", wine_bin).env("WINESERVER", wineserver_bin);
+        invocation.set_env("WINE", wine_bin.as_os_str());
+        invocation.set_env("WINESERVER", wineserver_bin.as_os_str());
         match self.wine_sync_mode() {
             WineSyncMode::WineServer => {}
             WineSyncMode::Esync => {
-                cmd.env("WINEESYNC", "1");
+                invocation.set_env("WINEESYNC", "1");
             }
             WineSyncMode::Fsync => {
-                cmd.env("WINEFSYNC", "1");
+                invocation.set_env("WINEFSYNC", "1");
             }
         }
         if let Some(bin_dir) = wine_bin.parent() {
-            prepend_path(cmd, bin_dir);
+            prepend_path_env(invocation, bin_dir);
         }
+        Ok(())
     }
 
-    fn proton_command(&self, prefix_path: &str, verb: ProtonVerb) -> Command {
+    fn proton_invocation(
+        &self,
+        prefix_path: &str,
+        verb: ProtonVerb,
+    ) -> Result<RunnerInvocation, String> {
         let RunnerStrategy::Proton {
             proton_dir,
             umu_bin,
             ..
         } = &self.strategy
         else {
-            unreachable!("proton_command sólo se usa con runners Proton");
+            unreachable!("proton_invocation sólo se usa con runners Proton");
         };
 
-        let mut cmd = Command::new(umu_bin);
-        apply_prefix_env(&mut cmd, prefix_path);
-        cmd.env("PROTONPATH", proton_dir)
-            .env("GAMEID", DEFAULT_GAME_ID)
-            .env("PROTON_VERB", verb.as_str());
-        cmd
+        let program = absolute_program(umu_bin)?;
+        let mut invocation = RunnerInvocation {
+            program,
+            args: Vec::new(),
+            cwd: invocation_cwd_for_prefix(prefix_path),
+            env: Vec::new(),
+        };
+        apply_prefix_env(&mut invocation, prefix_path);
+        invocation.set_env("PROTONPATH", proton_dir.as_os_str());
+        invocation.set_env("GAMEID", DEFAULT_GAME_ID);
+        invocation.set_env("PROTON_VERB", verb.as_str());
+        Ok(invocation)
     }
 }
 
@@ -599,16 +844,6 @@ fn find_companion_wineserver(wine_bin: &Path) -> Option<PathBuf> {
         .find(|candidate| is_executable_file(candidate))
 }
 
-fn prepend_path(cmd: &mut Command, bin_dir: &Path) {
-    let mut paths = vec![bin_dir.to_path_buf()];
-    if let Some(existing) = std::env::var_os("PATH") {
-        paths.extend(std::env::split_paths(&existing));
-    }
-    if let Ok(path) = std::env::join_paths(paths) {
-        cmd.env("PATH", path);
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -617,6 +852,26 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
     static TEST_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+    #[test]
+    fn invocation_env_replaces_duplicate_keys() {
+        let mut invocation = RunnerInvocation {
+            program: PathBuf::from("/usr/bin/true"),
+            args: vec![],
+            cwd: PathBuf::from("/tmp"),
+            env: Vec::new(),
+        };
+        invocation.set_env("FOO", "1");
+        invocation.set_env("FOO", "2");
+        assert_eq!(invocation.env.len(), 1);
+        assert_eq!(
+            invocation.env[0]
+                .1
+                .as_ref()
+                .map(|v| v.to_string_lossy().to_string()),
+            Some("2".to_string())
+        );
+    }
 
     #[test]
     fn identifies_only_the_validated_wine_7_16_line() {

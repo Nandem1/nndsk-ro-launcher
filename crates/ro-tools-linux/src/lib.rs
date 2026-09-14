@@ -18,6 +18,7 @@ pub use proc_memory::{
 pub use resolve_pid::resolve_best_game_pid;
 pub use wine_process::{
     capture_process_identity, find_game_processes, find_prefix_processes, is_descendant_of,
-    normalize_prefix, read_ppid, resolve_game_pid, verify_process_identity, GameProcessCandidate,
-    ProcessIdentity,
+    is_leftover_from_comm_and_argv0, is_prefix_leftover_executable, is_prefix_leftover_process,
+    normalize_prefix, process_executable_label, read_ppid, resolve_game_pid,
+    verify_process_identity, GameProcessCandidate, ProcessIdentity,
 };

@@ -58,7 +58,9 @@ pub type SessionRedactions = Arc<StdMutex<Vec<String>>>;
 
 pub struct SpawnedSupervisor {
     pub protocol: Arc<SessionProtocol>,
+    #[allow(dead_code)]
     pub ready: ReadyInfo,
+    #[allow(dead_code)]
     pub prefix: PathBuf,
     pub child: Child,
     pub supervisor_identity: ProcessIdentity,

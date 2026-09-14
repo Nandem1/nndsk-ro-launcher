@@ -1,7 +1,7 @@
+use crate::state::GameProcessHandle;
 use ro_session_protocol::{clamp_grace_ms, ProcessSpec};
 use ro_tools_linux::{capture_process_identity, verify_process_identity, ProcessIdentity};
 use std::collections::HashMap;
-use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
@@ -11,12 +11,12 @@ use tokio::process::Child;
 use tokio::sync::Mutex as AsyncMutex;
 use uuid::Uuid;
 
-use crate::utils::{RunnerKind, WineContext};
+use crate::utils::{RunnerInvocation, RunnerKind, WineContext};
 
+use super::bootstrap::bootstrap_prefix_for_supervisor;
 use super::client::{kill_child_by_identity, spawn_supervisor, SessionRedactions};
 use super::diagnostics::{emit_session_line, path_log_token};
 use super::protocol::{canonicalize_prefix_path, invocation_to_spec, SessionProtocol};
-use ro_session_protocol::EnvironmentChange as ProtoEnvChange;
 
 const RUNNER_CONFLICT_MSG: &str =
     "El prefix ya está activo con otro runner; ciérralo antes de cambiarlo.";
@@ -82,14 +82,7 @@ pub struct ProcessExit {
     pub signal: Option<i32>,
 }
 
-#[derive(Debug, Clone)]
-pub struct RunnerInvocation {
-    pub program: PathBuf,
-    pub args: Vec<OsString>,
-    pub cwd: PathBuf,
-    pub env: Vec<(OsString, Option<OsString>)>,
-}
-
+#[allow(dead_code)]
 pub enum SessionOwnership {
     Direct,
     Supervised(ClientLease),
@@ -98,11 +91,21 @@ pub enum SessionOwnership {
 pub struct MemoryLease;
 
 pub struct ClientRuntimeGuard {
+    #[allow(dead_code)]
     pub session: SessionOwnership,
     pub memory: Option<MemoryLease>,
 }
 
+impl std::fmt::Debug for ClientRuntimeGuard {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ClientRuntimeGuard")
+            .field("memory", &self.memory.is_some())
+            .finish_non_exhaustive()
+    }
+}
+
 pub struct ClientLease {
+    #[allow(dead_code)]
     session: Arc<RunnerSessionInner>,
 }
 
@@ -135,7 +138,22 @@ impl SupervisedProcess {
     }
 
     pub fn try_exit(&self) -> Option<ProcessExit> {
-        self.exit.lock().ok().and_then(|g| g.clone())
+        if let Ok(guard) = self.exit.lock() {
+            if let Some(exit) = guard.clone() {
+                return Some(exit);
+            }
+        }
+        if let Some(controller) = self.session.protocol.try_controller_exit(&self.request_id) {
+            let process_exit = ProcessExit {
+                exit_code: controller.exit_code,
+                signal: controller.signal,
+            };
+            if let Ok(mut slot) = self.exit.lock() {
+                *slot = Some(process_exit.clone());
+            }
+            return Some(process_exit);
+        }
+        None
     }
 
     pub async fn wait(&mut self) -> Result<ProcessExit, SessionError> {
@@ -197,6 +215,7 @@ fn send_signal(identity: &ProcessIdentity, signal: i32) -> Result<(), SessionErr
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SessionState {
+    #[allow(dead_code)]
     Starting,
     Ready,
     Stopping,
@@ -219,6 +238,7 @@ struct RunnerAnchor {
 struct RunnerSessionInner {
     prefix: PathBuf,
     runner: RunnerAnchor,
+    shutdown_spec: ProcessSpec,
     state: Mutex<SessionState>,
     protocol: Arc<SessionProtocol>,
     supervisor_identity: ProcessIdentity,
@@ -317,6 +337,7 @@ impl RunnerSessionRegistry {
         }
     }
 
+    #[allow(dead_code)]
     pub fn with_sidecar_for_test(path: PathBuf) -> Self {
         let registry = Self::new();
         *registry.inner.sidecar_override.lock().unwrap() = Some(path);
@@ -339,14 +360,16 @@ impl RunnerSessionRegistry {
         &self,
         app: &AppHandle,
         ctx: &WineContext,
+        game: &GameProcessHandle,
     ) -> Result<OperationLease, SessionError> {
-        self.begin_operation_opt(Some(app), ctx).await
+        self.begin_operation_opt(Some(app), ctx, game).await
     }
 
     pub async fn begin_operation_opt(
         &self,
         app: Option<&AppHandle>,
         ctx: &WineContext,
+        game: &GameProcessHandle,
     ) -> Result<OperationLease, SessionError> {
         let prefix = canonicalize_prefix_path(Path::new(&ctx.prefix))
             .ok_or_else(|| SessionError::validation("prefix path could not be canonicalized"))?;
@@ -376,6 +399,14 @@ impl RunnerSessionRegistry {
             }
         }
 
+        bootstrap_prefix_for_supervisor(ctx, game).await?;
+
+        let shutdown_invocation = ctx
+            .resolved
+            .shutdown_invocation(&ctx.prefix)
+            .map_err(SessionError::validation)?;
+        let shutdown_spec = invocation_to_spec(&shutdown_invocation, &prefix)?;
+
         let override_path = self.sidecar_override();
         let spawned = spawn_supervisor(app, &prefix, override_path.as_deref()).await?;
 
@@ -384,6 +415,7 @@ impl RunnerSessionRegistry {
         let session = Arc::new(RunnerSessionInner {
             prefix: prefix.clone(),
             runner,
+            shutdown_spec,
             state: Mutex::new(SessionState::Ready),
             protocol: Arc::clone(&spawned.protocol),
             supervisor_identity,
@@ -475,6 +507,7 @@ impl RunnerSessionRegistry {
         })
     }
 
+    #[allow(dead_code)] // fase 4 idle prefix shutdown.
     pub async fn shutdown_prefix(&self, ctx: &WineContext) -> Result<(), SessionError> {
         let prefix = canonicalize_prefix_path(Path::new(&ctx.prefix))
             .ok_or_else(|| SessionError::validation("prefix path could not be canonicalized"))?;
@@ -597,7 +630,7 @@ impl RunnerSessionRegistry {
         };
 
         if !skip_shutdown_request {
-            let spec = minimal_shutdown_spec(&session.prefix)?;
+            let spec = session.shutdown_spec.clone();
             let request_id = Uuid::new_v4().to_string();
             let grace = clamp_grace_ms(grace_ms.unwrap_or(SHUTDOWN_DEFAULT_GRACE_MS));
 
@@ -708,23 +741,6 @@ fn runner_anchor(ctx: &WineContext) -> Result<RunnerAnchor, SessionError> {
     })
 }
 
-fn minimal_shutdown_spec(prefix: &Path) -> Result<ProcessSpec, SessionError> {
-    let program = if Path::new("/usr/bin/true").exists() {
-        "/usr/bin/true"
-    } else {
-        "/bin/true"
-    };
-    Ok(ProcessSpec {
-        program: program.into(),
-        args: vec![],
-        cwd: prefix.to_string_lossy().into_owned(),
-        env: vec![ProtoEnvChange {
-            key: "WINEPREFIX".into(),
-            value: Some(prefix.to_string_lossy().into_owned()),
-        }],
-    })
-}
-
 fn kill_supervisor_identity(identity: &ProcessIdentity) {
     if verify_process_identity(identity) {
         let _ = unsafe { libc::kill(identity.pid as i32, libc::SIGKILL) };
@@ -734,8 +750,10 @@ fn kill_supervisor_identity(identity: &ProcessIdentity) {
 #[cfg(test)]
 mod integration {
     use super::*;
+    use crate::state::GameProcessHandle;
     use crate::tools::runner_sessions::client::{spawn_supervisor, workspace_debug_sessiond};
     use crate::utils::{resolve_runner, PrefixLocation, PrefixScope, WineContext};
+    use std::ffi::OsString;
 
     fn test_prefix() -> PathBuf {
         let dir = std::env::temp_dir().join(format!(
@@ -783,7 +801,7 @@ mod integration {
 
         let ctx = test_wine_context(&prefix);
         let lease = registry
-            .begin_operation_opt(None, &ctx)
+            .begin_operation_opt(None, &ctx, &GameProcessHandle::new())
             .await
             .expect("begin");
         let mut child = registry
@@ -816,7 +834,10 @@ mod integration {
         let prefix = test_prefix();
         let registry = RunnerSessionRegistry::with_sidecar_for_test(sessiond.clone());
         let ctx = test_wine_context(&prefix);
-        let lease = registry.begin_operation_opt(None, &ctx).await.unwrap();
+        let lease = registry
+            .begin_operation_opt(None, &ctx, &GameProcessHandle::new())
+            .await
+            .unwrap();
         let _client = registry.attach_client(&lease, "client-1").unwrap();
 
         let other_ctx = WineContext {
@@ -825,7 +846,10 @@ mod integration {
             resolved: other_runner(&ctx.resolved),
         };
 
-        match registry.begin_operation_opt(None, &other_ctx).await {
+        match registry
+            .begin_operation_opt(None, &other_ctx, &GameProcessHandle::new())
+            .await
+        {
             Err(SessionError { message }) => {
                 assert_eq!(message, RUNNER_CONFLICT_MSG);
             }
@@ -910,7 +934,10 @@ mod integration {
         ));
         let ctx = test_wine_context(&prefix);
         let prefix_key = prefix.to_string_lossy().to_string();
-        assert!(registry.begin_operation_opt(None, &ctx).await.is_err());
+        assert!(registry
+            .begin_operation_opt(None, &ctx, &GameProcessHandle::new())
+            .await
+            .is_err());
         assert!(!registry.has_session(&prefix_key));
     }
 
@@ -922,7 +949,10 @@ mod integration {
         let registry = RunnerSessionRegistry::with_sidecar_for_test(broken);
         let ctx = test_wine_context(&prefix);
         let prefix_key = prefix.to_string_lossy().to_string();
-        assert!(registry.begin_operation_opt(None, &ctx).await.is_err());
+        assert!(registry
+            .begin_operation_opt(None, &ctx, &GameProcessHandle::new())
+            .await
+            .is_err());
         assert!(!registry.has_session(&prefix_key));
     }
 
@@ -935,7 +965,7 @@ mod integration {
         let ctx = test_wine_context(&prefix);
         let prefix_key = prefix.to_string_lossy().to_string();
         let _lease = registry
-            .begin_operation_opt(None, &ctx)
+            .begin_operation_opt(None, &ctx, &GameProcessHandle::new())
             .await
             .expect("begin");
         let errors = registry.shutdown_all().await;
@@ -952,7 +982,7 @@ mod integration {
         let ctx = test_wine_context(&prefix);
         let prefix_key = prefix.to_string_lossy().to_string();
         let lease = registry
-            .begin_operation_opt(None, &ctx)
+            .begin_operation_opt(None, &ctx, &GameProcessHandle::new())
             .await
             .expect("begin");
         let child = registry
@@ -986,7 +1016,7 @@ mod integration {
         let ctx = test_wine_context(&prefix);
         let prefix_key = prefix.to_string_lossy().to_string();
         let _lease = registry
-            .begin_operation_opt(None, &ctx)
+            .begin_operation_opt(None, &ctx, &GameProcessHandle::new())
             .await
             .expect("begin");
         let session = registry.get_session(&prefix_key).expect("session");
@@ -1014,7 +1044,7 @@ mod integration {
         let ctx = test_wine_context(&prefix);
         let prefix_key = prefix.to_string_lossy().to_string();
         let _lease = registry
-            .begin_operation_opt(None, &ctx)
+            .begin_operation_opt(None, &ctx, &GameProcessHandle::new())
             .await
             .expect("begin");
         let reg_a = registry.clone();
@@ -1038,7 +1068,7 @@ mod integration {
         let registry = RunnerSessionRegistry::with_sidecar_for_test(sessiond);
         let ctx = test_wine_context(&prefix);
         let lease = registry
-            .begin_operation_opt(None, &ctx)
+            .begin_operation_opt(None, &ctx, &GameProcessHandle::new())
             .await
             .expect("begin");
         let prefix_key = prefix.to_string_lossy().to_string();

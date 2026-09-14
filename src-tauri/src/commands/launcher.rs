@@ -18,9 +18,10 @@ pub async fn launch_game(
     server.validate_executable_available()?;
     let tool_lifecycle = state.tool_lifecycle.lock().await;
     let had_clients = state.game.active_count()? > 0;
-    let reservation = state
-        .game
-        .begin_launch(client_id, server.id.clone(), server.name.clone())?;
+    let reservation =
+        state
+            .game
+            .begin_launch(client_id.clone(), server.id.clone(), server.name.clone())?;
     if had_clients {
         if let Err(error) = launcher::stop_tools_for_additional_client(&state).await {
             state.game.cancel_launch(reservation);
@@ -40,7 +41,9 @@ pub async fn launch_game(
             spammer: &state.spammer,
             input: &state.input,
             presence: &state.presence,
+            sessions: &state.sessions,
         },
+        client_id,
         server,
         runner,
         launch_values.unwrap_or_default(),
