@@ -1,12 +1,15 @@
 import { audioStatusLabel } from '../../shared/audio'
+import { resolveRunner } from '../../shared/resolveRunner'
 import { Panel } from '../../shared/ui/Panel'
 import { StatusDot, type DotStatus } from '../../shared/ui/StatusDot'
+import { useSelectedServer } from '../servers/useSelectedServer'
 import {
   advancedHasIssue,
   resolveAudioDotStatus,
   resolveDotStatus,
 } from './advanced.logic'
 import { useCurrentAdvancedStatus } from './useSelectedRuntimeStatus'
+import { useSettingsStore } from './settings.store'
 
 function StatusLine({
   dotStatus,
@@ -34,8 +37,21 @@ function StatusLine({
 
 export function AdvancedSettings() {
   const advancedStatus = useCurrentAdvancedStatus()
+  const runners = useSettingsStore((state) => state.runners)
+  const selectedRunner = useSettingsStore((state) => state.selectedRunner)
+  const server = useSelectedServer()
 
   if (!advancedStatus) return null
+
+  const effectiveRunner = server
+    ? resolveRunner(server, selectedRunner)
+    : selectedRunner || null
+  const effectiveRunnerName =
+    runners.find((runner) => runner.path === effectiveRunner)?.name ??
+    advancedStatus.runnerKind
+  const runnerSource = server?.runner?.trim()
+    ? 'Propio del servidor'
+    : 'Predeterminado global'
 
   const hasIssue = advancedHasIssue(advancedStatus)
 
@@ -55,8 +71,10 @@ export function AdvancedSettings() {
         advancedStatus.runnerOk,
         advancedStatus.runnerWarning,
       ),
-      label: `Runner · ${advancedStatus.runnerKind}`,
-      hint: advancedStatus.runnerWarning,
+      label: `Runner · ${effectiveRunnerName}`,
+      hint:
+        advancedStatus.runnerWarning ??
+        `${runnerSource}${effectiveRunner ? ` · ${effectiveRunner}` : ''}`,
     },
     {
       key: 'audio',

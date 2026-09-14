@@ -9,7 +9,7 @@ use crate::utils::process::run_logged_command_ok;
 use crate::utils::{
     dxvk_cache_path, dxvk_config_path, dxvk_log_path, emit_log, emit_progress, inspect_prefix,
     resolve_runner, write_prefix_manifest, PrefixManifest, ResolvedRunner, WineContext,
-    PREFIX_SCHEMA_VERSION,
+    WineSyncMode, PREFIX_SCHEMA_VERSION,
 };
 
 pub const MANAGED_DXVK_COMPONENT: &str = "dxvk-2.6.2";
@@ -134,7 +134,7 @@ pub async fn setup_resolved_prefix(
             );
         }
         emit_progress(app, "Instalando Microsoft Edge WebView2...", 82)?;
-        run_winetricks(app, prefix, resolved, &["webview2"]).await?;
+        install_webview2(app, prefix, resolved).await?;
     }
 
     emit_progress(app, "Instalando corefonts...", 88)?;
@@ -474,6 +474,58 @@ async fn run_winetricks(
     run_logged_command_ok(app, command, "winetricks").await
 }
 
+fn needs_legacy_webview2_install_mode(is_wine_7_16: bool, sync_mode: WineSyncMode) -> bool {
+    is_wine_7_16 && sync_mode != WineSyncMode::WineServer
+}
+
+async fn set_windows_version(
+    app: &AppHandle,
+    prefix_path: &str,
+    runner: &ResolvedRunner,
+    version: &str,
+) -> Result<(), String> {
+    run_logged_command_ok(
+        app,
+        runner.builtin_command(prefix_path, "winecfg", ["-v", version]),
+        &format!("configuración temporal de Windows {version}"),
+    )
+    .await
+}
+
+/// Los Wine 7.16 TkG se presentan como Windows 10, por lo que el bootstrapper Evergreen intenta
+/// instalar WebView2 actual, cuyo setup ya no es compatible con esa versión de Wine. Windows 7
+/// selecciona la rama 109 compatible. El runtime queda con override Win7 propio y el prefix vuelve
+/// inmediatamente a Windows 10 para el patcher y el juego.
+async fn install_webview2(
+    app: &AppHandle,
+    prefix_path: &str,
+    runner: &ResolvedRunner,
+) -> Result<(), String> {
+    if !needs_legacy_webview2_install_mode(runner.is_wine_7_16(), runner.wine_sync_mode()) {
+        return run_winetricks(app, prefix_path, runner, &["webview2"]).await;
+    }
+
+    emit_log(
+        app,
+        "WebView2: usando Windows 7 temporal para instalar la rama 109 compatible con Wine 7.16.",
+    )?;
+    set_windows_version(app, prefix_path, runner, "win7").await?;
+
+    let install_result = run_winetricks(app, prefix_path, runner, &["webview2"]).await;
+    let restore_result = set_windows_version(app, prefix_path, runner, "win10").await;
+
+    match (install_result, restore_result) {
+        (Ok(()), Ok(())) => Ok(()),
+        (Err(install_error), Ok(())) => Err(install_error),
+        (Ok(()), Err(restore_error)) => Err(format!(
+            "WebView2 se instaló, pero no se pudo restaurar Windows 10: {restore_error}"
+        )),
+        (Err(install_error), Err(restore_error)) => Err(format!(
+            "{install_error}; además no se pudo restaurar Windows 10: {restore_error}"
+        )),
+    }
+}
+
 fn prefix_has_state(prefix_path: &str) -> bool {
     let path = Path::new(prefix_path);
     if !path.is_dir() {
@@ -542,5 +594,25 @@ mod tests {
         assert!(shutdown_is_complete(false, 0));
         assert!(shutdown_is_complete(true, 1));
         assert!(!shutdown_is_complete(false, 1));
+    }
+
+    #[test]
+    fn webview2_legacy_mode_is_limited_to_accelerated_wine_7_16() {
+        assert!(needs_legacy_webview2_install_mode(
+            true,
+            WineSyncMode::Fsync
+        ));
+        assert!(needs_legacy_webview2_install_mode(
+            true,
+            WineSyncMode::Esync
+        ));
+        assert!(!needs_legacy_webview2_install_mode(
+            true,
+            WineSyncMode::WineServer
+        ));
+        assert!(!needs_legacy_webview2_install_mode(
+            false,
+            WineSyncMode::Fsync
+        ));
     }
 }
