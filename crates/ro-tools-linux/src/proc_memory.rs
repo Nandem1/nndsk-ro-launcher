@@ -435,4 +435,56 @@ mod tests {
             Vec::<usize>::new()
         );
     }
+
+    #[test]
+    fn open_fails_for_missing_process() {
+        match ProcMemoryReader::open(999_999_999) {
+            Err(ProcMemoryError::Open { pid, message }) => {
+                assert_eq!(pid, 999_999_999);
+                assert!(message.contains("no encontrado"));
+            }
+            Ok(_) => panic!("expected open to fail for missing pid"),
+        }
+    }
+
+    #[test]
+    fn read_only_mapping_in_maps_but_not_writable_regions() {
+        let maps = concat!(
+            "00400000-00401000 r--p 00000000 00:00 0\n",
+            "01000000-01002000 rw-p 00000000 00:00 0\n",
+        );
+        let ro_addr = 0x0040_0004u32;
+        assert!(address_in_maps_from_str(maps, ro_addr));
+        assert_eq!(parse_writable_regions(maps), vec![(0x01000000, 0x01002000)]);
+        assert!(!writable_regions_contain(maps, ro_addr));
+    }
+
+    fn address_in_maps_from_str(maps: &str, address: u32) -> bool {
+        let addr = address as u64;
+        for line in maps.lines() {
+            let Some((range, _)) = line.split_once(' ') else {
+                continue;
+            };
+            let Some((start, end)) = range.split_once('-') else {
+                continue;
+            };
+            let Ok(start) = u64::from_str_radix(start, 16) else {
+                continue;
+            };
+            let Ok(end) = u64::from_str_radix(end, 16) else {
+                continue;
+            };
+            if addr >= start && addr < end {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn writable_regions_contain(maps: &str, address: u32) -> bool {
+        let addr = address as u64;
+        parse_writable_regions(maps)
+            .iter()
+            .any(|(start, end)| addr >= *start && addr < *end)
+    }
 }

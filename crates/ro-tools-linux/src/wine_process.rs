@@ -243,7 +243,7 @@ pub fn normalize_prefix(prefix: &str) -> String {
         .unwrap_or_else(|_| prefix.to_string())
 }
 
-fn is_descendant_of(pid: u32, ancestor: u32) -> bool {
+pub fn is_descendant_of(pid: u32, ancestor: u32) -> bool {
     if pid == ancestor {
         return true;
     }
@@ -263,7 +263,8 @@ fn is_descendant_of(pid: u32, ancestor: u32) -> bool {
     false
 }
 
-fn read_ppid(pid: u32) -> Result<u32, ()> {
+#[allow(clippy::result_unit_err)]
+pub fn read_ppid(pid: u32) -> Result<u32, ()> {
     let stat = fs::read_to_string(format!("/proc/{pid}/stat")).map_err(|_| ())?;
     parse_proc_stat(&stat).map(|(ppid, _)| ppid).ok_or(())
 }
@@ -411,5 +412,34 @@ mod tests {
             ..identity
         };
         assert!(!verify_process_identity(&stale));
+    }
+
+    #[test]
+    fn read_ppid_matches_parent_id() {
+        let self_pid = std::process::id();
+        let ppid = read_ppid(self_pid).expect("self stat readable");
+        assert_eq!(ppid, std::os::unix::process::parent_id());
+    }
+
+    #[test]
+    fn is_descendant_of_self_and_child() {
+        let self_pid = std::process::id();
+        assert!(is_descendant_of(self_pid, self_pid));
+
+        let mut child = std::process::Command::new("/usr/bin/sleep")
+            .arg("30")
+            .spawn()
+            .expect("spawn sleep");
+        let child_pid = child.id();
+        for _ in 0..50 {
+            if std::path::Path::new(&format!("/proc/{child_pid}")).exists() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(is_descendant_of(child_pid, self_pid));
+        assert!(!is_descendant_of(self_pid, child_pid));
+        let _ = child.kill();
+        let _ = child.wait();
     }
 }

@@ -1,3 +1,3 @@
 [workspace]
 resolver = "2"
-members = ["src-tauri", "crates/ro-tools-core", "crates/ro-tools-linux", "crates/ro-inputd"]
+members = ["src-tauri", "crates/ro-tools-core", "crates/ro-tools-linux", "crates/ro-inputd", "crates/ro-session-protocol", "crates/ro-sessiond"]

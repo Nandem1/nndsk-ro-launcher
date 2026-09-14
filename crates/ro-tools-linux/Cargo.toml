@@ -8,3 +8,8 @@ ro-tools-core = { path = "../ro-tools-core" }
 thiserror = "1"
 libc = "0.2"
 evdev = "0.13"
+
+[[test]]
+name = "yama_orphan"
+path = "tests/yama_orphan.rs"
+harness = false

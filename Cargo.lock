@@ -2768,6 +2768,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "ro-session-protocol"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "ro-sessiond"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "ro-session-protocol",
+ "ro-tools-linux",
+ "serde_json",
+ "signal-hook",
+]
+
+[[package]]
 name = "ro-tools-core"
 version = "0.1.0"
 dependencies = [
