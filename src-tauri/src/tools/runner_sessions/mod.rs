@@ -1,4 +1,6 @@
-//! Cliente Tokio del sidecar `ro-sessiond` (fase 2).
+//! Cliente Tokio del sidecar `ro-sessiond`.
+//!
+//! El supervisor está activo por defecto; `RO_LAUNCHER_SESSION_SUPERVISOR=0` es rollback de una release.
 
 mod bootstrap;
 mod client;
@@ -8,7 +10,15 @@ mod protocol;
 mod registry;
 
 pub fn session_supervisor_enabled() -> bool {
-    std::env::var("RO_LAUNCHER_SESSION_SUPERVISOR").as_deref() == Ok("1")
+    session_supervisor_enabled_from(
+        std::env::var("RO_LAUNCHER_SESSION_SUPERVISOR")
+            .ok()
+            .as_deref(),
+    )
+}
+
+pub(crate) fn session_supervisor_enabled_from(value: Option<&str>) -> bool {
+    value != Some("0")
 }
 
 #[allow(unused_imports)]
@@ -26,16 +36,14 @@ pub use registry::{
 
 #[cfg(test)]
 mod flag_tests {
-    use super::session_supervisor_enabled;
+    use super::session_supervisor_enabled_from;
 
     #[test]
-    fn supervisor_flag_defaults_off() {
-        std::env::remove_var("RO_LAUNCHER_SESSION_SUPERVISOR");
-        assert!(!session_supervisor_enabled());
-        std::env::set_var("RO_LAUNCHER_SESSION_SUPERVISOR", "1");
-        assert!(session_supervisor_enabled());
-        std::env::set_var("RO_LAUNCHER_SESSION_SUPERVISOR", "0");
-        assert!(!session_supervisor_enabled());
-        std::env::remove_var("RO_LAUNCHER_SESSION_SUPERVISOR");
+    fn supervisor_flag_defaults_on_zero_disables() {
+        assert!(session_supervisor_enabled_from(None));
+        assert!(session_supervisor_enabled_from(Some("1")));
+        assert!(!session_supervisor_enabled_from(Some("0")));
+        assert!(session_supervisor_enabled_from(Some("")));
+        assert!(session_supervisor_enabled_from(Some("false")));
     }
 }

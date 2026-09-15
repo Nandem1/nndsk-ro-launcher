@@ -85,6 +85,8 @@ src-tauri/src/
 | `tools/runners/` | Descubrir Wine/Proton instalados |
 | `tools/deps/` | Agregar checks de dependencias |
 | `tools/input/` | Worker uinput persistente, colas priorizadas, métricas + InputGateway |
+| `tools/runner_sessions/` | Cliente de `ro-sessiond` (un supervisor por prefix; default on; `=0` rollback) |
+| `tools/memory_sessions/` | `MemorySessionRegistry` compartido por AutoPot, AutoBuff y Presence |
 
 `commands/servers.rs` y `commands/settings.rs` delegan en repositorios serializados. Estos
 canonicalizan configuraciones legacy, rotan `.bak` y recuperan archivos corruptos sin cambiar
@@ -108,6 +110,8 @@ commands/autopot.rs          invoke handlers (start/stop/config/status)
         → ro-tools-core AutopotEngine   lógica DT_AP (tick HP/SP)
           → ro-tools-linux ProcMemoryReader + CombatUinput
 ```
+
+AutoPot (y AutoBuff/Presence) no abren `ProcMemoryReader` por su cuenta; leen vía `MemorySessionRegistry::get`.
 
 ### Spammer — flujo de capas
 
@@ -154,6 +158,8 @@ commands/prefix.rs     → tools/prefix/setup.rs       → utils/prefix, winetri
 commands/launcher.rs   → tools/launcher/session.rs   → utils/wine, utils/process
 commands/runners.rs    → tools/runners/discover.rs   → utils/runner
 ```
+
+Las invocaciones Wine/Proton de producción pasan por `RunnerSessionRegistry` salvo rollback `RO_LAUNCHER_SESSION_SUPERVISOR=0`, bootstrap leftover y `reported_version`.
 
 ### Frontend (Feature-Sliced Design)
 

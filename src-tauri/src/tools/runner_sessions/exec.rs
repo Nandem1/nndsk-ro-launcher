@@ -1,14 +1,18 @@
 use ro_tools_linux::find_prefix_processes;
+use std::sync::Once;
 use tauri::AppHandle;
 use tokio::process::Child;
 
 use crate::state::GameProcessHandle;
 use crate::utils::{pipe_output, RunnerInvocation, WineContext};
 
+use super::diagnostics::emit_session_line;
 use super::{
     session_supervisor_enabled, OperationLease, ProcessExit, RunnerSessionRegistry,
     SupervisedProcess,
 };
+
+static ROLLBACK_LOG_ONCE: Once = Once::new();
 
 pub struct RunnerOperation {
     app: Option<AppHandle>,
@@ -31,6 +35,14 @@ impl RunnerOperation {
             };
             Some(result.map_err(|error| error.message)?)
         } else {
+            if let Some(app) = app {
+                ROLLBACK_LOG_ONCE.call_once(|| {
+                    emit_session_line(
+                        Some(app),
+                        "supervisor=disabled rollback=RO_LAUNCHER_SESSION_SUPERVISOR=0",
+                    );
+                });
+            }
             None
         };
         Ok(Self {
@@ -64,6 +76,7 @@ impl RunnerOperation {
             return Ok(exit_code_from_process_exit(&exit, error_context));
         }
 
+        // Path directo: rollback de una release (`RO_LAUNCHER_SESSION_SUPERVISOR=0`); se elimina cuando desaparezca la variable.
         let mut cmd = invocation.into_command();
         pipe_output(&mut cmd);
         let mut child = cmd
@@ -118,6 +131,7 @@ impl RunnerOperation {
             return Ok(SpawnedRunner::Supervised(process));
         }
 
+        // Path directo: rollback de una release (`RO_LAUNCHER_SESSION_SUPERVISOR=0`); se elimina cuando desaparezca la variable.
         let mut cmd = invocation.into_command();
         pipe_output(&mut cmd);
         let child = cmd

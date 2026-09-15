@@ -1,6 +1,8 @@
 # Plan de implementación: supervisión de sesiones Wine y acceso a memoria
 
-Estado: listo para implementar (decisiones de implementación bloqueadas en §13)
+Estado: implementado y cerrado. Validado en host con `kernel.yama.ptrace_scope=1`
+(SakuraRO, Wine 7.16, `tauri:dev`): `wineserver`/`ragexe.exe` heredan de `ro-sessiond`;
+AutoPot, AutoBuff y Spammer estables. Rollback de una release: `RO_LAUNCHER_SESSION_SUPERVISOR=0`.
 Alcance: Linux; Wine, Proton y UMU
 Objetivo: permitir que AutoPot, AutoBuff y Discord Rich Presence lean el cliente RO con
 `kernel.yama.ptrace_scope=1`, sin requerir `sudo`, capabilities, cambios globales de sysctl,
@@ -900,6 +902,10 @@ La implementación estará terminada únicamente cuando, con `ptrace_scope=1` y 
 6. No queden procesos huérfanos, zombies, prefixes bloqueados ni cambios globales de seguridad.
 7. La suite completa, la matriz manual, el AppImage y su instalación hayan sido verificados.
 
+Cierre (2026-09-14): criterios 1–6 comprobados en el host del autor con SakuraRO, Wine 7.16 y
+`ptrace_scope=1` (`ragexe.exe`/`wineserver` bajo `ro-sessiond`; AutoPot/AutoBuff/Spammer estables).
+El AppImage con `install:nndsk` es la entrega de esta fase. Rollback: `RO_LAUNCHER_SESSION_SUPERVISOR=0`.
+
 ## 13. Decisiones de implementación bloqueadas
 
 Esta sección cierra ambiguedades para implementación automatizada. **No reinterpretar** durante las
@@ -979,7 +985,7 @@ fn session_supervisor_enabled() -> bool
 ```
 
 - Fases 3–5: `true` iff `RO_LAUNCHER_SESSION_SUPERVISOR=1`.
-- Fase 6: default `true`; `RO_LAUNCHER_SESSION_SUPERVISOR=0` rollback.
+- Fase 6 (vigente): default `true`; `RO_LAUNCHER_SESSION_SUPERVISOR=0` rollback de una release. El path directo (`SpawnedRunner::Direct`) **no** se elimina en esta fase; desaparece cuando se retire la variable.
 - Ignorado por: `reported_version`, bootstrap leftover §4.3.
 
 ### 13.6 Memoria (fase 5)

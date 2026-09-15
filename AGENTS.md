@@ -36,9 +36,10 @@ Rich Presence. A fix is acceptable only if it keeps these contracts:
 - Multi-client lifecycle is real: one client stopping must not tear down another client, shared
   input, or a prefix still in use.
 - AppImage variables must be sanitized before starting external Wine, Proton, UMU, or sidecars.
-- `PTRACE_SESSION_SUPERVISOR_PLAN.md` is the implementation contract for restoring memory access
-  with `kernel.yama.ptrace_scope=1`. It is not implemented yet. Follow its phases and gates; do not
-  land a half-supervisor or weaken the host security policy as a shortcut.
+- El supervisor `ro-sessiond` está activo por defecto. Restaura el acceso a memoria
+  con `kernel.yama.ptrace_scope=1` sin sudo ni sysctl. Rollback de una release:
+  `RO_LAUNCHER_SESSION_SUPERVISOR=0`. No debilitar la política del host ni dejar
+  un supervisor a medias. El contrato detallado sigue en `PTRACE_SESSION_SUPERVISOR_PLAN.md`.
 
 ## Repository Map and Ownership
 

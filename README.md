@@ -117,6 +117,19 @@ válido no se adoptan ni eliminan automáticamente.
 - DirectDraw en blanco: instala dgVoodoo y conserva DXVK como backend D3D11.
 - Patcher en blanco: marca WebView2 como requisito y rearma el entorno.
 - UI negra en Wayland: usa `npm run tauri:dev`; el script fuerza X11 para WebKit.
+- AutoPot/AutoBuff sin memoria: cierra clientes no lanzados por RO-Launcher y vuelve a pulsar Jugar. No cambies `ptrace_scope`.
+
+## Supervisor de sesión y memoria
+
+RO-Launcher arranca un sidecar `ro-sessiond` por prefix activo, se declara child subreaper y es padre de wineserver, patcher y `ragexe.exe`. Así Yama (`ptrace_scope=1`) permite leer el cliente sin `sudo` ni cambiar `/etc`.
+
+AutoPot, AutoBuff y Discord Rich Presence comparten una `MemorySession` por cliente. No hace falta `ptrace_scope=0`.
+
+Si AutoPot o AutoBuff muestran **Proceso fuera del supervisor** o **Permiso denegado por Yama**, cierra instancias antiguas y relanza el juego desde RO-Launcher. No uses `ptrace_scope=0` ni cambies `sysctl`.
+
+Rollback de una release: `RO_LAUNCHER_SESSION_SUPERVISOR=0` restaura el spawn directo del runner. Sin esa variable el supervisor está activo. La variable desaparecerá en la release siguiente.
+
+Los logs no incluyen paths personales, credenciales ni contenido de memoria.
 
 ## Terceros
 

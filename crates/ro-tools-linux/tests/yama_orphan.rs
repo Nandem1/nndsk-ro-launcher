@@ -53,9 +53,12 @@ fn memory_read_denied(pid: u32, address: u32) -> bool {
         Err(e) => {
             let msg = e.to_string().to_lowercase();
             msg.contains("not permitted")
+                || msg.contains("permission denied")
                 || msg.contains("eperm")
                 || msg.contains("eacces")
                 || msg.contains("sin permiso ptrace")
+                || msg.contains("errno=1")
+                || msg.contains("errno=13")
         }
         Ok(_) => false,
     }
