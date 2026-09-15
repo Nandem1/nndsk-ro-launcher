@@ -5,6 +5,7 @@ use tokio::process::Command;
 use crate::utils::audio::{self, mmdevapi_recovery_hint};
 use crate::utils::{drain_and_log, pipe_output, should_log_line};
 
+#[allow(dead_code)]
 pub async fn run_logged_command(
     app: &AppHandle,
     mut cmd: Command,
@@ -22,6 +23,7 @@ pub async fn run_logged_command(
     Ok(status.code().unwrap_or(-1))
 }
 
+#[allow(dead_code)]
 pub async fn run_logged_command_ok(
     app: &AppHandle,
     cmd: Command,

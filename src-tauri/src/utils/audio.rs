@@ -1,8 +1,8 @@
 use serde::Serialize;
 use std::path::Path;
 use tauri::AppHandle;
-use tokio::process::Command;
 
+use crate::tools::runner_sessions::RunnerOperation;
 use crate::utils::emit_log_opt;
 use crate::utils::ResolvedRunner;
 
@@ -66,7 +66,6 @@ pub fn lib32_alsa_available() -> bool {
     Path::new("/usr/lib32/libasound.so.2").exists()
 }
 
-/// Socket Pulse expuesto por pipewire-pulse (sesión de escritorio típica en Arch/CachyOS).
 pub fn pulse_session_socket_available() -> bool {
     if let Ok(xdg) = std::env::var("XDG_RUNTIME_DIR") {
         if Path::new(&format!("{xdg}/pulse/native")).exists() {
@@ -126,7 +125,6 @@ pub fn detect_audio_backends(current_driver: Option<AudioDriver>) -> AudioBacken
     }
 }
 
-/// Campos de audio para [`DependencyStatus`]: ok, driver serializado y aviso opcional.
 pub fn dependency_audio_fields(
     prefix_path: &str,
     prefix_configured: bool,
@@ -187,94 +185,62 @@ pub fn mmdevapi_recovery_hint() -> &'static str {
      En Arch/CachyOS instala las bibliotecas de 32 bits: sudo pacman -S lib32-libpulse lib32-alsa-lib"
 }
 
-fn parse_driver_from_reg_output(output: &str) -> Option<AudioDriver> {
-    for line in output.lines() {
-        let trimmed = line.trim();
-        if !trimmed.starts_with("Audio") {
-            continue;
-        }
-        let value = trimmed.split("REG_SZ").nth(1)?.trim().to_ascii_lowercase();
-        return match value.as_str() {
-            "pulse" => Some(AudioDriver::Pulse),
-            "alsa" => Some(AudioDriver::Alsa),
-            _ => None,
-        };
-    }
-    None
+/// Lee el driver configurado en `user.reg` (sin invocar Wine).
+#[allow(dead_code)]
+pub fn read_current_driver(prefix_path: &str, _runner: &ResolvedRunner) -> Option<AudioDriver> {
+    read_current_driver_from_registry(prefix_path)
 }
 
-fn wine_reg_command(runner: &ResolvedRunner, prefix_path: &str, args: &[&str]) -> Command {
-    runner.builtin_command(prefix_path, "reg", args.iter().copied())
-}
-
-pub async fn read_current_driver(
-    prefix_path: &str,
-    runner: &ResolvedRunner,
-) -> Option<AudioDriver> {
-    let output = wine_reg_command(
-        runner,
-        prefix_path,
-        &["query", r"HKCU\Software\Wine\Drivers", "/v", "Audio"],
-    )
-    .stdout(std::process::Stdio::piped())
-    .stderr(std::process::Stdio::null())
-    .output()
-    .await
-    .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-
-    parse_driver_from_reg_output(&String::from_utf8_lossy(&output.stdout))
-}
-
-async fn set_audio_driver(
-    prefix_path: &str,
-    runner: &ResolvedRunner,
-    driver: AudioDriver,
-) -> Result<(), String> {
+async fn set_audio_driver(op: &RunnerOperation, driver: AudioDriver) -> Result<(), String> {
     let value = driver
         .as_reg_value()
         .ok_or_else(|| "No hay driver de audio disponible".to_string())?;
 
-    let output = wine_reg_command(
-        runner,
-        prefix_path,
-        &[
-            "add",
-            r"HKCU\Software\Wine\Drivers",
-            "/v",
-            "Audio",
-            "/t",
-            "REG_SZ",
-            "/d",
-            value,
-            "/f",
-        ],
+    let ctx = op.ctx();
+    op.run_ok(
+        ctx.resolved.builtin_invocation(
+            &ctx.prefix,
+            "reg",
+            [
+                "add",
+                r"HKCU\Software\Wine\Drivers",
+                "/v",
+                "Audio",
+                "/t",
+                "REG_SZ",
+                "/d",
+                value,
+                "/f",
+            ],
+        )?,
+        "Error al configurar audio",
     )
-    .stdout(std::process::Stdio::null())
-    .stderr(std::process::Stdio::piped())
-    .output()
-    .await
-    .map_err(|e| format!("Error al configurar audio: {e}"))?;
+    .await?;
 
-    if output.status.success() {
-        Ok(())
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        Err(format!(
-            "No se pudo configurar el driver de audio: {stderr}"
-        ))
+    if !wait_user_reg_driver(&ctx.prefix, driver) {
+        return Err("No se pudo confirmar el driver de audio en user.reg".to_string());
     }
+    Ok(())
+}
+
+fn wait_user_reg_driver(prefix_path: &str, driver: AudioDriver) -> bool {
+    for _ in 0..10 {
+        if read_current_driver_from_registry(prefix_path) == Some(driver) {
+            return true;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    false
 }
 
 pub async fn ensure_audio_driver(
     app: Option<&AppHandle>,
-    prefix_path: &str,
-    runner: &ResolvedRunner,
+    op: &RunnerOperation,
 ) -> Result<EnsureAudioResult, String> {
+    let ctx = op.ctx();
+    let prefix_path = &ctx.prefix;
     let recommended = recommended_driver();
-    let current = read_current_driver(prefix_path, runner).await;
+    let current = read_current_driver_from_registry(prefix_path);
 
     if recommended == AudioDriver::None {
         let message = detect_audio_backends(current).warning;
@@ -305,7 +271,7 @@ pub async fn ensure_audio_driver(
         }
 
         if current.is_none() {
-            set_audio_driver(prefix_path, runner, AudioDriver::Pulse).await?;
+            set_audio_driver(op, AudioDriver::Pulse).await?;
             emit_log_opt(
                 app,
                 format!("Audio configurado: {}", AudioDriver::Pulse.label()),
@@ -319,9 +285,8 @@ pub async fn ensure_audio_driver(
         });
     }
 
-    // Pulse 32-bit no disponible: forzar ALSA para evitar mmdevapi.
     if current != Some(AudioDriver::Alsa) {
-        set_audio_driver(prefix_path, runner, AudioDriver::Alsa).await?;
+        set_audio_driver(op, AudioDriver::Alsa).await?;
         let log_label = if desktop_audio_session_active() {
             "Audio configurado: ALSA (PipeWire)"
         } else {
@@ -381,6 +346,10 @@ mod tests {
             read_current_driver_from_registry(dir.to_str().unwrap()),
             Some(AudioDriver::Pulse)
         );
+        assert!(wait_user_reg_driver(
+            dir.to_str().unwrap(),
+            AudioDriver::Pulse
+        ));
         std::fs::remove_dir_all(dir).unwrap();
     }
 

@@ -7,10 +7,12 @@ use crate::models::server_tools::{
     InstallDgVoodooResult, ServerToolsStatus, UninstallDgVoodooResult,
 };
 use crate::models::tool_kind::ToolKind;
+use crate::state::GameProcessHandle;
 use crate::tools::prefix::MANAGED_DXVK_COMPONENT;
+use crate::tools::runner_sessions::{RunnerOperation, RunnerSessionRegistry, SpawnedRunner};
 use crate::tools::runners::ensure_managed_runtime;
 use crate::utils::{
-    apply_tool_env, drain_and_log, emit_log_opt, pipe_output, required_game_dir,
+    apply_tool_env, drain_and_log, emit_log_opt, required_game_dir,
     resolve_server_wine_context_with_runner, validate_runtime_prefix, OperationGuard,
 };
 
@@ -58,6 +60,8 @@ pub async fn uninstall_dgvoodoo(
 
 pub async fn launch_tool(
     app: &AppHandle,
+    game: &GameProcessHandle,
+    sessions: &RunnerSessionRegistry,
     server: &ServerConfig,
     tool: ToolKind,
     runner: Option<String>,
@@ -82,6 +86,7 @@ pub async fn launch_tool(
     };
 
     let ctx = resolve_server_wine_context_with_runner(Some(server), runner).await?;
+    let op = RunnerOperation::begin(Some(app), sessions, game, &ctx).await?;
     let prefix_operation = OperationGuard::acquire("prefix", Path::new(&ctx.prefix))?;
     let prefix_health = validate_runtime_prefix(&ctx)?;
     let wine_7_16 = ctx.resolved.is_wine_7_16();
@@ -118,18 +123,13 @@ pub async fn launch_tool(
         None
     };
 
-    // El botón Herramientas abre el patcher en modo mantenimiento. Los argumentos de inicio
-    // (incluidos placeholders de credenciales) pertenecen exclusivamente al botón Jugar.
     let args: Vec<String> = Vec::new();
-    let mut cmd = ctx
-        .resolved
-        .tool_command(&ctx.prefix, &exe_path, args.iter(), &work_dir);
-    apply_tool_env(&mut cmd, use_dgvoodoo, use_managed_dxvk, &ctx.prefix);
-    pipe_output(&mut cmd);
+    let mut invocation =
+        ctx.resolved
+            .tool_invocation(&ctx.prefix, &exe_path, args.iter(), &work_dir)?;
+    apply_tool_env(&mut invocation, use_dgvoodoo, use_managed_dxvk, &ctx.prefix);
 
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| format!("Error al abrir la herramienta: {e}"))?;
+    let mut spawned = op.spawn(invocation, &[]).await?;
 
     let app = app.clone();
     let tool_label = match tool {
@@ -140,20 +140,18 @@ pub async fn launch_tool(
     tokio::spawn(async move {
         let _prefix_operation = prefix_operation;
         let _dgvoodoo_operation = dgvoodoo_operation;
-        drain_and_log(&app, &mut child).await;
-        match child.wait().await {
-            Ok(status) => emit_log_opt(
-                Some(&app),
-                format!(
-                    "[Tool:{tool_label}] finalizó con código {}",
-                    status.code().unwrap_or(-1)
-                ),
-            ),
-            Err(error) => emit_log_opt(
-                Some(&app),
-                format!("[Tool:{tool_label}] no se pudo obtener el código de salida: {error}"),
-            ),
+        let _operation = op;
+        match &mut spawned {
+            SpawnedRunner::Direct(child) => {
+                drain_and_log(&app, child).await;
+            }
+            SpawnedRunner::Supervised(_) => {}
         }
+        let code = spawned.wait().await.unwrap_or(-1);
+        emit_log_opt(
+            Some(&app),
+            format!("[Tool:{tool_label}] finalizó con código {code}"),
+        );
     });
 
     Ok(())

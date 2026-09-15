@@ -1060,6 +1060,54 @@ mod integration {
 
     #[tokio::test]
     #[cfg(target_os = "linux")]
+    async fn shutdown_prefix_rejected_while_lease_active() {
+        let sessiond = workspace_debug_sessiond().expect("build ro-sessiond first");
+        let prefix = test_prefix();
+        let registry = RunnerSessionRegistry::with_sidecar_for_test(sessiond);
+        let ctx = test_wine_context(&prefix);
+        let lease = registry
+            .begin_operation_opt(None, &ctx, &GameProcessHandle::new())
+            .await
+            .expect("begin");
+        let prefix_key = prefix.to_string_lossy().to_string();
+        assert!(registry.has_session(&prefix_key));
+        let err = registry.shutdown_prefix(&ctx).await.unwrap_err();
+        assert!(err.message.contains("cannot shutdown prefix while leases"));
+        assert!(registry.has_session(&prefix_key));
+        drop(lease);
+        registry.shutdown_all().await;
+    }
+
+    #[tokio::test]
+    #[cfg(target_os = "linux")]
+    async fn two_prefixes_create_independent_sessions() {
+        let sessiond = workspace_debug_sessiond().expect("build ro-sessiond first");
+        let prefix_a = test_prefix();
+        let prefix_b = test_prefix();
+        let registry = RunnerSessionRegistry::with_sidecar_for_test(sessiond);
+        let ctx_a = test_wine_context(&prefix_a);
+        let ctx_b = test_wine_context(&prefix_b);
+        let key_a = prefix_a.to_string_lossy().to_string();
+        let key_b = prefix_b.to_string_lossy().to_string();
+        let lease_a = registry
+            .begin_operation_opt(None, &ctx_a, &GameProcessHandle::new())
+            .await
+            .expect("begin a");
+        let lease_b = registry
+            .begin_operation_opt(None, &ctx_b, &GameProcessHandle::new())
+            .await
+            .expect("begin b");
+        assert!(registry.has_session(&key_a));
+        assert!(registry.has_session(&key_b));
+        drop(lease_a);
+        drop(lease_b);
+        registry.shutdown_all().await;
+        assert!(!registry.has_session(&key_a));
+        assert!(!registry.has_session(&key_b));
+    }
+
+    #[tokio::test]
+    #[cfg(target_os = "linux")]
     async fn launch_fails_when_supervisor_killed_before_accept() {
         use ro_tools_linux::verify_process_identity;
 

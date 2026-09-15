@@ -3,6 +3,7 @@
 mod bootstrap;
 mod client;
 mod diagnostics;
+mod exec;
 mod protocol;
 mod registry;
 
@@ -14,6 +15,8 @@ pub fn session_supervisor_enabled() -> bool {
 pub use crate::utils::RunnerInvocation;
 #[allow(unused_imports)]
 pub use client::find_ro_sessiond;
+#[allow(unused_imports)]
+pub use exec::{RunnerOperation, SpawnedRunner};
 #[allow(unused_imports)]
 pub use registry::{
     ClientLease, ClientRuntimeGuard, OperationLease, ProcessExit, RunnerSessionRegistry,

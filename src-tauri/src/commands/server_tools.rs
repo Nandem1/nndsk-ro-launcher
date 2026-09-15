@@ -1,12 +1,13 @@
 use std::path::Path;
 
-use tauri::AppHandle;
+use tauri::{AppHandle, State};
 
 use crate::models::server::ServerConfig;
 use crate::models::server_tools::{
     InstallDgVoodooResult, ServerToolsStatus, UninstallDgVoodooResult,
 };
 use crate::models::tool_kind::ToolKind;
+use crate::state::GameState;
 use crate::tools::server_tools;
 use crate::utils::{required_game_dir, OperationGuard};
 
@@ -44,10 +45,11 @@ pub async fn uninstall_dgvoodoo(
 #[tauri::command]
 pub async fn launch_server_tool(
     app: AppHandle,
+    state: State<'_, GameState>,
     server: ServerConfig,
     tool: ToolKind,
     runner: Option<String>,
 ) -> Result<(), String> {
     server.validate_executable_available()?;
-    server_tools::launch_tool(&app, &server, tool, runner).await
+    server_tools::launch_tool(&app, &state.game, &state.sessions, &server, tool, runner).await
 }

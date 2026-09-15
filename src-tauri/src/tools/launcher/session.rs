@@ -6,7 +6,6 @@ use ro_tools_linux::{
     ProcessIdentity,
 };
 use tauri::{AppHandle, Emitter};
-use tokio::process::Child;
 use tokio::time::{sleep, Instant};
 
 use crate::models::game_client::GameClientSnapshot;
@@ -19,8 +18,7 @@ use crate::tools::input::InputGateway;
 use crate::tools::prefix::MANAGED_DXVK_COMPONENT;
 use crate::tools::presence::{overrides_from_autopot, PresenceHandle};
 use crate::tools::runner_sessions::{
-    session_supervisor_enabled, ClientRuntimeGuard, RunnerSessionRegistry, SessionOwnership,
-    SupervisedProcess,
+    ClientRuntimeGuard, RunnerOperation, RunnerSessionRegistry, SessionOwnership, SpawnedRunner,
 };
 use crate::tools::runners::ensure_managed_runtime;
 use crate::tools::server_tools;
@@ -29,9 +27,8 @@ use crate::utils::audio;
 use crate::utils::gecko::install_gecko_for_runner;
 use crate::utils::process::drain_game_streams_redacted;
 use crate::utils::{
-    apply_game_env, emit_tool_log_opt, pipe_output, required_game_dir,
-    resolve_server_wine_context_with_runner, validate_runtime_prefix, work_dir_from_exe, ExitEvent,
-    OperationGuard, RunnerInvocation, EVENT_GAME_EXIT,
+    apply_game_env, emit_tool_log_opt, required_game_dir, resolve_server_wine_context_with_runner,
+    validate_runtime_prefix, work_dir_from_exe, ExitEvent, OperationGuard, EVENT_GAME_EXIT,
 };
 
 const DIRECT_LAUNCH_TIMEOUT: Duration = Duration::from_secs(30);
@@ -108,10 +105,15 @@ pub async fn launch_game(
         format!("[Launch] uinput preparado antes del runner: {devices}"),
     );
 
-    install_gecko_for_runner(&app, &ctx.prefix, &ctx.resolved).await?;
-    audio::ensure_audio_driver(Some(&app), &ctx.prefix, &ctx.resolved).await?;
-
+    let op = RunnerOperation::begin(Some(&app), sessions, &game, &ctx).await?;
     let game_dir = required_game_dir(&server.executable_path)?;
+    let prefix_operation =
+        OperationGuard::acquire_shared("prefix", std::path::Path::new(&ctx.prefix))?;
+    let dgvoodoo_operation =
+        OperationGuard::acquire_shared("dgvoodoo", std::path::Path::new(&game_dir))?;
+    install_gecko_for_runner(&app, &op).await?;
+    audio::ensure_audio_driver(Some(&app), &op).await?;
+
     let tools_status = server_tools::scan_status(&app, &server).ok();
     let use_dgvoodoo = tools_status
         .as_ref()
@@ -152,185 +154,51 @@ pub async fn launch_game(
         return Err("El lanzamiento fue cancelado por el usuario".to_string());
     }
 
-    let supervised = session_supervisor_enabled();
+    let supervised_session = op.lease().is_some();
     let timeout = if is_patcher {
         PATCHER_LAUNCH_TIMEOUT
     } else {
         DIRECT_LAUNCH_TIMEOUT
     };
 
-    if supervised {
-        let operation_lease = sessions
-            .begin_operation(&app, &ctx, &game)
-            .await
-            .map_err(|error| error.message)?;
-
-        let prefix_operation =
-            OperationGuard::acquire_shared("prefix", std::path::Path::new(&ctx.prefix))?;
-        let dgvoodoo_operation =
-            OperationGuard::acquire_shared("dgvoodoo", std::path::Path::new(&game_dir))?;
-
-        let mut invocation = ctx.resolved.game_invocation(
-            &ctx.prefix,
-            &launch_exe,
-            rendered_args.iter(),
-            &work_dir,
-        )?;
-        apply_game_env(&mut invocation, use_dgvoodoo, use_managed_dxvk, &ctx.prefix);
-
-        let mut supervised_process = sessions
-            .launch(Some(&app), &operation_lease, invocation, &redaction_values)
-            .await
-            .map_err(|error| error.message)?;
-
-        let controller_pid = supervised_process.controller_pid();
-        let Some(controller_identity) = capture_process_identity(controller_pid) else {
-            let _ = supervised_process.terminate().await;
-            return Err("El proceso controlador terminó antes de poder identificarlo".to_string());
-        };
-        if let Err(error) = game.mark_controller(reservation, controller_identity) {
-            let _ = supervised_process.terminate().await;
-            return Err(error);
-        }
-
-        emit_tool_log_opt(
-            Some(&app),
-            format!(
-                "[Launch] controller={controller_pid} runner={} prefix={} supervised=true",
-                ctx.resolved.kind_label(),
-                ctx.prefix
-            ),
-        );
-
-        let search = ProcessSearch {
-            controller_pid,
-            exe_path: &game_exe,
-            prefix: &ctx.prefix,
-            baseline: &baseline,
-            exclude_controller: ctx.resolved.is_proton(),
-            game: &game,
-            reservation,
-        };
-        let identity = match wait_for_game_process(
-            &mut ControllerHandle::Supervised(&mut supervised_process),
-            &search,
-            timeout,
-            CONTROLLER_EXIT_GRACE,
-        )
-        .await
-        {
-            Ok(identity) => identity,
-            Err(error) => {
-                let _ = supervised_process.terminate().await;
-                return Err(error);
-            }
-        };
-
-        let client_lease = sessions
-            .attach_client(&operation_lease, &client_id)
-            .map_err(|error| error.message)?;
-        let runtime = ClientRuntimeGuard {
-            session: SessionOwnership::Supervised(client_lease),
-            memory: None,
-        };
-        let snapshot = match game.mark_running(reservation, identity, runtime) {
-            Ok(snapshot) => snapshot,
-            Err(error) => {
-                let _ = supervised_process.terminate().await;
-                return Err(error);
-            }
-        };
-        drop(operation_lease);
-
-        let client_ppid = read_ppid(identity.pid).unwrap_or(0);
-        emit_tool_log_opt(
-            Some(&app),
-            format!(
-                "[Launch] client={} ppid={} supervised=true handoff=none",
-                identity.pid, client_ppid
-            ),
-        );
-        emit_tool_log_opt(
-            Some(&app),
-            format!(
-                "[Launch] cliente detectado PID={} exe={} prefix={}",
-                identity.pid, game_exe, ctx.prefix
-            ),
-        );
-
-        presence.register(
-            snapshot.client_id.clone(),
-            snapshot.server_id.clone(),
-            snapshot.server_name.clone(),
-            identity,
-            game_exe.clone(),
-            overrides_from_autopot(&server.autopot),
-        );
-
-        let exit_snapshot = snapshot.clone();
-        spawn_exit_task(
-            app,
-            game,
-            reservation,
-            prefix_operation,
-            dgvoodoo_operation,
-            ExitController::Supervised(supervised_process),
-            None,
-            true,
-            ctx,
-            game_exe,
-            baseline,
-            identity,
-            exit_snapshot,
-            autopot.clone(),
-            autobuff.clone(),
-            spammer.clone(),
-            presence.clone(),
-        );
-
-        return Ok(snapshot);
-    }
-
-    let prefix_operation =
-        OperationGuard::acquire_shared("prefix", std::path::Path::new(&ctx.prefix))?;
-    let dgvoodoo_operation =
-        OperationGuard::acquire_shared("dgvoodoo", std::path::Path::new(&game_dir))?;
-
-    let mut child = spawn_runner_direct(
+    let mut invocation =
         ctx.resolved
-            .game_invocation(&ctx.prefix, &launch_exe, rendered_args.iter(), &work_dir)?,
-        use_dgvoodoo,
-        use_managed_dxvk,
-        &ctx.prefix,
-    )?;
-    let controller_pid = child
-        .id()
+            .game_invocation(&ctx.prefix, &launch_exe, rendered_args.iter(), &work_dir)?;
+    apply_game_env(&mut invocation, use_dgvoodoo, use_managed_dxvk, &ctx.prefix);
+
+    let mut spawned = op.spawn(invocation, &redaction_values).await?;
+    let controller_pid = spawned
+        .controller_pid()
         .ok_or_else(|| "El runner no informó su PID".to_string())?;
     let Some(controller_identity) = capture_process_identity(controller_pid) else {
-        let _ = child.kill().await;
+        let _ = spawned.terminate().await;
         return Err("El proceso controlador terminó antes de poder identificarlo".to_string());
     };
     if let Err(error) = game.mark_controller(reservation, controller_identity) {
-        let _ = child.kill().await;
+        let _ = spawned.terminate().await;
         return Err(error);
     }
 
     emit_tool_log_opt(
         Some(&app),
         format!(
-            "[Launch] controller={controller_pid} runner={} prefix={}",
+            "[Launch] controller={controller_pid} runner={} prefix={} supervised={supervised_session}",
             ctx.resolved.kind_label(),
             ctx.prefix
         ),
     );
-    let stdout = child.stdout.take();
-    let stderr = child.stderr.take();
-    let output_task = tokio::spawn(drain_game_streams_redacted(
-        app.clone(),
-        stdout,
-        stderr,
-        redaction_values,
-    ));
+
+    let output_task = if matches!(spawned, SpawnedRunner::Direct(_)) {
+        let (stdout, stderr) = spawned.take_direct_stdout_stderr();
+        Some(tokio::spawn(drain_game_streams_redacted(
+            app.clone(),
+            stdout,
+            stderr,
+            redaction_values,
+        )))
+    } else {
+        None
+    };
 
     let search = ProcessSearch {
         controller_pid,
@@ -342,7 +210,7 @@ pub async fn launch_game(
         reservation,
     };
     let identity = match wait_for_game_process(
-        &mut ControllerHandle::Direct(&mut child),
+        &mut ControllerHandle::Spawned(&mut spawned),
         &search,
         timeout,
         CONTROLLER_EXIT_GRACE,
@@ -351,29 +219,52 @@ pub async fn launch_game(
     {
         Ok(identity) => identity,
         Err(error) => {
-            let _ = child.kill().await;
-            let _ = child.wait().await;
-            let _ = output_task.await;
+            let _ = spawned.terminate().await;
+            if let Some(task) = output_task {
+                let _ = task.await;
+            }
             return Err(error);
         }
     };
 
-    let snapshot = match game.mark_running(
-        reservation,
-        identity,
-        ClientRuntimeGuard {
+    let runtime = match op.lease() {
+        Some(lease) => {
+            let client_lease = sessions
+                .attach_client(lease, &client_id)
+                .map_err(|error| error.message)?;
+            ClientRuntimeGuard {
+                session: SessionOwnership::Supervised(client_lease),
+                memory: None,
+            }
+        }
+        None => ClientRuntimeGuard {
             session: SessionOwnership::Direct,
             memory: None,
         },
-    ) {
+    };
+
+    let snapshot = match game.mark_running(reservation, identity, runtime) {
         Ok(snapshot) => snapshot,
         Err(error) => {
-            let _ = child.kill().await;
-            let _ = child.wait().await;
-            let _ = output_task.await;
+            let _ = spawned.terminate().await;
+            if let Some(task) = output_task {
+                let _ = task.await;
+            }
             return Err(error);
         }
     };
+    drop(op);
+
+    if supervised_session {
+        let client_ppid = read_ppid(identity.pid).unwrap_or(0);
+        emit_tool_log_opt(
+            Some(&app),
+            format!(
+                "[Launch] client={} ppid={} supervised=true handoff=none",
+                identity.pid, client_ppid
+            ),
+        );
+    }
     emit_tool_log_opt(
         Some(&app),
         format!(
@@ -381,6 +272,7 @@ pub async fn launch_game(
             identity.pid, game_exe, ctx.prefix
         ),
     );
+
     presence.register(
         snapshot.client_id.clone(),
         snapshot.server_id.clone(),
@@ -397,9 +289,9 @@ pub async fn launch_game(
         reservation,
         prefix_operation,
         dgvoodoo_operation,
-        ExitController::Direct(child),
-        Some(output_task),
-        false,
+        spawned,
+        output_task,
+        supervised_session,
         ctx,
         game_exe,
         baseline,
@@ -414,39 +306,14 @@ pub async fn launch_game(
     Ok(snapshot)
 }
 
-fn spawn_runner_direct(
-    mut invocation: RunnerInvocation,
-    use_dgvoodoo: bool,
-    use_managed_dxvk: bool,
-    prefix_path: &str,
-) -> Result<Child, String> {
-    apply_game_env(&mut invocation, use_dgvoodoo, use_managed_dxvk, prefix_path);
-    let mut cmd = invocation.into_command();
-    pipe_output(&mut cmd);
-    cmd.spawn()
-        .map_err(|error| format!("Error al iniciar el runner: {error}"))
-}
-
 enum ControllerHandle<'a> {
-    Direct(&'a mut Child),
-    Supervised(&'a mut SupervisedProcess),
-}
-
-enum ExitController {
-    Direct(Child),
-    Supervised(SupervisedProcess),
+    Spawned(&'a mut SpawnedRunner),
 }
 
 impl ControllerHandle<'_> {
     async fn poll_exit_code(&mut self) -> Result<Option<i32>, String> {
         match self {
-            Self::Direct(child) => child
-                .try_wait()
-                .map_err(|error| format!("No se pudo consultar el runner: {error}"))
-                .map(|status| status.map(|value| value.code().unwrap_or(-1))),
-            Self::Supervised(process) => {
-                Ok(process.try_exit().map(|exit| exit.exit_code.unwrap_or(-1)))
-            }
+            Self::Spawned(runner) => Ok(runner.try_exit_code()),
         }
     }
 }
@@ -458,7 +325,7 @@ fn spawn_exit_task(
     reservation: LaunchReservation,
     prefix_operation: OperationGuard,
     dgvoodoo_operation: OperationGuard,
-    mut controller: ExitController,
+    mut controller: SpawnedRunner,
     output_task: Option<tokio::task::JoinHandle<()>>,
     supervised_session: bool,
     ctx: crate::utils::WineContext,
@@ -479,10 +346,7 @@ fn spawn_exit_task(
         let mut active_identity = identity;
         let mut seen = baseline;
         seen.insert(active_identity);
-        let controller_pid = match &mut controller {
-            ExitController::Direct(child) => child.id().unwrap_or(0),
-            ExitController::Supervised(process) => process.controller_pid(),
-        };
+        let controller_pid = controller.controller_pid().unwrap_or(0);
         loop {
             while verify_process_identity(&active_identity) {
                 sleep(Duration::from_millis(500)).await;
@@ -530,25 +394,9 @@ fn spawn_exit_task(
             active_identity = replacement;
         }
 
-        let code = match &mut controller {
-            ExitController::Direct(child) => {
-                if child.try_wait().ok().flatten().is_none() {
-                    let _ = child.kill().await;
-                }
-                child
-                    .wait()
-                    .await
-                    .map(|status| status.code().unwrap_or(-1))
-                    .unwrap_or(-1)
-            }
-            ExitController::Supervised(process) => {
-                let _ = process.terminate().await;
-                process
-                    .wait()
-                    .await
-                    .map(|exit| exit.exit_code.unwrap_or(-1))
-                    .unwrap_or(-1)
-            }
+        let code = {
+            let _ = controller.terminate().await;
+            controller.wait().await.unwrap_or(-1)
         };
         if let Some(task) = output_task {
             let _ = task.await;
@@ -757,13 +605,15 @@ mod tests {
         let reservation = game
             .begin_launch("c1".into(), "srv".into(), "Srv".into())
             .unwrap();
-        let mut child = tokio::process::Command::new("/bin/true")
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .expect("spawn true");
-        let controller_pid = child.id().expect("controller pid");
-        let _ = child.wait().await;
+        let mut spawned = SpawnedRunner::Direct(
+            tokio::process::Command::new("/bin/true")
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .expect("spawn true"),
+        );
+        let controller_pid = spawned.controller_pid().expect("controller pid");
+        let _ = spawned.wait().await;
 
         let baseline = HashSet::new();
         let prefix = format!(
@@ -782,7 +632,7 @@ mod tests {
 
         let started = Instant::now();
         let err = wait_for_game_process(
-            &mut ControllerHandle::Direct(&mut child),
+            &mut ControllerHandle::Spawned(&mut spawned),
             &search,
             Duration::from_secs(5),
             Duration::from_millis(80),

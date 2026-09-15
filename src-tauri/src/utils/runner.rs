@@ -312,6 +312,7 @@ impl ResolvedRunner {
     }
 
     #[allow(dead_code)] // fase 4 y tests; producción usa *_invocation.
+    #[cfg(test)]
     pub fn game_command<I, S>(
         &self,
         prefix_path: &str,
@@ -365,6 +366,7 @@ impl ResolvedRunner {
         Ok(invocation)
     }
 
+    #[cfg(test)]
     pub fn tool_command<I, S>(
         &self,
         prefix_path: &str,
@@ -419,6 +421,7 @@ impl ResolvedRunner {
         Ok(invocation)
     }
 
+    #[cfg(test)]
     pub fn builtin_command<I, S>(&self, prefix_path: &str, program: &str, args: I) -> Command
     where
         I: IntoIterator<Item = S>,
@@ -441,6 +444,7 @@ impl ResolvedRunner {
         }
     }
 
+    #[cfg(test)]
     pub fn create_prefix_command(&self, prefix_path: &str) -> Command {
         self.create_prefix_invocation(prefix_path)
             .expect("create_prefix_invocation")
@@ -487,6 +491,7 @@ impl ResolvedRunner {
         }
     }
 
+    #[cfg(test)]
     pub fn winetricks_command<I, S>(&self, prefix_path: &str, packages: I) -> Command
     where
         I: IntoIterator<Item = S>,
@@ -516,6 +521,7 @@ impl ResolvedRunner {
         }
     }
 
+    #[cfg(test)]
     pub fn shutdown_command(&self, prefix_path: &str) -> Command {
         self.shutdown_invocation(prefix_path)
             .expect("shutdown_invocation")
@@ -637,6 +643,7 @@ impl ProtonVerb {
 }
 
 /// WINEPREFIX + runner resueltos para un servidor (o defaults globales).
+#[derive(Debug, Clone)]
 pub struct WineContext {
     pub prefix: String,
     pub location: PrefixLocation,

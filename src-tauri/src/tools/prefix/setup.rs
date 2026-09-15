@@ -1,15 +1,18 @@
 use std::path::Path;
 
+use ro_tools_linux::find_prefix_processes;
 use tauri::AppHandle;
 
+use crate::state::GameProcessHandle;
+use crate::tools::runner_sessions::RunnerOperation;
+use crate::tools::runner_sessions::RunnerSessionRegistry;
 use crate::tools::runners::{ensure_managed_dxvk, managed_dxvk_ready, managed_dxvk_root};
 use crate::utils::audio;
 use crate::utils::gecko::install_gecko_for_runner;
-use crate::utils::process::run_logged_command_ok;
 use crate::utils::{
     dxvk_cache_path, dxvk_config_path, dxvk_log_path, emit_log, emit_progress, inspect_prefix,
-    resolve_runner, write_prefix_manifest, PrefixManifest, ResolvedRunner, WineContext,
-    WineSyncMode, PREFIX_SCHEMA_VERSION,
+    resolve_runner, write_prefix_manifest, OperationGuard, PrefixManifest, ResolvedRunner,
+    WineContext, WineSyncMode, PREFIX_SCHEMA_VERSION,
 };
 
 pub const MANAGED_DXVK_COMPONENT: &str = "dxvk-2.6.2";
@@ -55,6 +58,8 @@ pub struct RuntimeRequirements {
 
 pub async fn setup_runtime_prefix(
     app: &AppHandle,
+    game: &GameProcessHandle,
+    sessions: &RunnerSessionRegistry,
     ctx: &WineContext,
     requirements: RuntimeRequirements,
 ) -> Result<(), String> {
@@ -65,14 +70,22 @@ pub async fn setup_runtime_prefix(
                 && root
                     .read_dir()
                     .is_ok_and(|mut entries| entries.next().is_none())));
+
+    let op = RunnerOperation::begin(Some(app), sessions, game, ctx).await?;
+    let _operation = OperationGuard::acquire("prefix", root)?;
+
     let result = async {
-        setup_resolved_prefix(app, &ctx.prefix, &ctx.resolved, requirements).await?;
+        setup_resolved_prefix(app, &op, requirements).await?;
         write_runtime_manifest(ctx, requirements)
     }
     .await;
 
     if result.is_err() && clean_managed_start && root.exists() && !root.is_symlink() {
-        let _ = shutdown_runner(&ctx.prefix, &ctx.resolved).await;
+        if let Ok(invocation) = ctx.resolved.shutdown_invocation(&ctx.prefix) {
+            let _ = op
+                .run_shutdown_ok(invocation, "apagado del entorno incompleto")
+                .await;
+        }
         if let Err(error) = std::fs::remove_dir_all(root) {
             let _ = emit_log(
                 app,
@@ -86,78 +99,19 @@ pub async fn setup_runtime_prefix(
     result
 }
 
-pub async fn setup_resolved_prefix(
-    app: &AppHandle,
-    prefix: &str,
-    resolved: &ResolvedRunner,
-    requirements: RuntimeRequirements,
-) -> Result<(), String> {
-    emit_progress(app, "Creando entorno aislado...", 40)?;
-
-    if prefix_has_state(prefix) {
-        shutdown_runner(prefix, resolved).await?;
-    }
-    std::fs::create_dir_all(prefix).map_err(|e| e.to_string())?;
-
-    emit_progress(app, "Inicializando entorno...", 45)?;
-    run_logged_command_ok(
-        app,
-        resolved.create_prefix_command(prefix),
-        "inicialización del prefix",
-    )
-    .await?;
-
-    emit_progress(app, "Preparando Wine Gecko...", 50)?;
-    install_gecko_for_runner(app, prefix, resolved).await?;
-
-    emit_progress(app, "Preparando gráficos...", 55)?;
-    match requirements.dxvk {
-        DxvkProvision::Runner => emit_log(app, "DXVK administrado por Proton/UMU.")?,
-        DxvkProvision::Winetricks => run_winetricks(app, prefix, resolved, &["dxvk"]).await?,
-        DxvkProvision::Managed => {
-            ensure_managed_dxvk(app).await?;
-            install_managed_dxvk(app, prefix)?;
-        }
-    }
-
-    emit_progress(app, "Instalando vcredist_2019...", 65)?;
-    run_winetricks(app, prefix, resolved, &["vcrun2019"]).await?;
-
-    emit_progress(app, "Instalando d3dx9...", 75)?;
-    run_winetricks(app, prefix, resolved, &["d3dx9"]).await?;
-
-    if requirements.webview2 {
-        if !resolved.supports_winetricks_verb("webview2") {
-            return Err(
-                "Este cliente requiere WebView2, pero el winetricks del runner no ofrece ese componente"
-                    .to_string(),
-            );
-        }
-        emit_progress(app, "Instalando Microsoft Edge WebView2...", 82)?;
-        install_webview2(app, prefix, resolved).await?;
-    }
-
-    emit_progress(app, "Instalando corefonts...", 88)?;
-    run_winetricks(app, prefix, resolved, &["corefonts"]).await?;
-
-    configure_ui_font_fallback(app, prefix, resolved).await?;
-
-    emit_progress(app, "Configurando audio...", 96)?;
-    audio::ensure_audio_driver(Some(app), prefix, resolved).await?;
-
-    emit_progress(app, "¡Listo!", 100)?;
-    Ok(())
-}
-
 pub async fn reset_runtime_prefix(
     app: &AppHandle,
+    game: &GameProcessHandle,
+    sessions: &RunnerSessionRegistry,
     ctx: &WineContext,
     requirements: RuntimeRequirements,
 ) -> Result<(), String> {
     emit_progress(app, "Preparando reconstrucción del entorno...", 40)?;
-    if prefix_has_state(&ctx.prefix) {
-        shutdown_existing_prefix_for_reset(app, ctx).await?;
-    }
+
+    let op = RunnerOperation::begin(Some(app), sessions, game, ctx).await?;
+    let _operation = OperationGuard::acquire("prefix", Path::new(&ctx.prefix))?;
+
+    shutdown_existing_prefix_for_reset(app, &op, ctx).await?;
 
     let root = Path::new(&ctx.prefix);
     let backup = if root.exists() {
@@ -174,7 +128,7 @@ pub async fn reset_runtime_prefix(
     };
 
     let result = async {
-        setup_resolved_prefix(app, &ctx.prefix, &ctx.resolved, requirements).await?;
+        setup_resolved_prefix(app, &op, requirements).await?;
         write_runtime_manifest(ctx, requirements)
     }
     .await;
@@ -215,69 +169,71 @@ pub async fn reset_runtime_prefix(
     }
 }
 
-async fn shutdown_existing_prefix_for_reset(
+async fn setup_resolved_prefix(
     app: &AppHandle,
-    ctx: &WineContext,
+    op: &RunnerOperation,
+    requirements: RuntimeRequirements,
 ) -> Result<(), String> {
-    if ro_tools_linux::find_prefix_processes(&ctx.prefix).is_empty() {
-        emit_log(
-            app,
-            "El entorno ya estaba detenido; se puede rearmar sin invocar su runner anterior.",
-        )?;
-        return Ok(());
+    let ctx = op.ctx();
+    let prefix = &ctx.prefix;
+    let resolved = &ctx.resolved;
+
+    emit_progress(app, "Creando entorno aislado...", 40)?;
+
+    if prefix_has_state(prefix) && !find_prefix_processes(prefix).is_empty() {
+        let invocation = resolved.shutdown_invocation(prefix)?;
+        op.run_shutdown_ok(invocation, "apagado del entorno")
+            .await?;
     }
+    std::fs::create_dir_all(prefix).map_err(|e| e.to_string())?;
 
-    let health = inspect_prefix(&ctx.prefix);
-    let recorded = health.manifest.as_ref().filter(|manifest| {
-        manifest.schema_version == PREFIX_SCHEMA_VERSION && manifest.runner_kind != "unknown"
-    });
+    emit_progress(app, "Inicializando entorno...", 45)?;
+    op.run_ok(
+        resolved.create_prefix_invocation(prefix)?,
+        "inicialización del prefix",
+    )
+    .await?;
 
-    if let Some(manifest) = recorded {
-        match resolve_runner(&manifest.runner_path) {
-            Ok(runner) if runner.kind_label() == manifest.runner_kind => {
-                emit_log(
-                    app,
-                    format!(
-                        "Deteniendo el entorno con su runner original: {}",
-                        manifest.runner_path
-                    ),
-                )?;
-                return shutdown_runner(&ctx.prefix, &runner).await;
-            }
-            Ok(_) => {
-                return Err(format!(
-                    "El runner registrado {} ya no coincide con su tipo; cierra todos los procesos del entorno antes de rearmarlo",
-                    manifest.runner_path
-                ));
-            }
-            Err(error) if !ro_tools_linux::find_prefix_processes(&ctx.prefix).is_empty() => {
-                return Err(format!(
-                    "Hay procesos activos en el entorno y no se pudo resolver su runner original: {error}"
-                ));
-            }
-            Err(_) => {
-                emit_log(
-                    app,
-                    "El runner original ya no existe y no hay procesos activos; se omitió su apagado.",
-                )?;
-                return Ok(());
-            }
+    emit_progress(app, "Preparando Wine Gecko...", 50)?;
+    install_gecko_for_runner(app, op).await?;
+
+    emit_progress(app, "Preparando gráficos...", 55)?;
+    match requirements.dxvk {
+        DxvkProvision::Runner => emit_log(app, "DXVK administrado por Proton/UMU.")?,
+        DxvkProvision::Winetricks => run_winetricks(app, op, &["dxvk"]).await?,
+        DxvkProvision::Managed => {
+            ensure_managed_dxvk(app).await?;
+            install_managed_dxvk(app, prefix)?;
         }
     }
 
-    let active = ro_tools_linux::find_prefix_processes(&ctx.prefix);
-    if active.is_empty() {
-        emit_log(
-            app,
-            "El entorno legacy no tiene procesos activos; se puede rearmar sin ejecutar un runner desconocido.",
-        )?;
-        Ok(())
-    } else {
-        Err(format!(
-            "El entorno no registra qué runner lo creó y aún tiene {} proceso(s) activo(s). Ciérralos antes de rearmar",
-            active.len()
-        ))
+    emit_progress(app, "Instalando vcredist_2019...", 65)?;
+    run_winetricks(app, op, &["vcrun2019"]).await?;
+
+    emit_progress(app, "Instalando d3dx9...", 75)?;
+    run_winetricks(app, op, &["d3dx9"]).await?;
+
+    if requirements.webview2 {
+        if !resolved.supports_winetricks_verb("webview2") {
+            return Err(
+                "Este cliente requiere WebView2, pero el winetricks del runner no ofrece ese componente"
+                    .to_string(),
+            );
+        }
+        emit_progress(app, "Instalando Microsoft Edge WebView2...", 82)?;
+        install_webview2(app, op).await?;
     }
+
+    emit_progress(app, "Instalando corefonts...", 88)?;
+    run_winetricks(app, op, &["corefonts"]).await?;
+
+    configure_ui_font_fallback(app, op).await?;
+
+    emit_progress(app, "Configurando audio...", 96)?;
+    audio::ensure_audio_driver(Some(app), op).await?;
+
+    emit_progress(app, "¡Listo!", 100)?;
+    Ok(())
 }
 
 fn reset_backup_path(prefix: &Path) -> Result<std::path::PathBuf, String> {
@@ -305,29 +261,29 @@ fn reset_backup_path(prefix: &Path) -> Result<std::path::PathBuf, String> {
     Ok(backup)
 }
 
-async fn configure_ui_font_fallback(
-    app: &AppHandle,
-    prefix: &str,
-    runner: &ResolvedRunner,
-) -> Result<(), String> {
+async fn configure_ui_font_fallback(app: &AppHandle, op: &RunnerOperation) -> Result<(), String> {
+    let ctx = op.ctx();
     emit_progress(app, "Configurando fuentes de interfaz...", 93)?;
     for family in ["Segoe UI", "Segoe UI Semibold"] {
-        let command = runner.builtin_command(
-            prefix,
-            "reg",
-            [
-                "add",
-                r"HKCU\Software\Wine\Fonts\Replacements",
-                "/v",
-                family,
-                "/t",
-                "REG_SZ",
-                "/d",
-                "Arial",
-                "/f",
-            ],
-        );
-        run_logged_command_ok(app, command, "configuración de fuente Segoe UI").await?;
+        op.run_ok(
+            ctx.resolved.builtin_invocation(
+                &ctx.prefix,
+                "reg",
+                [
+                    "add",
+                    r"HKCU\Software\Wine\Fonts\Replacements",
+                    "/v",
+                    family,
+                    "/t",
+                    "REG_SZ",
+                    "/d",
+                    "Arial",
+                    "/f",
+                ],
+            )?,
+            "configuración de fuente Segoe UI",
+        )
+        .await?;
     }
     Ok(())
 }
@@ -466,12 +422,17 @@ fn install_runtime_file(source: &Path, destination: &Path) -> Result<(), String>
 
 async fn run_winetricks(
     app: &AppHandle,
-    prefix_path: &str,
-    runner: &ResolvedRunner,
+    op: &RunnerOperation,
     packages: &[&str],
 ) -> Result<(), String> {
-    let command = runner.winetricks_command(prefix_path, packages.iter().copied());
-    run_logged_command_ok(app, command, "winetricks").await
+    let ctx = op.ctx();
+    let _ = app;
+    op.run_ok(
+        ctx.resolved
+            .winetricks_invocation(&ctx.prefix, packages.iter().copied())?,
+        "winetricks",
+    )
+    .await
 }
 
 fn needs_legacy_webview2_install_mode(is_wine_7_16: bool, sync_mode: WineSyncMode) -> bool {
@@ -480,39 +441,33 @@ fn needs_legacy_webview2_install_mode(is_wine_7_16: bool, sync_mode: WineSyncMod
 
 async fn set_windows_version(
     app: &AppHandle,
-    prefix_path: &str,
-    runner: &ResolvedRunner,
+    op: &RunnerOperation,
     version: &str,
 ) -> Result<(), String> {
-    run_logged_command_ok(
-        app,
-        runner.builtin_command(prefix_path, "winecfg", ["-v", version]),
+    let ctx = op.ctx();
+    let _ = app;
+    op.run_ok(
+        ctx.resolved
+            .builtin_invocation(&ctx.prefix, "winecfg", ["-v", version])?,
         &format!("configuración temporal de Windows {version}"),
     )
     .await
 }
 
-/// Los Wine 7.16 TkG se presentan como Windows 10, por lo que el bootstrapper Evergreen intenta
-/// instalar WebView2 actual, cuyo setup ya no es compatible con esa versión de Wine. Windows 7
-/// selecciona la rama 109 compatible. El runtime queda con override Win7 propio y el prefix vuelve
-/// inmediatamente a Windows 10 para el patcher y el juego.
-async fn install_webview2(
-    app: &AppHandle,
-    prefix_path: &str,
-    runner: &ResolvedRunner,
-) -> Result<(), String> {
-    if !needs_legacy_webview2_install_mode(runner.is_wine_7_16(), runner.wine_sync_mode()) {
-        return run_winetricks(app, prefix_path, runner, &["webview2"]).await;
+async fn install_webview2(app: &AppHandle, op: &RunnerOperation) -> Result<(), String> {
+    let resolved = &op.ctx().resolved;
+    if !needs_legacy_webview2_install_mode(resolved.is_wine_7_16(), resolved.wine_sync_mode()) {
+        return run_winetricks(app, op, &["webview2"]).await;
     }
 
     emit_log(
         app,
         "WebView2: usando Windows 7 temporal para instalar la rama 109 compatible con Wine 7.16.",
     )?;
-    set_windows_version(app, prefix_path, runner, "win7").await?;
+    set_windows_version(app, op, "win7").await?;
 
-    let install_result = run_winetricks(app, prefix_path, runner, &["webview2"]).await;
-    let restore_result = set_windows_version(app, prefix_path, runner, "win10").await;
+    let install_result = run_winetricks(app, op, &["webview2"]).await;
+    let restore_result = set_windows_version(app, op, "win10").await;
 
     match (install_result, restore_result) {
         (Ok(()), Ok(())) => Ok(()),
@@ -536,26 +491,142 @@ fn prefix_has_state(prefix_path: &str) -> bool {
         .unwrap_or(false)
 }
 
-async fn shutdown_runner(prefix: &str, runner: &ResolvedRunner) -> Result<(), String> {
-    let status = runner
-        .shutdown_command(prefix)
-        .status()
-        .await
-        .map_err(|error| format!("No se pudo detener {}: {error}", runner.kind_label()))?;
-    // `wineserver -k` puede devolver 1 cuando la sesión ya terminó entre la detección y
-    // el comando. El apagado es idempotente: si no queda ningún proceso del prefix, se logró
-    // el estado solicitado aunque el ejecutable haya informado un código distinto de cero.
-    let active_processes = ro_tools_linux::find_prefix_processes(prefix).len();
-    if !shutdown_is_complete(status.success(), active_processes) {
-        return Err(format!(
-            "{} no pudo detener el entorno (código {})",
-            runner.kind_label(),
-            status.code().unwrap_or(-1)
-        ));
+async fn shutdown_existing_prefix_for_reset(
+    app: &AppHandle,
+    op: &RunnerOperation,
+    ctx: &WineContext,
+) -> Result<(), String> {
+    if find_prefix_processes(&ctx.prefix).is_empty() {
+        emit_log(
+            app,
+            "El entorno ya estaba detenido; se puede rearmar sin invocar su runner anterior.",
+        )?;
+        return Ok(());
     }
-    Ok(())
+
+    op.run_shutdown_ok(
+        ctx.resolved.shutdown_invocation(&ctx.prefix)?,
+        "apagado del entorno",
+    )
+    .await?;
+    if find_prefix_processes(&ctx.prefix).is_empty() {
+        return Ok(());
+    }
+
+    let health = inspect_prefix(&ctx.prefix);
+    let recorded = health.manifest.as_ref().filter(|manifest| {
+        manifest.schema_version == PREFIX_SCHEMA_VERSION && manifest.runner_kind != "unknown"
+    });
+
+    match plan_reset_shutdown(
+        find_prefix_processes(&ctx.prefix).len(),
+        recorded.map(|manifest| ResetManifestView {
+            runner_kind: &manifest.runner_kind,
+            runner_path: &manifest.runner_path,
+            resolved: recorded.and_then(|manifest| {
+                resolve_runner(&manifest.runner_path)
+                    .ok()
+                    .map(|runner| (runner.kind_label().to_string(), runner.runner_path().to_path_buf()))
+            }),
+            resolve_error: recorded.and_then(|manifest| {
+                resolve_runner(&manifest.runner_path)
+                    .err()
+            }),
+            current_runner_path: ctx.resolved.runner_path(),
+        }),
+    ) {
+        ResetShutdownDecision::NothingToDo => Ok(()),
+        ResetShutdownDecision::ShutdownForeign => {
+            let manifest = recorded.expect("foreign requires manifest");
+            emit_log(
+                app,
+                format!(
+                    "Deteniendo el entorno con su runner original: {}",
+                    manifest.runner_path
+                ),
+            )?;
+            let runner = resolve_runner(&manifest.runner_path)?;
+            op.run_shutdown_ok(runner.shutdown_invocation(&ctx.prefix)?, "apagado del entorno")
+                .await?;
+            if find_prefix_processes(&ctx.prefix).is_empty() {
+                Ok(())
+            } else {
+                Err(
+                    "No se pudo detener el entorno antes de rearmarlo; cierra los procesos activos"
+                        .to_string(),
+                )
+            }
+        }
+        ResetShutdownDecision::KindMismatch => Err(format!(
+            "El runner registrado {} ya no coincide con su tipo; cierra todos los procesos del entorno antes de rearmarlo",
+            recorded.expect("mismatch requires manifest").runner_path
+        )),
+        ResetShutdownDecision::Unresolvable { error } => Err(format!(
+            "Hay procesos activos en el entorno y no se pudo resolver su runner original: {error}"
+        )),
+        ResetShutdownDecision::OriginalGone => {
+            emit_log(
+                app,
+                "El runner original ya no existe y no hay procesos activos; se omitió su apagado.",
+            )?;
+            Ok(())
+        }
+        ResetShutdownDecision::LegacyActive { count } => Err(format!(
+            "El entorno no registra qué runner lo creó y aún tiene {count} proceso(s) activo(s). Ciérralos antes de rearmar"
+        )),
+        ResetShutdownDecision::StillActive => Err(
+            "No se pudo detener el entorno antes de rearmarlo; cierra los procesos activos"
+                .to_string(),
+        ),
+    }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ResetShutdownDecision {
+    NothingToDo,
+    ShutdownForeign,
+    KindMismatch,
+    Unresolvable { error: String },
+    OriginalGone,
+    LegacyActive { count: usize },
+    StillActive,
+}
+
+struct ResetManifestView<'a> {
+    runner_kind: &'a str,
+    runner_path: &'a str,
+    resolved: Option<(String, std::path::PathBuf)>,
+    resolve_error: Option<String>,
+    current_runner_path: &'a Path,
+}
+
+fn plan_reset_shutdown(
+    remaining: usize,
+    manifest: Option<ResetManifestView<'_>>,
+) -> ResetShutdownDecision {
+    if remaining == 0 {
+        return ResetShutdownDecision::NothingToDo;
+    }
+    let Some(view) = manifest else {
+        return ResetShutdownDecision::LegacyActive { count: remaining };
+    };
+    match (&view.resolved, &view.resolve_error) {
+        (Some((kind, _)), _) if kind != view.runner_kind => ResetShutdownDecision::KindMismatch,
+        (Some((_, path)), _) if path != view.current_runner_path => {
+            ResetShutdownDecision::ShutdownForeign
+        }
+        (Some(_), _) => ResetShutdownDecision::StillActive,
+        (None, Some(error)) if remaining > 0 => ResetShutdownDecision::Unresolvable {
+            error: error.clone(),
+        },
+        (None, _) if remaining == 0 => ResetShutdownDecision::OriginalGone,
+        (None, _) => ResetShutdownDecision::Unresolvable {
+            error: format!("No se pudo resolver {}", view.runner_path),
+        },
+    }
+}
+
+#[allow(dead_code)] // usado en tests; la lógica de apagado vive en RunnerOperation
 fn shutdown_is_complete(status_success: bool, active_processes: usize) -> bool {
     status_success || active_processes == 0
 }
@@ -587,6 +658,56 @@ mod tests {
         assert!(prefix_has_state(path.to_str().unwrap()));
 
         fs::remove_dir_all(path).unwrap();
+    }
+
+    #[test]
+    fn reset_shutdown_empty_is_nothing_to_do() {
+        assert_eq!(
+            plan_reset_shutdown(0, None),
+            ResetShutdownDecision::NothingToDo
+        );
+    }
+
+    #[test]
+    fn reset_shutdown_foreign_manifest_uses_recorded_runner() {
+        let current = std::path::PathBuf::from("/runners/new/wine");
+        let recorded = std::path::PathBuf::from("/runners/old/wine");
+        let view = ResetManifestView {
+            runner_kind: "wine",
+            runner_path: "/runners/old/wine",
+            resolved: Some(("wine".into(), recorded)),
+            resolve_error: None,
+            current_runner_path: &current,
+        };
+        assert_eq!(
+            plan_reset_shutdown(2, Some(view)),
+            ResetShutdownDecision::ShutdownForeign
+        );
+    }
+
+    #[test]
+    fn reset_shutdown_kind_mismatch_is_error() {
+        let current = std::path::PathBuf::from("/runners/new/wine");
+        let recorded = std::path::PathBuf::from("/runners/proton/proton");
+        let view = ResetManifestView {
+            runner_kind: "wine",
+            runner_path: "/runners/proton/proton",
+            resolved: Some(("proton".into(), recorded)),
+            resolve_error: None,
+            current_runner_path: &current,
+        };
+        assert_eq!(
+            plan_reset_shutdown(1, Some(view)),
+            ResetShutdownDecision::KindMismatch
+        );
+    }
+
+    #[test]
+    fn reset_shutdown_legacy_without_manifest_errors() {
+        assert_eq!(
+            plan_reset_shutdown(3, None),
+            ResetShutdownDecision::LegacyActive { count: 3 }
+        );
     }
 
     #[test]

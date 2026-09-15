@@ -1,8 +1,9 @@
 use std::path::Path;
 
-use tauri::AppHandle;
+use tauri::{AppHandle, State};
 
 use crate::models::server::ServerConfig;
+use crate::state::GameState;
 use crate::tools::prefix;
 use crate::tools::runners::ensure_managed_runtime;
 use crate::tools::server_tools;
@@ -10,18 +11,18 @@ use crate::utils::{
     ensure_custom_setup_allowed, ensure_managed_path_safe, ensure_managed_reset_allowed,
     inspect_prefix, manifest_matches_location, manifest_matches_runner,
     proton_runner_vkd3d_companions_available, resolve_server_wine_context_with_runner,
-    resolve_wine_context, OperationGuard, WineContext, PREFIX_SCHEMA_VERSION,
+    resolve_wine_context, WineContext, PREFIX_SCHEMA_VERSION,
 };
 
 #[tauri::command]
 pub async fn setup_prefix(
     app: AppHandle,
+    state: State<'_, GameState>,
     server: Option<ServerConfig>,
     runner: Option<String>,
 ) -> Result<(), String> {
     ensure_managed_runtime(&app).await?;
     let ctx = resolve_context(server.as_ref(), runner).await?;
-    let _operation = OperationGuard::acquire("prefix", Path::new(&ctx.prefix))?;
     let requirements = runtime_requirements(server.as_ref(), &ctx);
     validate_requirement_support(&ctx, requirements)?;
     ensure_managed_path_safe(&ctx.location)?;
@@ -81,24 +82,31 @@ pub async fn setup_prefix(
     }
     if rebuild_managed {
         ensure_managed_reset_allowed(&ctx.location)?;
-        return prefix::reset_runtime_prefix(&app, &ctx, requirements).await;
+        return prefix::reset_runtime_prefix(
+            &app,
+            &state.game,
+            &state.sessions,
+            &ctx,
+            requirements,
+        )
+        .await;
     }
-    prefix::setup_runtime_prefix(&app, &ctx, requirements).await
+    prefix::setup_runtime_prefix(&app, &state.game, &state.sessions, &ctx, requirements).await
 }
 
 #[tauri::command]
 pub async fn reset_prefix(
     app: AppHandle,
+    state: State<'_, GameState>,
     server: Option<ServerConfig>,
     runner: Option<String>,
 ) -> Result<(), String> {
     ensure_managed_runtime(&app).await?;
     let ctx = resolve_context(server.as_ref(), runner).await?;
-    let _operation = OperationGuard::acquire("prefix", Path::new(&ctx.prefix))?;
     let requirements = runtime_requirements(server.as_ref(), &ctx);
     validate_requirement_support(&ctx, requirements)?;
     ensure_managed_reset_allowed(&ctx.location)?;
-    prefix::reset_runtime_prefix(&app, &ctx, requirements).await
+    prefix::reset_runtime_prefix(&app, &state.game, &state.sessions, &ctx, requirements).await
 }
 
 fn runtime_requirements(
