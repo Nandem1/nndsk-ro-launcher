@@ -3,6 +3,7 @@ export const LAUNCHER_EVENTS = {
   TOOL_LOG: 'ro-launcher://tool-log',
   PROGRESS: 'ro-launcher://progress',
   GAME_EXIT: 'ro-launcher://game-exit',
+  GAME_CLIENT: 'ro-launcher://game-client',
   AUTOPOT_STATUS: 'ro-launcher://autopot-status',
   AUTOBUFF_STATUS: 'ro-launcher://autobuff-status',
   SPAMMER_STATUS: 'ro-launcher://spammer-status',

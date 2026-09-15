@@ -42,18 +42,19 @@ async fn show_main_window(app: tauri::AppHandle) {
 pub fn run() {
     configure_linux_webview_env();
 
+    let memory = tools::memory_sessions::MemorySessionRegistry::new();
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(GameState {
             game: state::GameProcessHandle::new(),
             tool_lifecycle: tokio::sync::Mutex::new(()),
-            autopot: AutopotHandle::new(),
-            autobuff: AutobuffHandle::new(),
+            autopot: AutopotHandle::new(memory.clone()),
+            autobuff: AutobuffHandle::new(memory.clone()),
             spammer: SpammerHandle::new(),
             input: InputGateway::new(),
-            presence: PresenceHandle::new(),
+            presence: PresenceHandle::new(memory.clone()),
             sessions: tools::runner_sessions::RunnerSessionRegistry::new(),
-            memory: tools::memory_sessions::MemorySessionRegistry::new(),
+            memory,
         })
         .manage(ServerRepository::default())
         .manage(SettingsRepository)

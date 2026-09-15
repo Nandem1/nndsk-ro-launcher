@@ -1,6 +1,8 @@
 use ro_tools_core::AutobuffConfig;
 use serde::{Deserialize, Serialize};
 
+use super::memory::{MemoryAccess, ProfileMemory};
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AutobuffStatusEvent {
@@ -9,6 +11,8 @@ pub struct AutobuffStatusEvent {
     pub last_applied_rule: Option<String>,
     pub delay_ms: u64,
     pub error: Option<String>,
+    pub memory_access: Option<MemoryAccess>,
+    pub profile_memory: Option<ProfileMemory>,
 }
 
 impl Default for AutobuffStatusEvent {
@@ -19,6 +23,8 @@ impl Default for AutobuffStatusEvent {
             last_applied_rule: None,
             delay_ms: AutobuffConfig::default().delay_ms,
             error: None,
+            memory_access: None,
+            profile_memory: None,
         }
     }
 }

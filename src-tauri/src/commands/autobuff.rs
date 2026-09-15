@@ -10,12 +10,13 @@ pub async fn start_autobuff(
 ) -> Result<(), String> {
     let _tool_lifecycle = state.tool_lifecycle.lock().await;
     server.validate_executable_available()?;
-    let launcher_pid = state.game.sole_running_pid_for(&server.id)?;
+    state.game.sole_running_pid_for(&server.id)?;
     start_session(
         app,
         &state.autobuff,
         state.input.clone(),
-        launcher_pid,
+        &state.game,
+        &state.memory,
         server,
     )
     .await

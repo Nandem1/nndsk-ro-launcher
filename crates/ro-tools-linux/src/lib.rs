@@ -12,8 +12,10 @@ pub use keyboard::{key_label_to_keycode, KeyboardMonitor, KeyboardPassthrough};
 
 pub use combat_uinput::{CombatUinput, COMBAT_DEVICE_NAME};
 pub use proc_memory::{
-    address_in_maps, find_all_writable_bytes, find_first_writable_bytes, scan_writable_u32,
-    ProcMemoryReader,
+    address_in_maps, find_all_writable_bytes, find_all_writable_bytes_with_reader,
+    find_first_writable_bytes, first_rw_u32_region, parse_writable_regions, read_launcher_uid,
+    read_process_uid, read_ptrace_scope, scan_writable_u32, scan_writable_u32_with_reader,
+    vm_read_errno, MemoryReadDiagnostic, ProcMemoryReader,
 };
 pub use resolve_pid::resolve_best_game_pid;
 pub use wine_process::{

@@ -2,9 +2,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use ro_tools_core::{map_label_matches, map_scan_needles, normalize_map_name, MemoryReader};
-use ro_tools_linux::{
-    capture_process_identity, find_all_writable_bytes, scan_writable_u32, verify_process_identity,
-    ProcMemoryReader, ProcessIdentity,
+use ro_tools_linux::{verify_process_identity, ProcessIdentity};
+
+use crate::tools::memory_sessions::{
+    memory_start_error, MemorySession, MemorySessionRegistry, MEMORY_SESSION_MISSING,
 };
 use serde::Serialize;
 
@@ -102,30 +103,52 @@ pub struct MemoryScannerHandle {
     next_generation: Arc<AtomicU64>,
 }
 
+fn require_session(
+    memory: &MemorySessionRegistry,
+    identity: &ProcessIdentity,
+) -> Result<std::sync::Arc<MemorySession>, String> {
+    let session = memory
+        .get(identity)
+        .ok_or_else(|| MEMORY_SESSION_MISSING.to_string())?;
+    let access = session.access();
+    if !access.usable() {
+        return Err(memory_start_error(access));
+    }
+    Ok(session)
+}
+
 impl MemoryScannerHandle {
-    pub fn new() -> Self {
+    pub fn new(_memory: MemorySessionRegistry) -> Self {
         Self {
             state: Arc::new(Mutex::new(ScanState::Idle)),
             next_generation: Arc::new(AtomicU64::new(1)),
         }
     }
 
-    pub async fn begin(&self, pid: u32, current_hp: u32) -> Result<MemoryScanProgress, String> {
+    pub async fn begin(
+        &self,
+        memory: &MemorySessionRegistry,
+        identity: ProcessIdentity,
+        current_hp: u32,
+    ) -> Result<MemoryScanProgress, String> {
         validate_hp(current_hp)?;
-        let identity = capture_process_identity(pid)
-            .ok_or_else(|| "El proceso del juego ya no está disponible".to_string())?;
+        let session = require_session(memory, &identity)?;
+        let session_for_scan = Arc::clone(&session);
         let generation = self.reserve_scan(true)?;
 
-        let result =
-            match tokio::task::spawn_blocking(move || scan_writable_u32(pid, current_hp)).await {
-                Ok(result) => result.map_err(|error| error.to_string()),
-                Err(error) => {
-                    self.finish_if_current(generation, ScanState::Idle)?;
-                    return Err(format!(
-                        "El escáner de memoria terminó inesperadamente: {error}"
-                    ));
-                }
-            };
+        let result = match tokio::task::spawn_blocking(move || {
+            session_for_scan.scan_writable_u32(current_hp)
+        })
+        .await
+        {
+            Ok(result) => result.map_err(|error| error.to_string()),
+            Err(error) => {
+                self.finish_if_current(generation, ScanState::Idle)?;
+                return Err(format!(
+                    "El escáner de memoria terminó inesperadamente: {error}"
+                ));
+            }
+        };
 
         let mut state = self.lock()?;
         if !matches!(*state, ScanState::Scanning { generation: active } if active == generation) {
@@ -150,7 +173,7 @@ impl MemoryScannerHandle {
                     anchors: Vec::new(),
                 });
                 Ok(MemoryScanProgress {
-                    pid,
+                    pid: identity.pid,
                     candidate_count,
                     confirmed: None,
                 })
@@ -162,7 +185,11 @@ impl MemoryScannerHandle {
         }
     }
 
-    pub async fn refine(&self, current_hp: u32) -> Result<MemoryScanProgress, String> {
+    pub async fn refine(
+        &self,
+        memory: &MemorySessionRegistry,
+        current_hp: u32,
+    ) -> Result<MemoryScanProgress, String> {
         validate_hp(current_hp)?;
         let generation = self.next_generation.fetch_add(1, Ordering::Relaxed);
         let session = {
@@ -198,12 +225,14 @@ impl MemoryScannerHandle {
 
         let pid = session.identity.pid;
         let identity = session.identity;
+        let candidate_session = session;
+        let memory_session = require_session(memory, &identity)?;
         let result = match tokio::task::spawn_blocking(move || {
-            let reader = ProcMemoryReader::open(pid).map_err(|error| error.to_string())?;
-            let candidates = reader.refine_u32_candidates(&session.candidates, current_hp);
+            let candidates =
+                memory_session.refine_u32_candidates(&candidate_session.candidates, current_hp);
             let layouts = candidates
                 .iter()
-                .filter_map(|address| detect_layout(&reader, *address, current_hp))
+                .filter_map(|address| detect_layout(&memory_session, *address, current_hp))
                 .collect::<Vec<_>>();
             Ok::<_, String>((candidates, layouts))
         })
@@ -274,20 +303,22 @@ impl MemoryScannerHandle {
 
     pub async fn find_name(
         &self,
-        pid: u32,
+        memory: &MemorySessionRegistry,
+        identity: ProcessIdentity,
         character_name: String,
         hp_base: Option<u32>,
     ) -> Result<DetectedNameAddress, String> {
         let character_name = character_name.trim().to_string();
         validate_character_name(&character_name)?;
-        let identity = capture_process_identity(pid)
-            .ok_or_else(|| "El proceso del juego ya no está disponible".to_string())?;
+        let session = require_session(memory, &identity)?;
+        let session_for_scan = Arc::clone(&session);
         let name_for_scan = character_name.clone();
         let found = tokio::task::spawn_blocking(move || {
             let mut needle = name_for_scan.into_bytes();
             needle.push(0);
-            let candidates =
-                find_all_writable_bytes(pid, &needle).map_err(|error| error.to_string())?;
+            let candidates = session_for_scan
+                .find_all_writable_bytes(&needle)
+                .map_err(|error| error.to_string())?;
             Ok::<_, String>(pick_character_name(candidates, hp_base))
         })
         .await
@@ -302,7 +333,7 @@ impl MemoryScannerHandle {
             )
         })?;
         Ok(DetectedNameAddress {
-            pid,
+            pid: identity.pid,
             character_name,
             name_address: format_address(address),
         })
@@ -310,21 +341,23 @@ impl MemoryScannerHandle {
 
     pub async fn begin_level(
         &self,
-        pid: u32,
+        memory: &MemorySessionRegistry,
+        identity: ProcessIdentity,
         current_level: u32,
         name_address: Option<u32>,
         hp_base: Option<u32>,
     ) -> Result<LevelScanProgress, String> {
         validate_level(current_level)?;
-        let identity = capture_process_identity(pid)
-            .ok_or_else(|| "El proceso del juego ya no está disponible".to_string())?;
+        let session = require_session(memory, &identity)?;
+        let session_for_scan = Arc::clone(&session);
         let generation = self.reserve_scan(true)?;
         let anchors: Vec<u32> = [name_address, hp_base].into_iter().flatten().collect();
         let scan_anchors = anchors.clone();
 
         let result = match tokio::task::spawn_blocking(move || {
-            let candidates =
-                scan_writable_u32(pid, current_level).map_err(|error| error.to_string())?;
+            let candidates = session_for_scan
+                .scan_writable_u32(current_level)
+                .map_err(|error| error.to_string())?;
             Ok::<_, String>(narrow_scan_candidates(candidates, &scan_anchors))
         })
         .await
@@ -361,7 +394,7 @@ impl MemoryScannerHandle {
                     anchors,
                 });
                 Ok(LevelScanProgress {
-                    pid,
+                    pid: identity.pid,
                     candidate_count,
                     confirmed: None,
                 })
@@ -373,7 +406,11 @@ impl MemoryScannerHandle {
         }
     }
 
-    pub async fn refine_level(&self, current_level: u32) -> Result<LevelScanProgress, String> {
+    pub async fn refine_level(
+        &self,
+        memory: &MemorySessionRegistry,
+        current_level: u32,
+    ) -> Result<LevelScanProgress, String> {
         validate_level(current_level)?;
         let generation = self.next_generation.fetch_add(1, Ordering::Relaxed);
         let session = {
@@ -411,12 +448,14 @@ impl MemoryScannerHandle {
         let identity = session.identity;
         let anchors = session.anchors.clone();
         let compare_anchors = anchors.clone();
+        let candidate_session = session;
+        let memory_session = require_session(memory, &identity)?;
         let result = match tokio::task::spawn_blocking(move || {
-            let reader = ProcMemoryReader::open(pid).map_err(|error| error.to_string())?;
-            let candidates = reader.refine_u32_candidates(&session.candidates, current_level);
+            let candidates =
+                memory_session.refine_u32_candidates(&candidate_session.candidates, current_level);
             let chosen = resolve_after_compare(&candidates, &compare_anchors);
-            let confirmed =
-                chosen.and_then(|address| detect_level_address(&reader, address, current_level));
+            let confirmed = chosen
+                .and_then(|address| detect_level_address(&memory_session, address, current_level));
             Ok::<_, String>((candidates, confirmed))
         })
         .await
@@ -474,15 +513,16 @@ impl MemoryScannerHandle {
 
     pub async fn begin_map(
         &self,
-        pid: u32,
+        memory: &MemorySessionRegistry,
+        identity: ProcessIdentity,
         map_name: String,
         name_address: Option<u32>,
         hp_base: Option<u32>,
         level_address: Option<u32>,
     ) -> Result<MapScanProgress, String> {
         let map_name = normalize_scan_map(&map_name)?;
-        let identity = capture_process_identity(pid)
-            .ok_or_else(|| "El proceso del juego ya no está disponible".to_string())?;
+        let session = require_session(memory, &identity)?;
+        let session_for_scan = Arc::clone(&session);
         let generation = self.reserve_scan(true)?;
         let needles = map_scan_needles(&map_name)
             .ok_or_else(|| "El nombre del mapa no es válido".to_string())?;
@@ -495,8 +535,9 @@ impl MemoryScannerHandle {
         let result = match tokio::task::spawn_blocking(move || {
             let mut candidates = Vec::new();
             for needle in &needles {
-                let found =
-                    find_all_writable_bytes(pid, needle).map_err(|error| error.to_string())?;
+                let found = session_for_scan
+                    .find_all_writable_bytes(needle)
+                    .map_err(|error| error.to_string())?;
                 candidates.extend(found);
             }
             candidates.sort_unstable();
@@ -535,7 +576,7 @@ impl MemoryScannerHandle {
                     anchors,
                 });
                 Ok(MapScanProgress {
-                    pid,
+                    pid: identity.pid,
                     candidate_count,
                     confirmed: None,
                 })
@@ -547,7 +588,11 @@ impl MemoryScannerHandle {
         }
     }
 
-    pub async fn refine_map(&self, map_name: String) -> Result<MapScanProgress, String> {
+    pub async fn refine_map(
+        &self,
+        memory: &MemorySessionRegistry,
+        map_name: String,
+    ) -> Result<MapScanProgress, String> {
         let map_name = normalize_scan_map(&map_name)?;
         let generation = self.next_generation.fetch_add(1, Ordering::Relaxed);
         let session = {
@@ -590,14 +635,15 @@ impl MemoryScannerHandle {
             _ => map_name.clone(),
         };
         let expected = map_name.clone();
+        let candidate_session = session;
+        let memory_session = require_session(memory, &identity)?;
         let result = match tokio::task::spawn_blocking(move || {
-            let reader = ProcMemoryReader::open(pid).map_err(|error| error.to_string())?;
-            let changed = session
+            let changed = candidate_session
                 .candidates
                 .iter()
                 .copied()
                 .filter_map(|address| {
-                    let raw = reader.read_string(address, MAX_MAP_LEN).ok()?;
+                    let raw = memory_session.read_string(address, MAX_MAP_LEN).ok()?;
                     if !map_label_matches(&raw, &expected) {
                         return None;
                     }
@@ -697,12 +743,6 @@ impl MemoryScannerHandle {
         self.state
             .lock()
             .map_err(|_| "El estado del escáner de memoria está bloqueado".to_string())
-    }
-}
-
-impl Default for MemoryScannerHandle {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -823,16 +863,16 @@ fn resolve_map_after_compare(changed: &[(u32, String)], anchors: &[u32]) -> Opti
 }
 
 fn detect_level_address(
-    reader: &ProcMemoryReader,
+    session: &MemorySession,
     level_address: u32,
     current_level: u32,
 ) -> Option<DetectedLevelAddress> {
-    let value = reader.read_u32(level_address).ok()?;
+    let value = session.read_u32(level_address).ok()?;
     if value != current_level {
         return None;
     }
     let job_level_address = level_address.checked_add(8).and_then(|address| {
-        let job = reader.read_u32(address).ok()?;
+        let job = session.read_u32(address).ok()?;
         (1..=MAX_LEVEL)
             .contains(&job)
             .then(|| format_address(address))
@@ -858,12 +898,12 @@ fn validate_character_name(character_name: &str) -> Result<(), String> {
 }
 
 fn detect_layout(
-    reader: &ProcMemoryReader,
+    session: &MemorySession,
     hp_base: u32,
     expected_hp: u32,
 ) -> Option<DetectedMemoryLayout> {
     hp_base.checked_add(0x474)?;
-    let (current_hp, max_hp, current_sp, max_sp) = reader.probe_stats(hp_base).ok()?;
+    let (current_hp, max_hp, current_sp, max_sp) = session.probe_stats(hp_base).ok()?;
     if current_hp != expected_hp
         || max_hp < current_hp
         || max_hp == 0

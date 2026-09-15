@@ -1,3 +1,4 @@
+use super::memory::{MemoryAccess, ProfileMemory};
 use serde::Serialize;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -16,4 +17,6 @@ pub struct GameClientSnapshot {
     pub server_name: String,
     pub status: GameClientStatus,
     pub pid: Option<u32>,
+    pub memory_access: Option<MemoryAccess>,
+    pub profile_memory: Option<ProfileMemory>,
 }

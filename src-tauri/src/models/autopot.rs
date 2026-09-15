@@ -1,6 +1,8 @@
 use ro_tools_core::AutopotConfig;
 use serde::{Deserialize, Serialize};
 
+use super::memory::{MemoryAccess, ProfileMemory};
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AutopotStatusEvent {
@@ -14,6 +16,8 @@ pub struct AutopotStatusEvent {
     pub sp_percent: u32,
     pub character_name: String,
     pub error: Option<String>,
+    pub memory_access: Option<MemoryAccess>,
+    pub profile_memory: Option<ProfileMemory>,
 }
 
 impl Default for AutopotStatusEvent {
@@ -29,6 +33,8 @@ impl Default for AutopotStatusEvent {
             sp_percent: AutopotConfig::default().sp_percent,
             character_name: String::new(),
             error: None,
+            memory_access: None,
+            profile_memory: None,
         }
     }
 }

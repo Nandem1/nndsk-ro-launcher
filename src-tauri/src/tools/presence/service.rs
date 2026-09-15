@@ -8,7 +8,9 @@ use ro_tools_core::{
     read_character_snapshot, resolve_presence_memory_profiles, CharacterSnapshot, CharacterState,
     PresenceAddressOverrides, PresenceMemoryProfile,
 };
-use ro_tools_linux::{address_in_maps, verify_process_identity, ProcMemoryReader, ProcessIdentity};
+use ro_tools_linux::{address_in_maps, verify_process_identity, ProcessIdentity};
+
+use crate::tools::memory_sessions::MemorySessionRegistry;
 
 use super::map_names::display_map_name;
 use super::profiles::resolve_runtime_profiles;
@@ -27,11 +29,11 @@ pub struct PresenceHandle {
 }
 
 impl PresenceHandle {
-    pub fn new() -> Self {
+    pub fn new(memory: MemorySessionRegistry) -> Self {
         let (commands, receiver) = mpsc::channel();
         let worker = thread::Builder::new()
             .name("ro-presence".into())
-            .spawn(move || run_worker(receiver, default_transport()))
+            .spawn(move || run_worker(receiver, default_transport(), memory))
             .expect("no se pudo iniciar el worker de Discord Rich Presence");
         Self {
             commands,
@@ -96,7 +98,7 @@ impl PresenceHandle {
 
 impl Default for PresenceHandle {
     fn default() -> Self {
-        Self::new()
+        Self::new(MemorySessionRegistry::new())
     }
 }
 
@@ -127,6 +129,7 @@ enum PresenceCommand {
 struct PresenceWorker {
     receiver: Receiver<PresenceCommand>,
     transport: Box<dyn PresenceTransport>,
+    memory: MemorySessionRegistry,
     enabled: bool,
     clients: HashMap<String, TrackedClient>,
     sent_activity: Option<PresenceActivity>,
@@ -166,10 +169,15 @@ struct SnapshotKey {
 }
 
 impl PresenceWorker {
-    fn new(receiver: Receiver<PresenceCommand>, transport: Box<dyn PresenceTransport>) -> Self {
+    fn new(
+        receiver: Receiver<PresenceCommand>,
+        transport: Box<dyn PresenceTransport>,
+        memory: MemorySessionRegistry,
+    ) -> Self {
         Self {
             receiver,
             transport,
+            memory,
             enabled: false,
             clients: HashMap::new(),
             sent_activity: None,
@@ -262,7 +270,7 @@ impl PresenceWorker {
             return;
         }
         for client in self.clients.values_mut() {
-            sample_client(client);
+            sample_client(client, &self.memory);
         }
         self.publish(false);
     }
@@ -312,8 +320,12 @@ impl PresenceWorker {
     }
 }
 
-fn run_worker(receiver: Receiver<PresenceCommand>, transport: Box<dyn PresenceTransport>) {
-    let mut worker = PresenceWorker::new(receiver, transport);
+fn run_worker(
+    receiver: Receiver<PresenceCommand>,
+    transport: Box<dyn PresenceTransport>,
+    memory: MemorySessionRegistry,
+) {
+    let mut worker = PresenceWorker::new(receiver, transport, memory);
     loop {
         match worker.receiver.recv_timeout(SAMPLE_INTERVAL) {
             Ok(command) => {
@@ -352,7 +364,7 @@ fn apply_overrides_to_client(
     true
 }
 
-fn sample_client(client: &mut TrackedClient) {
+fn sample_client(client: &mut TrackedClient, memory: &MemorySessionRegistry) {
     if client.profile.is_none() && client.derived_candidates.is_empty() {
         return;
     }
@@ -365,7 +377,8 @@ fn sample_client(client: &mut TrackedClient) {
         Some(profile) => vec![profile.clone()],
         None => client.derived_candidates.clone(),
     };
-    let Some((profile, snapshot)) = read_ingame_candidate(client.identity.pid, &profiles) else {
+    let Some((profile, snapshot)) = read_ingame_candidate(&client.identity, memory, &profiles)
+    else {
         invalidate_client(client);
         return;
     };
@@ -377,17 +390,19 @@ fn sample_client(client: &mut TrackedClient) {
 }
 
 fn read_ingame_candidate(
-    pid: u32,
+    identity: &ProcessIdentity,
+    memory: &MemorySessionRegistry,
     profiles: &[PresenceMemoryProfile],
 ) -> Option<(PresenceMemoryProfile, CharacterSnapshot)> {
+    let session = memory.get(identity)?;
+    if !session.access().usable() {
+        return None;
+    }
     for profile in profiles {
-        if !address_in_maps(pid, profile.module_base) {
+        if !address_in_maps(identity.pid, profile.module_base) {
             continue;
         }
-        let Ok(memory) = ProcMemoryReader::open(pid) else {
-            continue;
-        };
-        let Ok(snapshot) = read_character_snapshot(&memory, profile) else {
+        let Ok(snapshot) = read_character_snapshot(session.as_ref(), profile) else {
             continue;
         };
         if snapshot.state == CharacterState::InGame {

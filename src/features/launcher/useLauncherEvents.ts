@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import type {
   ExitEventPayload,
+  GameClientSnapshot,
   LogEventPayload,
   ProgressPayload,
 } from '../../shared/types'
@@ -16,6 +17,7 @@ export function useLauncherEvents() {
   const setError = useLauncherStore((s) => s.setError)
   const setClients = useLauncherStore((s) => s.setClients)
   const removeClient = useLauncherStore((s) => s.removeClient)
+  const upsertClient = useLauncherStore((s) => s.upsertClient)
   const addGameLog = useLogsStore((s) => s.addGameLog)
   const addToolLog = useLogsStore((s) => s.addToolLog)
 
@@ -37,6 +39,10 @@ export function useLauncherEvents() {
   useTauriEvent<ProgressPayload>(LAUNCHER_EVENTS.PROGRESS, (payload) =>
     setProgress(payload),
   )
+
+  useTauriEvent<GameClientSnapshot>(LAUNCHER_EVENTS.GAME_CLIENT, (payload) => {
+    upsertClient(payload)
+  })
 
   useTauriEvent<ExitEventPayload>(LAUNCHER_EVENTS.GAME_EXIT, (payload) => {
     const { clientId, code, requested, serverName } = payload

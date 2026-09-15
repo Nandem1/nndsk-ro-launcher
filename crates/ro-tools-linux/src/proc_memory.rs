@@ -1,8 +1,10 @@
 use ro_tools_core::{MemoryReader, ToolsError};
 use std::fs::{self, File};
-use std::io::{Read, Seek, SeekFrom};
+use std::os::unix::fs::FileExt;
 use std::sync::Mutex;
 use thiserror::Error;
+
+use crate::wine_process::ProcessIdentity;
 
 const SCAN_CHUNK_SIZE: usize = 1024 * 1024;
 const MAX_SCAN_CANDIDATES: usize = 2_000_000;
@@ -13,14 +15,67 @@ pub enum ProcMemoryError {
     Open { pid: u32, message: String },
 }
 
+impl std::fmt::Display for MemoryReadDiagnostic {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "pid={}/{} addr=0x{:x} size={} vm_errno={} proc_mem_errno={} mem_open_errno={} ptrace_scope={} launcher_uid={} target_uid={} target_ppid={} descendant={} address_mapped={}",
+            self.identity.pid,
+            self.identity.start_time,
+            self.address,
+            self.size,
+            format_errno(self.vm_errno),
+            format_errno(self.proc_mem_errno),
+            format_errno(self.mem_open_errno),
+            opt_u32(self.ptrace_scope),
+            self.launcher_uid,
+            opt_u32(self.target_uid),
+            opt_u32(self.target_ppid),
+            self.descendant_of_ancestor
+                .map(|v| if v { "true" } else { "false" })
+                .unwrap_or("unknown"),
+            self.address_mapped,
+        )
+    }
+}
+
+fn format_errno(errno: Option<i32>) -> String {
+    errno
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "none".into())
+}
+
+fn opt_u32(value: Option<u32>) -> String {
+    value
+        .map(|v| v.to_string())
+        .unwrap_or_else(|| "none".into())
+}
+
+#[derive(Debug, Clone)]
+pub struct MemoryReadDiagnostic {
+    pub identity: ProcessIdentity,
+    pub address: u32,
+    pub size: usize,
+    pub vm_errno: Option<i32>,
+    pub proc_mem_errno: Option<i32>,
+    pub mem_open_errno: Option<i32>,
+    pub ptrace_scope: Option<u32>,
+    pub launcher_uid: u32,
+    pub target_uid: Option<u32>,
+    pub target_ppid: Option<u32>,
+    pub descendant_of_ancestor: Option<bool>,
+    pub address_mapped: bool,
+}
+
+#[derive(Debug)]
 pub struct ProcMemoryReader {
     pid: u32,
     file: Mutex<Option<File>>,
+    mem_open_errno: Option<i32>,
 }
 
 impl ProcMemoryReader {
     pub fn open(pid: u32) -> Result<Self, ProcMemoryError> {
-        // Validar que el proceso existe; la lectura usa process_vm_readv o /proc/mem.
         if fs::metadata(format!("/proc/{pid}")).is_err() {
             return Err(ProcMemoryError::Open {
                 pid,
@@ -28,15 +83,24 @@ impl ProcMemoryReader {
             });
         }
 
-        let file = File::open(format!("/proc/{pid}/mem")).ok();
+        let mem_path = format!("/proc/{pid}/mem");
+        let (file, mem_open_errno) = match File::open(&mem_path) {
+            Ok(file) => (Some(file), None),
+            Err(error) => (None, error.raw_os_error()),
+        };
         Ok(Self {
             pid,
             file: Mutex::new(file),
+            mem_open_errno,
         })
     }
 
     pub fn pid(&self) -> u32 {
         self.pid
+    }
+
+    pub fn mem_open_errno(&self) -> Option<i32> {
+        self.mem_open_errno
     }
 
     pub fn address_mapped(&self, address: u32) -> bool {
@@ -51,10 +115,6 @@ impl ProcMemoryReader {
         Ok((cur_hp, max_hp, cur_sp, max_sp))
     }
 
-    /// Conserva únicamente las direcciones que todavía contienen `value`.
-    ///
-    /// Esto permite hacer un unknown/exact-value scan incremental sin volver a recorrer todo el
-    /// espacio de memoria del cliente.
     pub fn refine_u32_candidates(&self, candidates: &[u32], value: u32) -> Vec<u32> {
         candidates
             .iter()
@@ -62,12 +122,95 @@ impl ProcMemoryReader {
             .filter(|address| self.read_u32(*address).ok() == Some(value))
             .collect()
     }
+
+    /// Intenta leer exactamente `buf.len()` bytes vía `process_vm_readv` sin fallback.
+    pub fn try_vm_read(&self, address: u32, buf: &mut [u8]) -> Result<usize, i32> {
+        read_via_vm(self.pid, address, buf)
+    }
+
+    /// Intenta leer vía `/proc/mem` sin usar `process_vm_readv`.
+    pub fn try_proc_mem_read(&self, address: u32, buf: &mut [u8]) -> Result<usize, i32> {
+        let guard = self.file.lock().map_err(|_| -1)?;
+        let Some(file) = guard.as_ref() else {
+            return Err(self.mem_open_errno.unwrap_or(libc::EACCES));
+        };
+        match file.read_at(buf, address as u64) {
+            Ok(n) => Ok(n),
+            Err(error) => Err(error.raw_os_error().unwrap_or(-1)),
+        }
+    }
+
+    pub fn build_diagnostic(
+        &self,
+        identity: ProcessIdentity,
+        address: u32,
+        size: usize,
+        vm_errno: Option<i32>,
+        proc_mem_errno: Option<i32>,
+        descendant_of_ancestor: Option<bool>,
+    ) -> MemoryReadDiagnostic {
+        MemoryReadDiagnostic {
+            identity,
+            address,
+            size,
+            vm_errno,
+            proc_mem_errno,
+            mem_open_errno: self.mem_open_errno,
+            ptrace_scope: read_ptrace_scope(),
+            launcher_uid: read_launcher_uid(),
+            target_uid: read_process_uid(self.pid),
+            target_ppid: crate::wine_process::read_ppid(self.pid).ok(),
+            descendant_of_ancestor,
+            address_mapped: self.address_mapped(address),
+        }
+    }
 }
 
-/// Busca un valor `u32` exacto, alineado a cuatro bytes, en todas las regiones legibles y
-/// escribibles del proceso. Las estadísticas del cliente RO viven en memoria mutable, por lo que
-/// excluir código y mappings de sólo lectura reduce mucho el costo y los falsos positivos.
+pub fn read_ptrace_scope() -> Option<u32> {
+    fs::read_to_string("/proc/sys/kernel/yama/ptrace_scope")
+        .ok()
+        .and_then(|value| value.trim().parse().ok())
+}
+
+pub fn read_launcher_uid() -> u32 {
+    unsafe { libc::getuid() }
+}
+
+pub fn read_process_uid(pid: u32) -> Option<u32> {
+    let status = fs::read_to_string(format!("/proc/{pid}/status")).ok()?;
+    for line in status.lines() {
+        if let Some(rest) = line.strip_prefix("Uid:") {
+            return rest
+                .split_whitespace()
+                .next()
+                .and_then(|value| value.parse().ok());
+        }
+    }
+    None
+}
+
+/// Primera región `rw` con al menos cuatro bytes dentro del espacio u32.
+pub fn first_rw_u32_region(maps: &str) -> Option<(u32, u32)> {
+    for (start, end) in parse_writable_regions(maps) {
+        let size = end.saturating_sub(start);
+        if size >= 4 && start <= u64::from(u32::MAX) {
+            return Some((start as u32, size.min(u64::from(u32::MAX)) as u32));
+        }
+    }
+    None
+}
+
 pub fn scan_writable_u32(pid: u32, value: u32) -> Result<Vec<u32>, ToolsError> {
+    let reader =
+        ProcMemoryReader::open(pid).map_err(|error| ToolsError::Other(error.to_string()))?;
+    scan_writable_u32_with_reader(&reader, value)
+}
+
+pub fn scan_writable_u32_with_reader(
+    reader: &ProcMemoryReader,
+    value: u32,
+) -> Result<Vec<u32>, ToolsError> {
+    let pid = reader.pid();
     let maps = fs::read_to_string(format!("/proc/{pid}/maps"))
         .map_err(|error| ToolsError::Other(format!("no se pudo leer /proc/{pid}/maps: {error}")))?;
     let regions = parse_writable_regions(&maps);
@@ -77,8 +220,6 @@ pub fn scan_writable_u32(pid: u32, value: u32) -> Result<Vec<u32>, ToolsError> {
         ));
     }
 
-    let reader =
-        ProcMemoryReader::open(pid).map_err(|error| ToolsError::Other(error.to_string()))?;
     let needle = value.to_le_bytes();
     let mut candidates = Vec::new();
     let mut buffer = vec![0u8; SCAN_CHUNK_SIZE];
@@ -92,7 +233,13 @@ pub fn scan_writable_u32(pid: u32, value: u32) -> Result<Vec<u32>, ToolsError> {
             let requested = remaining.min(buffer.len());
             let chunk = &mut buffer[..requested];
             let address_u32 = address as u32;
-            match read_bytes_at(pid, address_u32, chunk, &reader.file) {
+            match read_bytes_at(
+                pid,
+                address_u32,
+                chunk,
+                &reader.file,
+                reader.mem_open_errno(),
+            ) {
                 Ok(read) if read >= 4 => {
                     successful_reads += 1;
                     scan_aligned_chunk(address_u32, &chunk[..read], &needle, &mut candidates);
@@ -117,29 +264,27 @@ pub fn scan_writable_u32(pid: u32, value: u32) -> Result<Vec<u32>, ToolsError> {
     Ok(candidates)
 }
 
-/// Devuelve la primera aparición exacta de `needle` en memoria legible y escribible, recorriendo
-/// los mappings en orden ascendente. Conserva un pequeño solapamiento entre chunks para no perder
-/// cadenas que crucen el límite de lectura.
 pub fn find_first_writable_bytes(pid: u32, needle: &[u8]) -> Result<Option<u32>, ToolsError> {
-    let mut found = collect_writable_bytes(pid, needle, true)?;
+    let mut found = find_all_writable_bytes(pid, needle)?;
     Ok(found.pop())
 }
 
-/// Devuelve todas las apariciones exactas de `needle` en memoria legible y escribible.
 pub fn find_all_writable_bytes(pid: u32, needle: &[u8]) -> Result<Vec<u32>, ToolsError> {
-    collect_writable_bytes(pid, needle, false)
+    let reader =
+        ProcMemoryReader::open(pid).map_err(|error| ToolsError::Other(error.to_string()))?;
+    find_all_writable_bytes_with_reader(&reader, needle)
 }
 
-fn collect_writable_bytes(
-    pid: u32,
+pub fn find_all_writable_bytes_with_reader(
+    reader: &ProcMemoryReader,
     needle: &[u8],
-    first_only: bool,
 ) -> Result<Vec<u32>, ToolsError> {
     if needle.is_empty() {
         return Err(ToolsError::Other(
             "la cadena buscada no puede estar vacía".into(),
         ));
     }
+    let pid = reader.pid();
     let maps = fs::read_to_string(format!("/proc/{pid}/maps"))
         .map_err(|error| ToolsError::Other(format!("no se pudo leer /proc/{pid}/maps: {error}")))?;
     let regions = parse_writable_regions(&maps);
@@ -149,8 +294,6 @@ fn collect_writable_bytes(
         ));
     }
 
-    let reader =
-        ProcMemoryReader::open(pid).map_err(|error| ToolsError::Other(error.to_string()))?;
     let mut buffer = vec![0u8; SCAN_CHUNK_SIZE];
     let mut combined = Vec::with_capacity(SCAN_CHUNK_SIZE + needle.len().saturating_sub(1));
     let mut overlap = Vec::with_capacity(needle.len().saturating_sub(1));
@@ -164,7 +307,13 @@ fn collect_writable_bytes(
         while address < region_end {
             let remaining = (region_end - address) as usize;
             let requested = remaining.min(buffer.len());
-            match read_bytes_at(pid, address as u32, &mut buffer[..requested], &reader.file) {
+            match read_bytes_at(
+                pid,
+                address as u32,
+                &mut buffer[..requested],
+                &reader.file,
+                reader.mem_open_errno(),
+            ) {
                 Ok(read) if read > 0 => {
                     successful_reads += 1;
                     let overlap_len = overlap.len();
@@ -177,9 +326,6 @@ fn collect_writable_bytes(
                             .saturating_add(offset as u64);
                         if let Ok(address) = u32::try_from(match_address) {
                             matches.push(address);
-                            if first_only {
-                                return Ok(matches);
-                            }
                             if matches.len() > MAX_SCAN_CANDIDATES {
                                 return Err(ToolsError::Other(format!(
                                     "la cadena aparece en más de {MAX_SCAN_CANDIDATES} direcciones"
@@ -223,7 +369,7 @@ fn find_all_subslices(haystack: &[u8], needle: &[u8]) -> Vec<usize> {
         .collect()
 }
 
-fn parse_writable_regions(maps: &str) -> Vec<(u64, u64)> {
+pub fn parse_writable_regions(maps: &str) -> Vec<(u64, u64)> {
     maps.lines()
         .filter_map(|line| {
             let mut fields = line.split_whitespace();
@@ -261,19 +407,25 @@ fn scan_aligned_chunk(start: u32, bytes: &[u8], needle: &[u8; 4], output: &mut V
 
 impl MemoryReader for ProcMemoryReader {
     fn read_u32(&self, address: u32) -> Result<u32, ToolsError> {
-        read_u32_at(self.pid, address, &self.file)
+        read_u32_at(self.pid, address, &self.file, self.mem_open_errno)
     }
 
     fn read_string(&self, address: u32, max_len: usize) -> Result<String, ToolsError> {
         let mut buf = vec![0u8; max_len];
-        let n = read_bytes_at(self.pid, address, &mut buf, &self.file)?;
+        let n = read_bytes_at(self.pid, address, &mut buf, &self.file, self.mem_open_errno)?;
         let end = buf[..n].iter().position(|&b| b == 0).unwrap_or(n);
         Ok(String::from_utf8_lossy(&buf[..end]).into_owned())
     }
 
     fn read_u32_slice(&self, address: u32, len: usize) -> Result<Vec<u32>, ToolsError> {
         let mut bytes = vec![0u8; len * 4];
-        let read = read_bytes_at(self.pid, address, &mut bytes, &self.file)?;
+        let read = read_bytes_at(
+            self.pid,
+            address,
+            &mut bytes,
+            &self.file,
+            self.mem_open_errno,
+        )?;
         if read != bytes.len() {
             return Err(ToolsError::MemoryRead {
                 address,
@@ -289,9 +441,14 @@ impl MemoryReader for ProcMemoryReader {
     }
 }
 
-fn read_u32_at(pid: u32, address: u32, file: &Mutex<Option<File>>) -> Result<u32, ToolsError> {
+fn read_u32_at(
+    pid: u32,
+    address: u32,
+    file: &Mutex<Option<File>>,
+    mem_open_errno: Option<i32>,
+) -> Result<u32, ToolsError> {
     let mut buf = [0u8; 4];
-    read_bytes_at(pid, address, &mut buf, file)?;
+    read_bytes_at(pid, address, &mut buf, file, mem_open_errno)?;
     Ok(u32::from_le_bytes(buf))
 }
 
@@ -300,10 +457,12 @@ fn read_bytes_at(
     address: u32,
     buf: &mut [u8],
     file: &Mutex<Option<File>>,
+    mem_open_errno: Option<i32>,
 ) -> Result<usize, ToolsError> {
-    if let Ok(n) = read_via_vm(pid, address, buf) {
-        return Ok(n);
-    }
+    let vm_errno = match read_via_vm(pid, address, buf) {
+        Ok(n) => return Ok(n),
+        Err(errno) => errno,
+    };
 
     let mut guard = file
         .lock()
@@ -311,22 +470,28 @@ fn read_bytes_at(
     let Some(file) = guard.as_mut() else {
         return Err(ToolsError::MemoryRead {
             address,
-            message: "sin permiso ptrace para /proc/mem (y process_vm_readv falló)".into(),
+            message: format!(
+                "process_vm_readv errno={vm_errno}; /proc/mem no abierto (mem_open_errno={})",
+                mem_open_errno
+                    .map(|value| value.to_string())
+                    .unwrap_or_else(|| "none".into())
+            ),
         });
     };
 
-    file.seek(SeekFrom::Start(address as u64))
+    file.read_at(buf, address as u64)
         .map_err(|e| ToolsError::MemoryRead {
             address,
-            message: e.to_string(),
-        })?;
-    file.read(buf).map_err(|e| ToolsError::MemoryRead {
-        address,
-        message: e.to_string(),
-    })
+            message: format!(
+                "process_vm_readv errno={vm_errno}; /proc/mem: {e} (mem_open_errno={})",
+                mem_open_errno
+                    .map(|value| value.to_string())
+                    .unwrap_or_else(|| "none".into())
+            ),
+        })
 }
 
-fn read_via_vm(pid: u32, address: u32, buf: &mut [u8]) -> Result<usize, ToolsError> {
+fn read_via_vm(pid: u32, address: u32, buf: &mut [u8]) -> Result<usize, i32> {
     let local_iov = libc::iovec {
         iov_base: buf.as_mut_ptr() as *mut libc::c_void,
         iov_len: buf.len(),
@@ -339,12 +504,18 @@ fn read_via_vm(pid: u32, address: u32, buf: &mut [u8]) -> Result<usize, ToolsErr
     let n = unsafe { libc::process_vm_readv(pid as libc::pid_t, &local_iov, 1, &remote_iov, 1, 0) };
 
     if n < 0 {
-        Err(ToolsError::MemoryRead {
-            address,
-            message: std::io::Error::last_os_error().to_string(),
-        })
+        Err(std::io::Error::last_os_error().raw_os_error().unwrap_or(-1))
     } else {
         Ok(n as usize)
+    }
+}
+
+pub fn vm_read_errno(pid: u32, address: u32, size: usize) -> Result<(), i32> {
+    let mut buf = vec![0u8; size];
+    match read_via_vm(pid, address, &mut buf) {
+        Ok(n) if n == size => Ok(()),
+        Ok(_) => Err(libc::EFAULT),
+        Err(errno) => Err(errno),
     }
 }
 
@@ -385,6 +556,15 @@ mod tests {
             "7fff00000000-7fff00001000 rw-p 00000000 00:00 0\n",
         );
         assert_eq!(parse_writable_regions(maps), vec![(0x01000000, 0x01002000)]);
+    }
+
+    #[test]
+    fn first_rw_u32_region_picks_first_eligible_mapping() {
+        let maps = concat!(
+            "00400000-00401000 r--p 00000000 00:00 0\n",
+            "01000000-01002000 rw-p 00000000 00:00 0\n",
+        );
+        assert_eq!(first_rw_u32_region(maps), Some((0x01000000, 0x2000)));
     }
 
     #[test]
@@ -445,6 +625,23 @@ mod tests {
             }
             Ok(_) => panic!("expected open to fail for missing pid"),
         }
+    }
+
+    #[test]
+    fn open_self_process_does_not_fail() {
+        let pid = std::process::id();
+        let reader = ProcMemoryReader::open(pid).expect("self exists");
+        assert_eq!(reader.pid(), pid);
+    }
+
+    #[test]
+    fn try_vm_read_on_missing_pid_returns_errno_without_opening() {
+        let reader = ProcMemoryReader::open(std::process::id()).expect("self exists");
+        let mut buf = [0u8; 4];
+        let errno = reader
+            .try_vm_read(0x1234_5678, &mut buf)
+            .expect_err("missing remote mapping should fail");
+        assert_ne!(errno, 0);
     }
 
     #[test]

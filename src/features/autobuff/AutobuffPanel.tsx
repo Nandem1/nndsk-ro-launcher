@@ -6,6 +6,11 @@ import { useLauncherStore } from '../launcher/launcher.store'
 import { useSelectedServer } from '../servers/useSelectedServer'
 import { AutobuffRulesEditor } from './AutobuffRulesEditor'
 import { useAutobuff } from './useAutobuff'
+import {
+  memoryAccessAction,
+  memoryAccessLabel,
+  memoryAccessUsable,
+} from '../autopot/memoryAccess.logic'
 
 export function AutobuffPanel() {
   const server = useSelectedServer()
@@ -14,12 +19,20 @@ export function AutobuffPanel() {
   const launching = useLauncherStore((state) => state.status === 'launching')
   const multipleClients = useLauncherStore((state) => state.clients.length > 1)
   const hero = useUiModeStore((state) => state.mode === 'ingame')
+  const clientMemoryAccess = useLauncherStore((s) =>
+    s.clients.length === 1 ? s.clients[0].memoryAccess : null,
+  )
   const available = isRunning && !!server
   const hasEnabledRule = config.rules.some((rule) => rule.enabled)
+  const effectiveMemoryAccess = status.memoryAccess ?? clientMemoryAccess
+  const memoryReady = memoryAccessUsable(effectiveMemoryAccess)
+  const memoryAction = memoryAccessAction(effectiveMemoryAccess)
   const tone = resolveToolTone(
-    available,
-    config.enabled && status.active,
-    !!error,
+    available && memoryReady,
+    config.enabled &&
+      status.active &&
+      memoryAccessUsable(effectiveMemoryAccess),
+    !!error || (available && !memoryReady),
   )
 
   return (
@@ -74,6 +87,11 @@ export function AutobuffPanel() {
         <p className="shrink-0 text-[10px] leading-snug min-h-[calc(1em*1.375)]">
           {error && available ? (
             <span className="text-red-400/90">{error}</span>
+          ) : available && effectiveMemoryAccess && !memoryReady ? (
+            <span className="text-amber-500/90">
+              {memoryAccessLabel(effectiveMemoryAccess)}
+              {memoryAction ? ` ${memoryAction}` : ''}
+            </span>
           ) : null}
         </p>
       </div>

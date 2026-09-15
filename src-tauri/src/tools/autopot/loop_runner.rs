@@ -2,25 +2,35 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use ro_tools_core::{AutopotConfig, AutopotEngine};
+use ro_tools_linux::ProcessIdentity;
 use tauri::AppHandle;
 use tokio::sync::watch;
 
 use crate::models::autopot::AutopotStatusEvent;
+use crate::models::memory::{MemoryAccess, ProfileMemory};
 use crate::tools::input::{emit_status_if_changed, InputGateway, InputSource};
+use crate::tools::memory_sessions::{
+    memory_start_error, MemorySessionRegistry, SharedMemorySession, MEMORY_SESSION_MISSING,
+};
 use crate::utils::EVENT_AUTOPOT_STATUS;
 
 use super::service::new_ticker;
 
 pub struct RunContext {
     pub app: AppHandle,
-    pub memory: ro_tools_linux::ProcMemoryReader,
+    pub memory: SharedMemorySession,
     pub writer: crate::tools::input::GatewayWriter,
     pub config: AutopotConfig,
     pub profile: ro_tools_core::ClientProfile,
     pub stop_rx: watch::Receiver<bool>,
     pub config_rx: watch::Receiver<AutopotConfig>,
+    pub identity_rx: watch::Receiver<ProcessIdentity>,
     pub status_arc: Arc<Mutex<AutopotStatusEvent>>,
     pub gateway: InputGateway,
+    pub memory_registry: MemorySessionRegistry,
+    pub hp_base: u32,
+    pub memory_access: MemoryAccess,
+    pub profile_memory: ProfileMemory,
 }
 
 pub async fn run(context: RunContext) {
@@ -32,8 +42,13 @@ pub async fn run(context: RunContext) {
         profile,
         mut stop_rx,
         mut config_rx,
+        mut identity_rx,
         status_arc,
         gateway,
+        memory_registry,
+        hp_base,
+        mut memory_access,
+        mut profile_memory,
     } = context;
     let mut engine = AutopotEngine::new(memory, writer, config.clone(), profile);
     let mut current_config = config;
@@ -44,12 +59,40 @@ pub async fn run(context: RunContext) {
     let mut scan_periods_us = Vec::new();
     let mut scan_durations_us = Vec::new();
     let mut last_scan: Option<Instant> = None;
-    let mut terminal_error: Option<String> = None;
     let mut tick_count: u64 = 0;
 
     loop {
         tokio::select! {
             _ = ticker.tick() => {
+                if !memory_access.usable() || profile_memory != ProfileMemory::Valid {
+                    let prev = status_arc.lock().unwrap().clone();
+                    let error = if !memory_access.usable() {
+                        Some(memory_start_error(memory_access))
+                    } else {
+                        Some("La dirección de memoria del perfil no es válida".into())
+                    };
+                    emit_status_if_changed(
+                        &app,
+                        &status_arc,
+                        EVENT_AUTOPOT_STATUS,
+                        AutopotStatusEvent {
+                            active: true,
+                            effective_delay_ms: current_config.delay_ms,
+                            cur_hp: prev.cur_hp,
+                            max_hp: prev.max_hp,
+                            cur_sp: prev.cur_sp,
+                            max_sp: prev.max_sp,
+                            character_name: prev.character_name,
+                            hp_percent: current_config.hp_percent,
+                            sp_percent: current_config.sp_percent,
+                            error,
+                            memory_access: Some(memory_access),
+                            profile_memory: Some(profile_memory),
+                        },
+                    );
+                    continue;
+                }
+
                 tick_count += 1;
                 let scan_started = Instant::now();
                 if let Some(previous) = last_scan.replace(scan_started) {
@@ -60,19 +103,14 @@ pub async fn run(context: RunContext) {
 
                 match tick_result {
                     Ok(tick) => {
-                        // Proactive pulses run at the regular AutoPot cadence; omit them from
-                        // the event log so the Logs panel remains useful during long sessions.
                         if tick.potted_hp || tick.potted_sp {
                             crate::utils::emit_tool_log_opt(
                                 Some(&app),
                                 format!(
-                                    "[AutoPot] tick#{tick_count} HP={} SP={} proactivo={} | {}/{} HP · {}/{} SP · '{}'",
+                                    "[AutoPot] tick#{tick_count} HP={} SP={} proactivo={}",
                                     if tick.potted_hp { "sí" } else { "—" },
                                     if tick.potted_sp { "sí" } else { "—" },
                                     if tick.proactive_hp_pulse { "sí" } else { "—" },
-                                    tick.cur_hp, tick.max_hp,
-                                    tick.cur_sp, tick.max_sp,
-                                    tick.character_name,
                                 ),
                             );
                         }
@@ -91,6 +129,8 @@ pub async fn run(context: RunContext) {
                                 sp_percent: current_config.sp_percent,
                                 character_name: tick.character_name,
                                 error: None,
+                                memory_access: Some(memory_access),
+                                profile_memory: Some(profile_memory),
                             },
                         );
                     }
@@ -111,35 +151,52 @@ pub async fn run(context: RunContext) {
                                 error: Some(err_msg.clone()),
                                 hp_percent: current_config.hp_percent,
                                 sp_percent: current_config.sp_percent,
+                                memory_access: Some(memory_access),
+                                profile_memory: Some(profile_memory),
                             },
                         );
                         crate::utils::emit_tool_log_opt(
                             Some(&app),
                             format!("[AutoPot] ERROR tick: {err_msg}"),
                         );
-                        terminal_error = Some(err_msg);
-                        break;
                     }
                 }
             }
             changed = config_rx.changed() => {
                 if changed.is_ok() {
-                    current_config = config_rx
-                        .borrow()
-                        .clone()
-                        .clamped();
+                    current_config = config_rx.borrow().clone().clamped();
                     engine.update_config(current_config.clone());
                     ticker = new_ticker(current_config.delay_ms);
-                    crate::utils::emit_tool_log_opt(
-                        Some(&app),
-                        format!(
-                            "[AutoPot] Config actualizada HP={}% SP={}% delay={}ms proactivo={}",
-                            current_config.hp_percent,
-                            current_config.sp_percent,
-                            current_config.delay_ms,
-                            if current_config.proactive_mode { "sí" } else { "no" },
-                        ),
-                    );
+                }
+            }
+            changed = identity_rx.changed() => {
+                if changed.is_ok() {
+                    let identity = *identity_rx.borrow();
+                    if let Some(session) = memory_registry.get(&identity) {
+                        memory_access = session.access();
+                        profile_memory = session.profile_memory(Some(hp_base));
+                        if memory_access.usable() {
+                            engine.replace_memory(SharedMemorySession(session));
+                        }
+                    } else {
+                        memory_access = MemoryAccess::ProcessExitedOrReused;
+                        profile_memory = ProfileMemory::InvalidRead;
+                        emit_status_if_changed(
+                            &app,
+                            &status_arc,
+                            EVENT_AUTOPOT_STATUS,
+                            AutopotStatusEvent {
+                                active: true,
+                                effective_delay_ms: current_config.delay_ms,
+                                hp_percent: current_config.hp_percent,
+                                sp_percent: current_config.sp_percent,
+                                error: Some(MEMORY_SESSION_MISSING.to_string()),
+                                memory_access: Some(memory_access),
+                                profile_memory: Some(profile_memory),
+                                ..status_arc.lock().unwrap().clone()
+                            },
+                        );
+                    }
                 }
             }
             _ = metrics_ticker.tick() => {
@@ -174,7 +231,9 @@ pub async fn run(context: RunContext) {
         effective_delay_ms: current_config.delay_ms,
         hp_percent: current_config.hp_percent,
         sp_percent: current_config.sp_percent,
-        error: terminal_error,
+        error: None,
+        memory_access: Some(memory_access),
+        profile_memory: Some(profile_memory),
         ..AutopotStatusEvent::default()
     };
     emit_status_if_changed(&app, &status_arc, EVENT_AUTOPOT_STATUS, idle);
@@ -205,11 +264,12 @@ fn log_metrics(
     scan_durations_us.clear();
 }
 
-fn percentile(values: &[u64], percent: usize) -> u64 {
+fn percentile(values: &[u64], pct: u8) -> u64 {
     if values.is_empty() {
         return 0;
     }
     let mut sorted = values.to_vec();
     sorted.sort_unstable();
-    sorted[((sorted.len() - 1) * percent).div_ceil(100)]
+    let index = ((sorted.len() - 1) as f64 * (pct as f64 / 100.0)).round() as usize;
+    sorted[index]
 }

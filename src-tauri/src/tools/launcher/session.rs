@@ -13,8 +13,11 @@ use crate::models::launch::{LaunchStrategy, LaunchValues};
 use crate::models::server::ServerConfig;
 use crate::state::{GameProcessHandle, GameState, LaunchReservation};
 use crate::tools::autobuff::AutobuffHandle;
-use crate::tools::autopot::AutopotHandle;
+use crate::tools::autopot::{load_profiles, resolve_profile, AutopotHandle};
 use crate::tools::input::InputGateway;
+use crate::tools::memory_sessions::{
+    launcher_memory_ancestor, MemoryAncestor, MemorySessionRegistry,
+};
 use crate::tools::prefix::MANAGED_DXVK_COMPONENT;
 use crate::tools::presence::{overrides_from_autopot, PresenceHandle};
 use crate::tools::runner_sessions::{
@@ -28,7 +31,8 @@ use crate::utils::gecko::install_gecko_for_runner;
 use crate::utils::process::drain_game_streams_redacted;
 use crate::utils::{
     apply_game_env, emit_tool_log_opt, required_game_dir, resolve_server_wine_context_with_runner,
-    validate_runtime_prefix, work_dir_from_exe, ExitEvent, OperationGuard, EVENT_GAME_EXIT,
+    validate_runtime_prefix, work_dir_from_exe, ExitEvent, OperationGuard, EVENT_GAME_CLIENT,
+    EVENT_GAME_EXIT,
 };
 
 const DIRECT_LAUNCH_TIMEOUT: Duration = Duration::from_secs(30);
@@ -44,6 +48,7 @@ pub struct LaunchTools<'a> {
     pub input: &'a InputGateway,
     pub presence: &'a PresenceHandle,
     pub sessions: &'a RunnerSessionRegistry,
+    pub memory: &'a MemorySessionRegistry,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -64,6 +69,7 @@ pub async fn launch_game(
         input,
         presence,
         sessions,
+        memory,
     } = tools;
     ensure_managed_runtime(&app).await?;
     let ctx = resolve_server_wine_context_with_runner(Some(&server), runner).await?;
@@ -227,6 +233,30 @@ pub async fn launch_game(
         }
     };
 
+    let memory_ancestor = match op.lease() {
+        Some(lease) => MemoryAncestor::Supervisor(lease.supervisor_identity()),
+        None => launcher_memory_ancestor(),
+    };
+    let memory_lease = match memory.register(identity, memory_ancestor) {
+        Ok(lease) => lease,
+        Err(error) => {
+            let _ = spawned.terminate().await;
+            if let Some(task) = output_task {
+                let _ = task.await;
+            }
+            return Err(error);
+        }
+    };
+    let memory_access = memory
+        .get(&identity)
+        .map(|session| session.access())
+        .ok_or_else(|| "Sesión de memoria no disponible tras el registro".to_string())?;
+    let profile = resolve_profile(&load_profiles(), &game_exe, &server.autopot);
+    let hp_base = profile.hp_base;
+    let profile_memory = memory
+        .get(&identity)
+        .map(|session| session.profile_memory(Some(hp_base)));
+
     let runtime = match op.lease() {
         Some(lease) => {
             let client_lease = sessions
@@ -234,12 +264,16 @@ pub async fn launch_game(
                 .map_err(|error| error.message)?;
             ClientRuntimeGuard {
                 session: SessionOwnership::Supervised(client_lease),
-                memory: None,
+                memory: Some(memory_lease),
+                memory_access: Some(memory_access),
+                profile_memory,
             }
         }
         None => ClientRuntimeGuard {
             session: SessionOwnership::Direct,
-            memory: None,
+            memory: Some(memory_lease),
+            memory_access: Some(memory_access),
+            profile_memory,
         },
     };
 
@@ -282,7 +316,8 @@ pub async fn launch_game(
         overrides_from_autopot(&server.autopot),
     );
 
-    let exit_snapshot = snapshot.clone();
+    let mut launch_snapshot = snapshot;
+    launch_snapshot.profile_memory = profile_memory;
     spawn_exit_task(
         app,
         game,
@@ -296,14 +331,17 @@ pub async fn launch_game(
         game_exe,
         baseline,
         identity,
-        exit_snapshot,
+        launch_snapshot.clone(),
         autopot.clone(),
         autobuff.clone(),
         spammer.clone(),
         presence.clone(),
+        memory.clone(),
+        memory_ancestor,
+        hp_base,
     );
 
-    Ok(snapshot)
+    Ok(launch_snapshot)
 }
 
 enum ControllerHandle<'a> {
@@ -337,6 +375,9 @@ fn spawn_exit_task(
     autobuff: AutobuffHandle,
     spammer: SpammerHandle,
     presence: PresenceHandle,
+    memory: MemorySessionRegistry,
+    memory_ancestor: MemoryAncestor,
+    hp_base: u32,
 ) {
     let presence_client_id = snapshot.client_id.clone();
     let app_for_exit = app.clone();
@@ -368,10 +409,40 @@ fn spawn_exit_task(
             else {
                 break;
             };
-            if !game.replace_running(reservation, active_identity, replacement) {
+            let new_lease = match memory.register(replacement, memory_ancestor) {
+                Ok(lease) => lease,
+                Err(error) => {
+                    emit_tool_log_opt(
+                        Some(&app_for_exit),
+                        format!("[Memory] handoff falló: {error}"),
+                    );
+                    break;
+                }
+            };
+            let memory_access = memory
+                .get(&replacement)
+                .map(|session| session.access())
+                .unwrap_or(crate::models::memory::MemoryAccess::BackendError);
+            let profile_memory = memory
+                .get(&replacement)
+                .map(|session| session.profile_memory(Some(hp_base)))
+                .unwrap_or(crate::models::memory::ProfileMemory::InvalidRead);
+            if !game.replace_running(
+                reservation,
+                active_identity,
+                replacement,
+                new_lease,
+                memory_access,
+                profile_memory,
+            ) {
                 break;
             }
             presence.handoff(&presence_client_id, replacement);
+            autopot.handoff(replacement);
+            autobuff.handoff(replacement);
+            if let Some(client_snapshot) = game.snapshot_for(reservation) {
+                let _ = app_for_exit.emit(EVENT_GAME_CLIENT, client_snapshot);
+            }
             let client_ppid = read_ppid(replacement.pid).unwrap_or(0);
             if supervised_session {
                 emit_tool_log_opt(

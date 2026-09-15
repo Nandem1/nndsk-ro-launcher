@@ -18,13 +18,14 @@ pub async fn start_autopot(
 ) -> Result<(), String> {
     let _tool_lifecycle = state.tool_lifecycle.lock().await;
     server.validate_executable_available()?;
-    let launcher_pid = state.game.sole_running_pid_for(&server.id)?;
+    state.game.sole_running_pid_for(&server.id)?;
 
     start_session(
         app,
         &state.autopot,
         state.input.clone(),
-        launcher_pid,
+        &state.game,
+        &state.memory,
         server,
     )
     .await
@@ -64,12 +65,18 @@ pub async fn begin_autopot_memory_scan(
     if state.autopot.status().active {
         return Err("Detén AutoPot antes de buscar una dirección de memoria".into());
     }
-    let pid = state.game.sole_running_pid()?;
+    let identity = state.game.sole_running_identity()?;
     emit_tool_log_opt(
         Some(&app),
-        format!("[AutoPot] Escaneo inicial PID={pid} HP={current_hp}"),
+        format!(
+            "[AutoPot] Escaneo inicial PID={} HP={current_hp}",
+            identity.pid
+        ),
     );
-    let result = state.autopot.begin_memory_scan(pid, current_hp).await?;
+    let result = state
+        .autopot
+        .begin_memory_scan(identity, current_hp)
+        .await?;
     emit_tool_log_opt(
         Some(&app),
         format!(
@@ -94,13 +101,8 @@ pub async fn refine_autopot_memory_scan(
         emit_tool_log_opt(
             Some(&app),
             format!(
-                "[AutoPot] Dirección confirmada {} | HP={}/{} SP={}/{} status={}",
-                layout.hp_base,
-                layout.current_hp,
-                layout.max_hp,
-                layout.current_sp,
-                layout.max_sp,
-                layout.status_buffer,
+                "[AutoPot] Dirección confirmada {} status={}",
+                layout.hp_base, layout.status_buffer,
             ),
         );
     } else {
@@ -130,11 +132,11 @@ pub async fn find_autopot_name_address(
     if state.autopot.status().active {
         return Err("Detén AutoPot antes de buscar la dirección del nombre".into());
     }
-    let pid = state.game.sole_running_pid()?;
+    let identity = state.game.sole_running_identity()?;
     let result = state
         .autopot
         .find_name_address(
-            pid,
+            identity,
             character_name,
             parse_address_override(hp_base.as_deref()),
         )
@@ -160,15 +162,18 @@ pub async fn begin_autopot_level_scan(
     if state.autopot.status().active {
         return Err("Detén AutoPot antes de buscar una dirección de memoria".into());
     }
-    let pid = state.game.sole_running_pid()?;
+    let identity = state.game.sole_running_identity()?;
     emit_tool_log_opt(
         Some(&app),
-        format!("[Presence] Escaneo de nivel PID={pid} nv={current_level}"),
+        format!(
+            "[Presence] Escaneo de nivel PID={} nv={current_level}",
+            identity.pid
+        ),
     );
     let result = state
         .autopot
         .begin_level_scan(
-            pid,
+            identity,
             current_level,
             parse_address_override(name_address.as_deref()),
             parse_address_override(hp_base.as_deref()),
@@ -227,15 +232,18 @@ pub async fn begin_autopot_map_scan(
     if state.autopot.status().active {
         return Err("Detén AutoPot antes de buscar una dirección de memoria".into());
     }
-    let pid = state.game.sole_running_pid()?;
+    let identity = state.game.sole_running_identity()?;
     emit_tool_log_opt(
         Some(&app),
-        format!("[Presence] Escaneo de mapa PID={pid} map={map_name}"),
+        format!(
+            "[Presence] Escaneo de mapa PID={} map={map_name}",
+            identity.pid
+        ),
     );
     let result = state
         .autopot
         .begin_map_scan(
-            pid,
+            identity,
             map_name,
             parse_address_override(name_address.as_deref()),
             parse_address_override(hp_base.as_deref()),

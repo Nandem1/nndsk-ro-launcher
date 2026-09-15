@@ -296,6 +296,8 @@ mod tests {
         let runtime = ClientRuntimeGuard {
             session: SessionOwnership::Direct,
             memory: None,
+            memory_access: None,
+            profile_memory: None,
         };
         game.mark_running(reservation, registered, runtime).unwrap();
         let leftover = identity(1);

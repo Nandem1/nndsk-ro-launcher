@@ -42,6 +42,7 @@ pub async fn launch_game(
             input: &state.input,
             presence: &state.presence,
             sessions: &state.sessions,
+            memory: &state.memory,
         },
         client_id,
         server,

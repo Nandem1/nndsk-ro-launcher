@@ -45,6 +45,12 @@ impl<M: MemoryReader, I: KeyPressWriter> AutopotEngine<M, I> {
         self.hp_pot_count = 0;
     }
 
+    pub fn replace_memory(&mut self, memory: M) {
+        self.memory = memory;
+        self.cached_name.clear();
+        self.tick_count = 0;
+    }
+
     pub fn config(&self) -> &AutopotConfig {
         &self.config
     }
@@ -258,6 +264,55 @@ mod tests {
         let mut e = engine(900, 1000, 500, 500);
         e.tick().unwrap();
         assert_eq!(*e.memory.slice_reads.lock().unwrap(), 1);
+    }
+
+    #[test]
+    fn replace_memory_switches_the_reader_used_on_tick() {
+        let profile = ClientProfile {
+            id: "test".into(),
+            label: "test".into(),
+            exe_names: vec![],
+            hp_base: 0x1000,
+            name_address: 0x2000,
+        };
+        let mut data_a = HashMap::new();
+        data_a.insert(0x1000, 700u32);
+        data_a.insert(0x1004, 1000u32);
+        data_a.insert(0x1008, 500u32);
+        data_a.insert(0x100C, 500u32);
+        let mut data_b = HashMap::new();
+        data_b.insert(0x1000, 900u32);
+        data_b.insert(0x1004, 1000u32);
+        data_b.insert(0x1008, 500u32);
+        data_b.insert(0x100C, 500u32);
+        let mut engine = AutopotEngine::new(
+            MockMemory {
+                data: data_a,
+                name: "A".into(),
+                slice_reads: Mutex::new(0),
+            },
+            MockInput {
+                pressed: Mutex::new(vec![]),
+            },
+            AutopotConfig {
+                hp_percent: 80,
+                sp_percent: 50,
+                hp_key: "F8".into(),
+                sp_key: "F9".into(),
+                ..Default::default()
+            },
+            profile.clone(),
+        );
+        engine.tick().unwrap();
+        assert!(engine.tick().unwrap().potted_hp);
+        engine.replace_memory(MockMemory {
+            data: data_b,
+            name: "B".into(),
+            slice_reads: Mutex::new(0),
+        });
+        let tick = engine.tick().unwrap();
+        assert!(!tick.potted_hp);
+        assert_eq!(tick.cur_hp, 900);
     }
 
     #[test]

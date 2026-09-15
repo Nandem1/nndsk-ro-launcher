@@ -74,12 +74,18 @@ impl ProcessState {
                 Some(identity.pid),
             ),
         };
+        let (memory_access, profile_memory) = match self {
+            Self::Running { runtime, .. } => (runtime.memory_access, runtime.profile_memory),
+            _ => (None, None),
+        };
         GameClientSnapshot {
             client_id: metadata.client_id.clone(),
             server_id: metadata.server_id.clone(),
             server_name: metadata.server_name.clone(),
             status,
             pid,
+            memory_access,
+            profile_memory,
         }
     }
 }
@@ -293,6 +299,34 @@ impl GameProcessHandle {
         Ok(identity.pid)
     }
 
+    pub fn sole_running_identity(&self) -> Result<ProcessIdentity, String> {
+        let state = self.lock()?;
+        if state.clients.is_empty() {
+            return Err("No hay ningún cliente en ejecución".to_string());
+        }
+        if state.clients.len() != 1 {
+            return Err(
+                "Las herramientas sólo están disponibles cuando hay exactamente un cliente abierto"
+                    .to_string(),
+            );
+        }
+        let client = state.clients.values().next().expect("len checked");
+        match client {
+            ProcessState::Running {
+                identity,
+                stop_requested: false,
+                ..
+            } => Ok(*identity),
+            ProcessState::Running {
+                stop_requested: true,
+                ..
+            } => Err("El cliente se está cerrando".to_string()),
+            ProcessState::Launching { .. } => {
+                Err("El cliente todavía se está iniciando".to_string())
+            }
+        }
+    }
+
     pub fn request_stop(&self, client_id: &str) -> Result<StopRequest, String> {
         let mut state = self.lock()?;
         let was_only_client = state.clients.len() == 1;
@@ -423,11 +457,22 @@ impl GameProcessHandle {
         true
     }
 
+    pub fn snapshot_for(&self, reservation: LaunchReservation) -> Option<GameClientSnapshot> {
+        let state = self.state.lock().ok()?;
+        state
+            .clients
+            .get(&reservation.generation)
+            .map(ProcessState::snapshot)
+    }
+
     pub fn replace_running(
         &self,
         reservation: LaunchReservation,
         expected: ProcessIdentity,
         replacement: ProcessIdentity,
+        memory_lease: crate::tools::memory_sessions::MemoryLease,
+        memory_access: crate::models::memory::MemoryAccess,
+        profile_memory: crate::models::memory::ProfileMemory,
     ) -> bool {
         let Ok(mut state) = self.state.lock() else {
             return false;
@@ -445,10 +490,14 @@ impl GameProcessHandle {
         match client {
             ProcessState::Running {
                 identity,
+                runtime,
                 stop_requested: false,
                 ..
             } if *identity == expected => {
                 *identity = replacement;
+                runtime.memory = Some(memory_lease);
+                runtime.memory_access = Some(memory_access);
+                runtime.profile_memory = Some(profile_memory);
                 true
             }
             _ => false,
@@ -504,6 +553,8 @@ mod tests {
         ClientRuntimeGuard {
             session: SessionOwnership::Direct,
             memory: None,
+            memory_access: None,
+            profile_memory: None,
         }
     }
 
@@ -587,7 +638,6 @@ mod tests {
             .mark_running(second, identity(84), direct_runtime())
             .unwrap();
         assert!(!process.candidate_available_for_handoff(first, identity(84)));
-        assert!(!process.replace_running(first, identity(42), identity(84)));
     }
 
     #[test]
@@ -602,6 +652,86 @@ mod tests {
             .unwrap();
         assert!(process.contains_identity(&identity(42)));
         assert!(!process.contains_identity(&identity(99)));
+    }
+
+    #[test]
+    fn replace_running_cas_failure_leaves_identity_unchanged() {
+        use crate::models::memory::{MemoryAccess, ProfileMemory};
+        use crate::tools::memory_sessions::{launcher_memory_ancestor, MemorySessionRegistry};
+        use ro_tools_linux::capture_process_identity;
+
+        let process = GameProcessHandle::new();
+        let reservation = launch(&process, "first");
+        let registry = MemorySessionRegistry::new();
+        let identity = capture_process_identity(std::process::id()).expect("self");
+        let lease = registry
+            .register(identity, launcher_memory_ancestor())
+            .expect("register");
+        let runtime = ClientRuntimeGuard {
+            session: SessionOwnership::Direct,
+            memory: Some(lease),
+            memory_access: Some(MemoryAccess::ProcessVmReadv),
+            profile_memory: Some(ProfileMemory::Valid),
+        };
+        process
+            .mark_running(reservation, identity, runtime)
+            .expect("running");
+        let replacement = ProcessIdentity {
+            pid: identity.pid,
+            start_time: identity.start_time + 1,
+        };
+        let new_lease = registry
+            .register(identity, launcher_memory_ancestor())
+            .expect("reregister");
+        assert!(!process.replace_running(
+            reservation,
+            replacement,
+            identity,
+            new_lease,
+            MemoryAccess::ProcMem,
+            ProfileMemory::InvalidRead,
+        ));
+        let snapshot = process.snapshot_for(reservation).expect("snapshot");
+        assert_eq!(snapshot.pid, Some(identity.pid));
+        assert_eq!(snapshot.memory_access, Some(MemoryAccess::ProcessVmReadv));
+    }
+
+    #[test]
+    fn replace_running_success_updates_snapshot_fields() {
+        use crate::models::memory::{MemoryAccess, ProfileMemory};
+        use crate::tools::memory_sessions::{launcher_memory_ancestor, MemorySessionRegistry};
+        use ro_tools_linux::capture_process_identity;
+
+        let process = GameProcessHandle::new();
+        let reservation = launch(&process, "first");
+        let registry = MemorySessionRegistry::new();
+        let identity = capture_process_identity(std::process::id()).expect("self");
+        let lease = registry
+            .register(identity, launcher_memory_ancestor())
+            .expect("register");
+        let runtime = ClientRuntimeGuard {
+            session: SessionOwnership::Direct,
+            memory: Some(lease),
+            memory_access: Some(MemoryAccess::ProcessVmReadv),
+            profile_memory: Some(ProfileMemory::NotConfigured),
+        };
+        process
+            .mark_running(reservation, identity, runtime)
+            .expect("running");
+        let new_lease = registry
+            .register(identity, launcher_memory_ancestor())
+            .expect("reregister");
+        assert!(process.replace_running(
+            reservation,
+            identity,
+            identity,
+            new_lease,
+            MemoryAccess::ProcMem,
+            ProfileMemory::Valid,
+        ));
+        let snapshot = process.snapshot_for(reservation).expect("snapshot");
+        assert_eq!(snapshot.memory_access, Some(MemoryAccess::ProcMem));
+        assert_eq!(snapshot.profile_memory, Some(ProfileMemory::Valid));
     }
 
     #[test]

@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::time::Duration;
 
 use ro_tools_core::ClientProfile;

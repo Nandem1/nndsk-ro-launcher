@@ -12,6 +12,11 @@ import { useLauncherStore } from '../launcher/launcher.store'
 import { useUiModeStore } from '../../app/uiMode.store'
 import { statPercent } from './autopot.logic'
 import { useAutopot } from './useAutopot'
+import {
+  memoryAccessAction,
+  memoryAccessLabel,
+  memoryAccessUsable,
+} from './memoryAccess.logic'
 import { api } from '../../shared/api'
 import type { ClientProfile } from '../../shared/types'
 import { MemoryScannerModal } from './MemoryScannerModal'
@@ -70,6 +75,9 @@ export function AutopotPanel() {
     useAutopot(server)
   const launching = useLauncherStore((s) => s.status === 'launching')
   const multipleClients = useLauncherStore((s) => s.clients.length > 1)
+  const clientMemoryAccess = useLauncherStore((s) =>
+    s.clients.length === 1 ? s.clients[0].memoryAccess : null,
+  )
   const hero = useUiModeStore((s) => s.mode === 'ingame')
   const available = isRunning && !!server
   const minimumDelayMs = 10
@@ -90,8 +98,14 @@ export function AutopotPanel() {
     void api.listClientProfiles().then(setProfiles).catch(console.error)
   }, [])
 
-  const showProbeHint =
-    available && config.enabled && status.active && status.maxHp === 0 && !error
+  const effectiveMemoryAccess = status.memoryAccess ?? clientMemoryAccess
+  const memoryReady = memoryAccessUsable(effectiveMemoryAccess)
+  const memoryAction = memoryAccessAction(effectiveMemoryAccess)
+  const showProfileHint =
+    available &&
+    config.enabled &&
+    (status.profileMemory === 'addressUnmapped' ||
+      status.profileMemory === 'invalidRead')
 
   useEffect(() => {
     if (!available || status.maxHp <= 0) {
@@ -147,9 +161,11 @@ export function AutopotPanel() {
     available && (status.active || config.enabled) ? status.maxSp : 0
 
   const tone = resolveToolTone(
-    available,
-    config.enabled && status.active,
-    !!error,
+    available && memoryReady,
+    config.enabled &&
+      status.active &&
+      memoryAccessUsable(effectiveMemoryAccess),
+    !!error || (available && !memoryReady),
   )
 
   return (
@@ -361,9 +377,15 @@ export function AutopotPanel() {
         <p className="text-[10px] leading-snug min-h-[calc(1em*1.375)]">
           {error && available ? (
             <span className="text-red-400/90">{error}</span>
-          ) : showProbeHint ? (
+          ) : available && effectiveMemoryAccess && !memoryReady ? (
             <span className="text-amber-500/90">
-              HP/SP en cero — revisa Tools en Logs.
+              {memoryAccessLabel(effectiveMemoryAccess)}
+              {memoryAction ? ` ${memoryAction}` : ''}
+            </span>
+          ) : showProfileHint ? (
+            <span className="text-amber-500/90">
+              La dirección del perfil no es válida; usa Encontrar o revisa el
+              perfil.
             </span>
           ) : null}
         </p>

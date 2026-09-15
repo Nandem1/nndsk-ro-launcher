@@ -12,15 +12,16 @@ pub fn session_supervisor_enabled() -> bool {
 }
 
 #[allow(unused_imports)]
+pub use crate::tools::memory_sessions::MemoryLease;
+#[allow(unused_imports)]
 pub use crate::utils::RunnerInvocation;
 #[allow(unused_imports)]
 pub use client::find_ro_sessiond;
 #[allow(unused_imports)]
 pub use exec::{RunnerOperation, SpawnedRunner};
-#[allow(unused_imports)]
 pub use registry::{
-    ClientLease, ClientRuntimeGuard, OperationLease, ProcessExit, RunnerSessionRegistry,
-    SessionError, SessionOwnership, SupervisedProcess,
+    ClientRuntimeGuard, OperationLease, ProcessExit, RunnerSessionRegistry, SessionError,
+    SessionOwnership, SupervisedProcess,
 };
 
 #[cfg(test)]

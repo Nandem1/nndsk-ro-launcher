@@ -17,12 +17,26 @@ export interface ExitEventPayload {
 
 export type GameClientStatus = 'launching' | 'running' | 'stopping'
 
+export type MemoryAccess =
+  | 'processVmReadv'
+  | 'procMem'
+  | 'noReadableWritableRegion'
+  | 'outsideSupervisor'
+  | 'yamaDenied'
+  | 'processExitedOrReused'
+  | 'backendError'
+
+export type ProfileMemory =
+  'notConfigured' | 'addressUnmapped' | 'invalidRead' | 'valid'
+
 export interface GameClientSnapshot {
   clientId: string
   serverId: string
   serverName: string
   status: GameClientStatus
   pid: number | null
+  memoryAccess?: MemoryAccess | null
+  profileMemory?: ProfileMemory | null
 }
 
 export interface AppSettings {
@@ -63,6 +77,8 @@ export interface AutopotStatusEvent {
   spPercent: number
   characterName: string
   error?: string | null
+  memoryAccess?: MemoryAccess | null
+  profileMemory?: ProfileMemory | null
 }
 
 export interface GearSwitchRule {
@@ -106,6 +122,8 @@ export interface AutobuffStatusEvent {
   lastAppliedRule?: string | null
   delayMs: number
   error?: string | null
+  memoryAccess?: MemoryAccess | null
+  profileMemory?: ProfileMemory | null
 }
 
 export interface SpammerStatusEvent {

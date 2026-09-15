@@ -11,6 +11,8 @@ use tokio::process::Child;
 use tokio::sync::Mutex as AsyncMutex;
 use uuid::Uuid;
 
+use crate::models::memory::{MemoryAccess, ProfileMemory};
+use crate::tools::memory_sessions::MemoryLease;
 use crate::utils::{RunnerInvocation, RunnerKind, WineContext};
 
 use super::bootstrap::bootstrap_prefix_for_supervisor;
@@ -88,18 +90,20 @@ pub enum SessionOwnership {
     Supervised(ClientLease),
 }
 
-pub struct MemoryLease;
-
 pub struct ClientRuntimeGuard {
     #[allow(dead_code)]
     pub session: SessionOwnership,
     pub memory: Option<MemoryLease>,
+    pub memory_access: Option<MemoryAccess>,
+    pub profile_memory: Option<ProfileMemory>,
 }
 
 impl std::fmt::Debug for ClientRuntimeGuard {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ClientRuntimeGuard")
             .field("memory", &self.memory.is_some())
+            .field("memory_access", &self.memory_access)
+            .field("profile_memory", &self.profile_memory)
             .finish_non_exhaustive()
     }
 }
@@ -117,6 +121,12 @@ impl Drop for ClientLease {
 
 pub struct OperationLease {
     session: Arc<RunnerSessionInner>,
+}
+
+impl OperationLease {
+    pub fn supervisor_identity(&self) -> ProcessIdentity {
+        self.session.supervisor_identity
+    }
 }
 
 impl Drop for OperationLease {

@@ -34,7 +34,6 @@ pub struct GameState {
     pub input: InputGateway,
     pub presence: PresenceHandle,
     pub sessions: RunnerSessionRegistry,
-    #[allow(dead_code)]
     pub memory: MemorySessionRegistry,
 }
 

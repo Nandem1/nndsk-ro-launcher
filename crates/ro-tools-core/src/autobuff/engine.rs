@@ -38,6 +38,10 @@ impl<M: MemoryReader, I: KeyPressWriter> AutobuffEngine<M, I> {
         self.config = config.clamped();
     }
 
+    pub fn replace_memory(&mut self, memory: M) {
+        self.memory = memory;
+    }
+
     pub fn tick(&mut self) -> Result<AutobuffTick, ToolsError> {
         let statuses = self
             .memory
@@ -168,6 +172,24 @@ mod tests {
             profile(),
         );
         assert_eq!(engine.tick().unwrap().applied_rule.as_deref(), Some("AGI"));
+    }
+
+    #[test]
+    fn replace_memory_switches_status_reads() {
+        let input = Input(Mutex::new(vec![]));
+        let mut engine = AutobuffEngine::new(
+            Memory(vec![0; 100]),
+            input,
+            AutobuffConfig {
+                enabled: true,
+                delay_ms: 300,
+                rules: vec![rule(3)],
+            },
+            profile(),
+        );
+        assert_eq!(engine.tick().unwrap().applied_rule.as_deref(), Some("AGI"));
+        engine.replace_memory(Memory(vec![3; 100]));
+        assert_eq!(engine.tick().unwrap().applied_rule, None);
     }
 
     #[test]
