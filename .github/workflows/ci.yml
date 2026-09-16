@@ -36,5 +36,5 @@ jobs:
       - run: cargo fmt --all -- --check
       - name: Build sidecars
         run: cargo build -p ro-inputd -p ro-sessiond
-      - run: cargo clippy --workspace --all-targets -- -D warnings
-      - run: cargo test --workspace
+      - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+      - run: cargo test --workspace --all-features

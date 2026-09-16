@@ -1,8 +1,10 @@
-# Plan de implementación: supervisión de sesiones Wine y acceso a memoria
+# Registro final: supervisión de sesiones Wine y acceso a memoria
 
-Estado: implementado y cerrado. Validado en host con `kernel.yama.ptrace_scope=1`
-(SakuraRO, Wine 7.16, `tauri:dev`): `wineserver`/`ragexe.exe` heredan de `ro-sessiond`;
-AutoPot, AutoBuff y Spammer estables. Rollback de una release: `RO_LAUNCHER_SESSION_SUPERVISOR=0`.
+Estado: finalizado y archivado el 15 de septiembre de 2026. La validación funcional del host con
+`kernel.yama.ptrace_scope=1` (SakuraRO, Wine 7.16, `tauri:dev`) confirmó que
+`wineserver`/`ragexe.exe` heredan de `ro-sessiond` y que AutoPot, AutoBuff y Spammer permanecen
+estables. La auditoría final endureció entorno, rollback, señales, protocolo, concurrencia y
+redacción. Rollback de una release: `RO_LAUNCHER_SESSION_SUPERVISOR=0`.
 Alcance: Linux; Wine, Proton y UMU
 Objetivo: permitir que AutoPot, AutoBuff y Discord Rich Presence lean el cliente RO con
 `kernel.yama.ptrace_scope=1`, sin requerir `sudo`, capabilities, cambios globales de sysctl,
@@ -902,9 +904,11 @@ La implementación estará terminada únicamente cuando, con `ptrace_scope=1` y 
 6. No queden procesos huérfanos, zombies, prefixes bloqueados ni cambios globales de seguridad.
 7. La suite completa, la matriz manual, el AppImage y su instalación hayan sido verificados.
 
-Cierre (2026-09-14): criterios 1–6 comprobados en el host del autor con SakuraRO, Wine 7.16 y
+Cierre funcional (2026-09-14): criterios 1–6 comprobados en el host del autor con SakuraRO, Wine 7.16 y
 `ptrace_scope=1` (`ragexe.exe`/`wineserver` bajo `ro-sessiond`; AutoPot/AutoBuff/Spammer estables).
-El AppImage con `install:nndsk` es la entrega de esta fase. Rollback: `RO_LAUNCHER_SESSION_SUPERVISOR=0`.
+La matriz de §8 continúa como gate de regresión para cambios futuros; no representa trabajo de
+implementación pendiente. El AppImage instalado con `install:nndsk` es la entrega de esta fase.
+Rollback: `RO_LAUNCHER_SESSION_SUPERVISOR=0`.
 
 ## 13. Decisiones de implementación bloqueadas
 
@@ -1050,3 +1054,34 @@ bootstrap y `reported_version`.
   emergencia TERM/KILL, no a espera infinita.
 - El sidecar repite scan de descendencia + señal hasta el deadline y sólo emite `Stopped` tras
   `ECHILD`; cualquier hijo no recolectado convierte la sesión en `Failed`.
+
+## 14. Auditoría y cierre definitivo
+
+La auditoría final corrigió estas fronteras sistémicas antes de archivar el documento:
+
+- el `PATH` explícito de Wine se deriva del entorno AppImage ya sanitizado;
+- un reset fallido apaga y verifica el prefix nuevo antes de retirar sus archivos o restaurar el
+  respaldo; si no puede hacerlo, conserva ambos estados;
+- todas las señales del launcher y de `ro-sessiond` revalidan `ProcessIdentity` inmediatamente antes
+  de `kill(2)`;
+- el loop NDJSON drena líneas completas ya almacenadas y el protocolo v1 serializa todos sus campos
+  canónicos en `camelCase`;
+- variables de ownership heredadas (`WINEPREFIX`, `STEAM_COMPAT_DATA_PATH`) no sustituyen al spec;
+- las redacciones se acumulan durante la vida de la sesión, `shutdown_all` corre concurrentemente y
+  los exits consumidos se retiran del registro;
+- CI ejecuta todos los targets con todas las features, incluido el fixture real de reparenting y 100
+  ciclos sin zombies;
+- los diagnósticos conservan la relación con el ancestro, los logs de launch usan tokens de path y
+  AutoPot/AutoBuff no se presentan como habilitables sin backend de memoria válido.
+
+Validación automatizada de cierre: tests frontend y Rust completos, `rustfmt`, Clippy, lint, format y
+build frontend; fixture `orphan_reparent` con feature; build/AppImage e instalación local. La matriz
+funcional con clientes RO corresponde a la validación del host descrita arriba y debe repetirse ante
+cambios futuros de runner, prefix, lifecycle, gráficos, WebView2 o sidecars.
+
+Validación del artefacto instalado: el AppImage instalado arrancó el mismo `ro-sessiond` embebido y
+la sesión real conservó la jerarquía `ro-launcher` → `ro-sessiond` → `wineserver`/SakuraRO/
+`ragexe.exe`. El sidecar no heredó `APPDIR`, rutas del montaje AppImage, `WINEPREFIX` ni
+`STEAM_COMPAT_DATA_PATH`; el juego recibió su `WINEPREFIX` explícito. Esta comprobación final se hizo
+con el host temporalmente en `ptrace_scope=0`; no sustituye la aceptación funcional anterior con
+`ptrace_scope=1` registrada al inicio del documento.

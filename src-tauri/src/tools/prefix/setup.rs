@@ -71,7 +71,7 @@ pub async fn setup_runtime_prefix(
                     .read_dir()
                     .is_ok_and(|mut entries| entries.next().is_none())));
 
-    let op = RunnerOperation::begin(Some(app), sessions, game, ctx).await?;
+    let mut op = RunnerOperation::begin(Some(app), sessions, game, ctx).await?;
     let _operation = OperationGuard::acquire("prefix", root)?;
 
     let result = async {
@@ -81,19 +81,26 @@ pub async fn setup_runtime_prefix(
     .await;
 
     if result.is_err() && clean_managed_start && root.exists() && !root.is_symlink() {
-        if let Ok(invocation) = ctx.resolved.shutdown_invocation(&ctx.prefix) {
-            let _ = op
-                .run_shutdown_ok(invocation, "apagado del entorno incompleto")
-                .await;
-        }
-        if let Err(error) = std::fs::remove_dir_all(root) {
-            let _ = emit_log(
-                app,
-                format!(
-                    "No se pudo limpiar el entorno inicial incompleto {}: {error}",
-                    root.display()
-                ),
-            );
+        match op.quiesce_for_restore().await {
+            Ok(()) => {
+                if let Err(error) = std::fs::remove_dir_all(root) {
+                    let _ = emit_log(
+                        app,
+                        format!(
+                            "No se pudo limpiar el entorno inicial incompleto {}: {error}",
+                            root.display()
+                        ),
+                    );
+                }
+            }
+            Err(error) => {
+                let _ = emit_log(
+                    app,
+                    format!(
+                        "El entorno inicial incompleto se conservó porque no pudo apagarse con seguridad: {error}"
+                    ),
+                );
+            }
         }
     }
     result
@@ -108,7 +115,7 @@ pub async fn reset_runtime_prefix(
 ) -> Result<(), String> {
     emit_progress(app, "Preparando reconstrucción del entorno...", 40)?;
 
-    let op = RunnerOperation::begin(Some(app), sessions, game, ctx).await?;
+    let mut op = RunnerOperation::begin(Some(app), sessions, game, ctx).await?;
     let _operation = OperationGuard::acquire("prefix", Path::new(&ctx.prefix))?;
 
     shutdown_existing_prefix_for_reset(app, &op, ctx).await?;
@@ -149,8 +156,31 @@ pub async fn reset_runtime_prefix(
             Ok(())
         }
         Err(error) => {
+            if let Err(cleanup_error) = op.quiesce_for_restore().await {
+                let backup_note = backup
+                    .as_ref()
+                    .map(|path| {
+                        format!(
+                            " El entorno anterior sigue preservado en {}.",
+                            path.display()
+                        )
+                    })
+                    .unwrap_or_default();
+                return Err(format!(
+                    "{error}. No se restauró el entorno anterior porque el entorno nuevo no pudo apagarse por completo: {cleanup_error}.{backup_note}"
+                ));
+            }
             if root.exists() {
-                let _ = std::fs::remove_dir_all(root);
+                if root.is_symlink() {
+                    return Err(format!(
+                        "{error}. No se restauró el entorno anterior porque el entorno nuevo fue reemplazado por un enlace simbólico"
+                    ));
+                }
+                std::fs::remove_dir_all(root).map_err(|remove_error| {
+                    format!(
+                        "{error}. No se pudo retirar el entorno nuevo; el respaldo anterior se conservó: {remove_error}"
+                    )
+                })?;
             }
             if let Some(backup) = backup {
                 std::fs::rename(&backup, root).map_err(|restore_error| {

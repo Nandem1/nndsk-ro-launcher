@@ -39,7 +39,7 @@ Rich Presence. A fix is acceptable only if it keeps these contracts:
 - El supervisor `ro-sessiond` está activo por defecto. Restaura el acceso a memoria
   con `kernel.yama.ptrace_scope=1` sin sudo ni sysctl. Rollback de una release:
   `RO_LAUNCHER_SESSION_SUPERVISOR=0`. No debilitar la política del host ni dejar
-  un supervisor a medias. El contrato detallado sigue en `PTRACE_SESSION_SUPERVISOR_PLAN.md`.
+  un supervisor a medias. El contrato detallado sigue en `docs/PTRACE_SESSION_SUPERVISOR_PLAN.md`.
 
 ## Repository Map and Ownership
 
@@ -63,6 +63,35 @@ truly share the abstraction. Do not put business logic in React components or Ta
 wrappers. Prefer small pure functions with focused tests over effects embedded in orchestration.
 
 ## Working Method
+
+### Completion protocol: implement, then try to disprove it
+
+For any change that crosses process, protocol, persistence, packaging, or lifecycle boundaries,
+work in two explicit passes even when one agent performs both roles:
+
+1. **Implementation pass:** derive acceptance criteria from the request and repository invariants,
+   trace the caller and callee, and implement the smallest coherent change with focused tests.
+2. **Adversarial review pass:** return to the acceptance criteria and inspect the complete diff as
+   if it came from another author. Try to falsify completion; do not merely confirm the happy path
+   or repeat the implementation rationale.
+
+The adversarial pass must inspect every boundary touched by the change, as applicable:
+
+- serialized producer/consumer field names, framing, buffering, batching, size limits, and EOF;
+- inherited environment versus explicit overrides, including AppImage source, bundle, and installed
+  runtime behavior;
+- process identity from capture through every memory read and signal, including exit and PID reuse;
+- leases, counters, locks, cancellation, timeouts, shutdown ordering, and concurrent clients;
+- filesystem mutation and rollback while subprocesses or sidecars may still own the target;
+- source binary versus bundled sidecar versus installed artifact;
+- disabled features, fallback paths, error cleanup, and repeated cycles without leaks or zombies.
+
+For each relevant seam, add or run a test that can fail for the suspected defect: multiple protocol
+messages in one write, partial input, stale identity, inherited conflicting environment, cleanup
+failure, cancellation, concurrent shutdown, or repeated launch/stop cycles. A green unit suite does
+not replace a runtime or packaging check when the contract exists only in the assembled artifact.
+If an acceptance condition cannot be exercised in the current environment, report it explicitly;
+do not silently convert inference into validation.
 
 ### 1. Establish the baseline before editing
 
@@ -184,8 +213,8 @@ npm run build
 # Rust focused/full
 cargo test -p <crate> test_name
 cargo fmt --all -- --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo test --workspace --all-features
 ```
 
 Before committing any source or runtime behavior change, run the complete frontend and Rust gates
@@ -276,4 +305,4 @@ downloaded runners, generated bundles, crash cores, or server-specific executabl
 the user one exact read-only command and explain what evidence it obtains; the user executes it.
 
 The launcher may automate input and read the user's own game process, but it does not write game
-memory or evade anti-cheat. Keep `PTRACE_SESSION_SUPERVISOR_PLAN.md` aligned with that boundary.
+memory or evade anti-cheat. Keep `docs/PTRACE_SESSION_SUPERVISOR_PLAN.md` aligned with that boundary.

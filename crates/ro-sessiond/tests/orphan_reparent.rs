@@ -143,6 +143,17 @@ impl SessionClient {
         stdin.flush().unwrap();
     }
 
+    fn send_batch(&mut self, requests: &[SessionRequest]) {
+        let mut payload = String::new();
+        for request in requests {
+            payload.push_str(&serde_json::to_string(request).unwrap());
+            payload.push('\n');
+        }
+        let stdin = self.child.stdin.as_mut().expect("stdin");
+        stdin.write_all(payload.as_bytes()).unwrap();
+        stdin.flush().unwrap();
+    }
+
     fn wait_event(
         &self,
         timeout: Duration,
@@ -420,10 +431,52 @@ fn test_controller_exited_before_inherited_pipe_closes() {
     let _ = fs::remove_dir_all(&dir);
 }
 
+fn test_batched_launch_lines_are_drained_without_another_write() {
+    let dir = std::env::temp_dir().join(format!("ro-sessiond-batch-{}", std::process::id()));
+    let _ = fs::create_dir_all(&dir);
+    let prefix = canonicalize_prefix(&dir);
+    let mut client = SessionClient::spawn(&prefix, std::process::id());
+    client.send(&SessionRequest::Hello {
+        protocol_version: PROTOCOL_VERSION,
+    });
+    client
+        .wait_event(Duration::from_secs(5), |ev| {
+            matches!(ev, SessionEvent::Ready { .. })
+        })
+        .expect("Ready");
+
+    let first = "550e8400-e29b-41d4-a716-446655440010".to_string();
+    let second = "550e8400-e29b-41d4-a716-446655440011".to_string();
+    client.send_batch(&[
+        SessionRequest::Launch {
+            request_id: first.clone(),
+            spec: wine_spec(&prefix, Path::new("/usr/bin/true"), None),
+        },
+        SessionRequest::Launch {
+            request_id: second.clone(),
+            spec: wine_spec(&prefix, Path::new("/usr/bin/true"), None),
+        },
+    ]);
+
+    for expected in [first, second] {
+        client
+            .wait_event(Duration::from_secs(3), |event| {
+                matches!(
+                    event,
+                    SessionEvent::LaunchAccepted { request_id, .. } if request_id == &expected
+                )
+            })
+            .unwrap_or_else(|| panic!("LaunchAccepted missing for {expected}"));
+    }
+    client.shutdown();
+    let _ = fs::remove_dir_all(&dir);
+}
+
 fn main() {
     test_wrong_parent_pid();
     test_incompatible_hello();
     test_controller_exited_before_inherited_pipe_closes();
+    test_batched_launch_lines_are_drained_without_another_write();
     test_handshake_and_orphan();
     test_hundred_true_cycles();
     eprintln!("orphan_reparent integration tests passed");

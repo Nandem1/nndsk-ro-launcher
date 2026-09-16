@@ -1,6 +1,8 @@
 use crate::state::GameProcessHandle;
 use ro_session_protocol::{clamp_grace_ms, ProcessSpec};
-use ro_tools_linux::{capture_process_identity, verify_process_identity, ProcessIdentity};
+use ro_tools_linux::{
+    capture_process_identity, signal_process_identity, verify_process_identity, ProcessIdentity,
+};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
@@ -209,18 +211,17 @@ impl SupervisedProcess {
 }
 
 fn send_signal(identity: &ProcessIdentity, signal: i32) -> Result<(), SessionError> {
-    if !verify_process_identity(identity) {
-        return Ok(());
+    signal_process_identity(identity, signal)
+        .map(|_| ())
+        .map_err(|error| SessionError::internal(format!("kill pid {}: {error}", identity.pid)))
+}
+
+fn merge_redactions(current: &mut Vec<String>, incoming: &[String]) {
+    for value in incoming.iter().filter(|value| !value.is_empty()) {
+        if !current.contains(value) {
+            current.push(value.clone());
+        }
     }
-    let rc = unsafe { libc::kill(identity.pid as i32, signal) };
-    if rc != 0 {
-        let err = std::io::Error::last_os_error();
-        return Err(SessionError::internal(format!(
-            "kill pid {}: {}",
-            identity.pid, err
-        )));
-    }
-    Ok(())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -471,8 +472,7 @@ impl RunnerSessionRegistry {
 
         {
             let mut guard = session.redactions.lock().unwrap();
-            guard.clear();
-            guard.extend(redactions.iter().cloned());
+            merge_redactions(&mut guard, redactions);
         }
 
         let runner_token = path_log_token(&session.runner.path);
@@ -549,22 +549,37 @@ impl RunnerSessionRegistry {
         }
 
         let result = tokio::time::timeout(SHUTDOWN_ALL_GLOBAL_TIMEOUT, async {
-            let mut errors = Vec::new();
+            let mut shutdowns = tokio::task::JoinSet::new();
             for key in keys {
-                if let Some(session) = self.get_session(&key) {
+                let Some(session) = self.get_session(&key) else {
+                    continue;
+                };
+                let registry = self.clone();
+                shutdowns.spawn(async move {
                     match tokio::time::timeout(
                         SHUTDOWN_ALL_SESSION_TIMEOUT,
-                        self.shutdown_session(&key, &session, None, ShutdownCause::Forced),
+                        registry.shutdown_session(&key, &session, None, ShutdownCause::Forced),
                     )
                     .await
                     {
-                        Ok(Ok(())) => {}
-                        Ok(Err(e)) => errors.push(e),
+                        Ok(Ok(())) => None,
+                        Ok(Err(error)) => Some(error),
                         Err(_) => {
-                            errors.push(SessionError::internal("session shutdown timed out"));
-                            self.force_kill_session(&key, &session).await;
+                            registry.force_kill_session(&key, &session).await;
+                            Some(SessionError::internal("session shutdown timed out"))
                         }
                     }
+                });
+            }
+
+            let mut errors = Vec::new();
+            while let Some(result) = shutdowns.join_next().await {
+                match result {
+                    Ok(Some(error)) => errors.push(error),
+                    Ok(None) => {}
+                    Err(error) => errors.push(SessionError::internal(format!(
+                        "session shutdown task failed: {error}"
+                    ))),
                 }
             }
             errors
@@ -752,9 +767,7 @@ fn runner_anchor(ctx: &WineContext) -> Result<RunnerAnchor, SessionError> {
 }
 
 fn kill_supervisor_identity(identity: &ProcessIdentity) {
-    if verify_process_identity(identity) {
-        let _ = unsafe { libc::kill(identity.pid as i32, libc::SIGKILL) };
-    }
+    let _ = signal_process_identity(identity, libc::SIGKILL);
 }
 
 #[cfg(test)]
@@ -785,6 +798,16 @@ mod integration {
                 Some(OsString::from(prefix.to_string_lossy().as_ref())),
             )],
         }
+    }
+
+    #[test]
+    fn redactions_accumulate_for_overlapping_clients() {
+        let mut current = vec!["first-secret".to_string()];
+        merge_redactions(
+            &mut current,
+            &["second-secret".to_string(), "first-secret".to_string()],
+        );
+        assert_eq!(current, ["first-secret", "second-secret"]);
     }
 
     #[tokio::test]

@@ -30,7 +30,6 @@ pub struct MemorySession {
     reader: Arc<ProcMemoryReader>,
     backend: MemoryBackend,
     access: Mutex<MemoryAccess>,
-    #[allow(dead_code)]
     ancestor: ProcessIdentity,
 }
 
@@ -62,7 +61,8 @@ impl MemorySession {
         let ancestor_pid = match ancestor {
             MemoryAncestor::Supervisor(id) | MemoryAncestor::Launcher(id) => id,
         };
-        let descendant = is_descendant_of(identity.pid, ancestor_pid.pid);
+        let descendant = verify_process_identity(&ancestor_pid)
+            && is_descendant_of(identity.pid, ancestor_pid.pid);
         let maps = fs::read_to_string(format!("/proc/{}/maps", identity.pid))
             .map_err(|error| format!("no se pudo leer maps: {error}"))?;
         let rw_region = first_rw_u32_region(&maps);
@@ -173,13 +173,15 @@ impl MemorySession {
                 let mut probe = [0u8; 4];
                 let vm_errno = self.reader.try_vm_read(address, &mut probe).err();
                 let proc_mem_errno = self.reader.try_proc_mem_read(address, &mut probe).err();
+                let descendant = verify_process_identity(&self.ancestor)
+                    .then(|| is_descendant_of(self.identity.pid, self.ancestor.pid));
                 let diagnostic = self.reader.build_diagnostic(
                     self.identity,
                     address,
                     size,
                     vm_errno,
                     proc_mem_errno,
-                    None,
+                    descendant,
                 );
                 ToolsError::MemoryRead {
                     address,

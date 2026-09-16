@@ -1,5 +1,7 @@
 use ro_session_protocol::PROTOCOL_VERSION;
-use ro_tools_linux::{capture_process_identity, verify_process_identity, ProcessIdentity};
+use ro_tools_linux::{
+    capture_process_identity, signal_process_identity, verify_process_identity, ProcessIdentity,
+};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
@@ -9,7 +11,7 @@ use tokio::time::timeout;
 
 use crate::utils::sanitize_appimage_env;
 
-use super::diagnostics::{emit_session_line, handle_stderr_line, prefix_log_token};
+use super::diagnostics::{emit_session_line, handle_stderr_line, path_log_token, prefix_log_token};
 use super::protocol::SessionProtocol;
 use super::protocol::{canonicalize_prefix_path, ReadyInfo};
 use super::SessionError;
@@ -72,10 +74,10 @@ pub async fn kill_child_by_identity(
     identity: &ProcessIdentity,
 ) -> Result<(), SessionError> {
     if verify_process_identity(identity) {
-        let _ = unsafe { libc::kill(identity.pid as i32, libc::SIGTERM) };
+        let _ = signal_process_identity(identity, libc::SIGTERM);
         let _ = timeout(Duration::from_secs(2), child.wait()).await;
         if verify_process_identity(identity) {
-            let _ = unsafe { libc::kill(identity.pid as i32, libc::SIGKILL) };
+            let _ = signal_process_identity(identity, libc::SIGKILL);
         }
     }
     let _ = timeout(Duration::from_secs(3), child.wait()).await;
@@ -111,7 +113,10 @@ pub async fn spawn_supervisor(
     cmd.kill_on_drop(true);
 
     let mut child = cmd.spawn().map_err(|e| {
-        SessionError::internal(format!("spawn ro-sessiond ({sessiond_path:?}): {e}"))
+        SessionError::internal(format!(
+            "spawn ro-sessiond path={}: {e}",
+            path_log_token(&sessiond_path)
+        ))
     })?;
 
     let stdout = child

@@ -229,11 +229,11 @@ impl SessionProtocol {
         self.set_fatal(err);
     }
 
-    fn completed_exit_for(&self, request_id: &str) -> Option<ControllerExit> {
+    fn take_completed_exit(&self, request_id: &str) -> Option<ControllerExit> {
         self.completed_exits
             .lock()
             .ok()
-            .and_then(|map| map.get(request_id).cloned())
+            .and_then(|mut map| map.remove(request_id))
     }
 
     pub fn try_fatal(&self) -> Option<SessionError> {
@@ -276,6 +276,9 @@ impl SessionProtocol {
                     .ok()
                     .and_then(|mut m| m.remove(&request_id))
                 {
+                    if let Ok(mut completed) = self.completed_exits.lock() {
+                        completed.remove(&request_id);
+                    }
                     let _ = tx.send(Ok(exit));
                 }
                 if let Ok(cb) = self.on_controller_exited.lock() {
@@ -438,7 +441,7 @@ impl SessionProtocol {
     }
 
     pub fn try_controller_exit(&self, request_id: &str) -> Option<ControllerExit> {
-        if let Some(exit) = self.completed_exit_for(request_id) {
+        if let Some(exit) = self.take_completed_exit(request_id) {
             return Some(exit);
         }
         if self.try_fatal().is_some() {
@@ -454,7 +457,7 @@ impl SessionProtocol {
         &self,
         request_id: &str,
     ) -> Result<Option<ControllerExit>, SessionError> {
-        if let Some(exit) = self.completed_exit_for(request_id) {
+        if let Some(exit) = self.take_completed_exit(request_id) {
             return Ok(Some(exit));
         }
         if let Some(err) = self.try_fatal() {
@@ -650,6 +653,7 @@ mod tests {
             .try_controller_exit("req-1")
             .expect("exit should be visible");
         assert_eq!(exit.exit_code, Some(7));
+        assert!(protocol.try_controller_exit("req-1").is_none());
         assert!(protocol.try_controller_exit("other").is_none());
         let _ = child.kill().await;
     }

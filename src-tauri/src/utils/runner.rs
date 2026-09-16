@@ -10,8 +10,8 @@ use crate::utils::{
     apply_prefix_env, ensure_custom_setup_allowed, ensure_managed_path_safe, find_umu_run,
     inspect_prefix, is_executable_file, manifest_matches_location, manifest_matches_runner,
     proton_vkd3d_companions_available, resolve_server_prefix_with_runner, sanitize_appimage_env,
-    winetricks_path, PrefixHealth, PrefixLocation, PrefixScope, ProcessEnv, PREFIX_SCHEMA_VERSION,
-    UMU_RUN_BIN,
+    sanitized_external_path, winetricks_path, PrefixHealth, PrefixLocation, PrefixScope,
+    ProcessEnv, PREFIX_SCHEMA_VERSION, UMU_RUN_BIN,
 };
 
 const DEFAULT_GAME_ID: &str = "0";
@@ -42,6 +42,8 @@ impl RunnerInvocation {
     pub fn into_command(self) -> Command {
         let mut cmd = Command::new(&self.program);
         cmd.args(self.args).current_dir(self.cwd);
+        cmd.env_remove("WINEPREFIX");
+        cmd.env_remove("STEAM_COMPAT_DATA_PATH");
         for (key, value) in self.env {
             match value {
                 Some(val) => {
@@ -100,7 +102,7 @@ fn which_in_path(name: &Path) -> Result<PathBuf, String> {
     let file_name = name
         .file_name()
         .ok_or_else(|| format!("Ruta inválida: {}", name.display()))?;
-    let path_var = std::env::var_os("PATH").unwrap_or_default();
+    let path_var = sanitized_external_path().unwrap_or_default();
     for dir in std::env::split_paths(&path_var) {
         let candidate = dir.join(file_name);
         if is_executable_file(&candidate) {
@@ -115,7 +117,7 @@ fn which_in_path(name: &Path) -> Result<PathBuf, String> {
 
 fn prepend_path_env<E: ProcessEnv>(env: &mut E, bin_dir: &Path) {
     let mut paths = vec![bin_dir.to_path_buf()];
-    if let Some(existing) = std::env::var_os("PATH") {
+    if let Some(existing) = sanitized_external_path() {
         paths.extend(std::env::split_paths(&existing));
     }
     if let Ok(path) = std::env::join_paths(paths) {
@@ -878,6 +880,28 @@ mod tests {
                 .map(|v| v.to_string_lossy().to_string()),
             Some("2".to_string())
         );
+    }
+
+    #[test]
+    fn direct_invocation_clears_inherited_steam_prefix() {
+        let invocation = RunnerInvocation {
+            program: PathBuf::from("/usr/bin/true"),
+            args: vec![],
+            cwd: PathBuf::from("/tmp"),
+            env: vec![(
+                OsString::from("WINEPREFIX"),
+                Some(OsString::from("/tmp/owned-prefix")),
+            )],
+        };
+        let command = invocation.into_command();
+        assert_eq!(
+            env(&command, "WINEPREFIX"),
+            Some("/tmp/owned-prefix".into())
+        );
+        assert!(command
+            .as_std()
+            .get_envs()
+            .any(|(key, value)| key == OsStr::new("STEAM_COMPAT_DATA_PATH") && value.is_none()));
     }
 
     #[test]

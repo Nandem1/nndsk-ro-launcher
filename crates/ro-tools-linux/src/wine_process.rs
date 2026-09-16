@@ -1,4 +1,4 @@
-use std::fs;
+use std::{fs, io};
 
 #[derive(Debug, Clone)]
 pub struct GameProcessCandidate {
@@ -26,6 +26,27 @@ pub fn capture_process_identity(pid: u32) -> Option<ProcessIdentity> {
 /// Verifica que el PID siga apuntando a la misma instancia capturada.
 pub fn verify_process_identity(identity: &ProcessIdentity) -> bool {
     capture_process_identity(identity.pid).as_ref() == Some(identity)
+}
+
+/// Sends a signal only if `pid` still identifies the captured process instance.
+///
+/// `false` means the process exited or the PID was reused before the signal. Callers must treat
+/// that as an already-finished target, never as permission to signal the new process.
+pub fn signal_process_identity(identity: &ProcessIdentity, signal: i32) -> io::Result<bool> {
+    if !verify_process_identity(identity) {
+        return Ok(false);
+    }
+    let rc = unsafe { libc::kill(identity.pid as libc::pid_t, signal) };
+    if rc == 0 {
+        Ok(true)
+    } else {
+        let error = io::Error::last_os_error();
+        if error.raw_os_error() == Some(libc::ESRCH) {
+            Ok(false)
+        } else {
+            Err(error)
+        }
+    }
 }
 
 /// Devuelve procesos visibles que declaran exactamente este WINEPREFIX.
@@ -506,6 +527,8 @@ mod tests {
             ..identity
         };
         assert!(!verify_process_identity(&stale));
+        assert!(!signal_process_identity(&stale, 0).unwrap());
+        assert!(signal_process_identity(&identity, 0).unwrap());
     }
 
     #[test]

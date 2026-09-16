@@ -1,5 +1,7 @@
 use std::path::{Path, PathBuf};
 
+use super::wine::sanitized_external_path;
+
 pub const SYSTEM_WINE_CANDIDATES: &[(&str, &str)] = &[
     ("/usr/bin/wine-cachyos", "Wine CachyOS"),
     ("/usr/bin/wine", "Wine"),
@@ -70,7 +72,7 @@ fn preferred_or_path(preferred: &Path, name: &str) -> Option<PathBuf> {
 }
 
 fn executable_in_path(name: &str) -> Option<PathBuf> {
-    let mut directories: Vec<PathBuf> = std::env::var_os("PATH")
+    let mut directories: Vec<PathBuf> = sanitized_external_path()
         .map(|value| std::env::split_paths(&value).collect())
         .unwrap_or_default();
     directories.push(PathBuf::from("/usr/local/bin"));

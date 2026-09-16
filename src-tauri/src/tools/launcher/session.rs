@@ -2,8 +2,8 @@ use std::collections::HashSet;
 use std::time::Duration;
 
 use ro_tools_linux::{
-    capture_process_identity, find_game_processes, read_ppid, verify_process_identity,
-    ProcessIdentity,
+    capture_process_identity, find_game_processes, read_ppid, signal_process_identity,
+    verify_process_identity, ProcessIdentity,
 };
 use tauri::{AppHandle, Emitter};
 use tokio::time::{sleep, Instant};
@@ -21,7 +21,8 @@ use crate::tools::memory_sessions::{
 use crate::tools::prefix::MANAGED_DXVK_COMPONENT;
 use crate::tools::presence::{overrides_from_autopot, PresenceHandle};
 use crate::tools::runner_sessions::{
-    ClientRuntimeGuard, RunnerOperation, RunnerSessionRegistry, SessionOwnership, SpawnedRunner,
+    path_log_token, prefix_log_token, ClientRuntimeGuard, RunnerOperation, RunnerSessionRegistry,
+    SessionOwnership, SpawnedRunner,
 };
 use crate::tools::runners::ensure_managed_runtime;
 use crate::tools::server_tools;
@@ -139,12 +140,10 @@ pub async fn launch_game(
         );
     }
     if use_managed_dxvk {
+        let prefix_token = prefix_log_token(std::path::Path::new(&ctx.prefix));
         emit_tool_log_opt(
             Some(&app),
-            format!(
-                "[Graphics] Wine 7.16 old WoW64 + DXVK 2.6.2 | logs={}",
-                crate::utils::dxvk_log_path(&ctx.prefix).display()
-            ),
+            format!("[Graphics] Wine 7.16 old WoW64 + DXVK 2.6.2 | prefix={prefix_token}"),
         );
     }
     if wine_7_16 {
@@ -190,7 +189,7 @@ pub async fn launch_game(
         format!(
             "[Launch] controller={controller_pid} runner={} prefix={} supervised={supervised_session}",
             ctx.resolved.kind_label(),
-            ctx.prefix
+            prefix_log_token(std::path::Path::new(&ctx.prefix))
         ),
     );
 
@@ -303,7 +302,9 @@ pub async fn launch_game(
         Some(&app),
         format!(
             "[Launch] cliente detectado PID={} exe={} prefix={}",
-            identity.pid, game_exe, ctx.prefix
+            identity.pid,
+            path_log_token(std::path::Path::new(&game_exe)),
+            prefix_log_token(std::path::Path::new(&ctx.prefix))
         ),
     );
 
@@ -597,14 +598,14 @@ pub async fn stop_game(state: &GameState, client_id: &str) -> Result<(), String>
     } else {
         Vec::new()
     };
-    let process_errors = terminate_processes(request.identities).await;
+    let process_errors = terminate_processes(request.identities);
     combine_stop_errors(process_errors, tool_errors)
 }
 
 pub async fn stop_all_games(state: &GameState) -> Result<(), String> {
     let tool_errors = stop_combat_tools(state).await;
     let identities = state.game.request_stop_all()?;
-    let process_errors = terminate_processes(identities).await;
+    let process_errors = terminate_processes(identities);
     combine_stop_errors(process_errors, tool_errors)
 }
 
@@ -624,26 +625,11 @@ async fn stop_combat_tools(state: &GameState) -> Vec<String> {
         .collect()
 }
 
-async fn terminate_processes(identities: Vec<ProcessIdentity>) -> Vec<String> {
+fn terminate_processes(identities: Vec<ProcessIdentity>) -> Vec<String> {
     let mut process_errors = Vec::new();
     for identity in identities {
-        if verify_process_identity(&identity) {
-            let status = match tokio::process::Command::new("kill")
-                .args(["-TERM", &identity.pid.to_string()])
-                .status()
-                .await
-            {
-                Ok(status) => status,
-                Err(error) => {
-                    process_errors.push(format!("No se pudo enviar TERM al proceso: {error}"));
-                    continue;
-                }
-            };
-            if !status.success() {
-                process_errors.push(format!(
-                    "No se pudo detener el proceso (kill terminó con {status})"
-                ));
-            }
+        if let Err(error) = signal_process_identity(&identity, libc::SIGTERM) {
+            process_errors.push(format!("No se pudo enviar TERM al proceso: {error}"));
         }
     }
     process_errors

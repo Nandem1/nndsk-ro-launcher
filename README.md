@@ -123,13 +123,17 @@ válido no se adoptan ni eliminan automáticamente.
 
 RO-Launcher arranca un sidecar `ro-sessiond` por prefix activo, se declara child subreaper y es padre de wineserver, patcher y `ragexe.exe`. Así Yama (`ptrace_scope=1`) permite leer el cliente sin `sudo` ni cambiar `/etc`.
 
+El diseño y su cierre auditado están documentados en [`docs/PTRACE_SESSION_SUPERVISOR_PLAN.md`](docs/PTRACE_SESSION_SUPERVISOR_PLAN.md).
+
 AutoPot, AutoBuff y Discord Rich Presence comparten una `MemorySession` por cliente. No hace falta `ptrace_scope=0`.
 
 Si AutoPot o AutoBuff muestran **Proceso fuera del supervisor** o **Permiso denegado por Yama**, cierra instancias antiguas y relanza el juego desde RO-Launcher. No uses `ptrace_scope=0` ni cambies `sysctl`.
 
 Rollback de una release: `RO_LAUNCHER_SESSION_SUPERVISOR=0` restaura el spawn directo del runner. Sin esa variable el supervisor está activo. La variable desaparecerá en la release siguiente.
 
-Los logs no incluyen paths personales, credenciales ni contenido de memoria.
+La telemetría de sesión usa tokens para los paths y no incluye credenciales ni contenido de
+memoria. Los mensajes locales de recuperación pueden mostrar la ruta exacta de un respaldo para que
+el usuario pueda restaurarlo manualmente.
 
 ## Terceros
 

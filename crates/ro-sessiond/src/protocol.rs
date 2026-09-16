@@ -78,6 +78,10 @@ impl<R: Read> BoundedLineReader<R> {
         }
     }
 
+    pub fn has_buffered_line(&self) -> bool {
+        self.buf.contains(&b'\n')
+    }
+
     /// Returns Ok(None) on EOF, Ok(Some(line)) on a line, Err on protocol violation.
     pub fn read_line(&mut self) -> io::Result<Option<String>> {
         loop {
@@ -187,5 +191,14 @@ mod tests {
         assert_eq!(err.kind(), io::ErrorKind::InvalidData);
         let next = reader.read_line().unwrap().expect("hello line");
         assert_eq!(next, hello);
+    }
+
+    #[test]
+    fn complete_buffered_line_is_visible_without_another_read() {
+        let mut reader = BoundedLineReader::new(Cursor::new(b"first\nsecond\n"));
+        assert_eq!(reader.read_line().unwrap().as_deref(), Some("first"));
+        assert!(reader.has_buffered_line());
+        assert_eq!(reader.read_line().unwrap().as_deref(), Some("second"));
+        assert!(!reader.has_buffered_line());
     }
 }

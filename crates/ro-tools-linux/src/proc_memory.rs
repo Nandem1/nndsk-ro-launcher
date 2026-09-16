@@ -265,8 +265,7 @@ pub fn scan_writable_u32_with_reader(
 }
 
 pub fn find_first_writable_bytes(pid: u32, needle: &[u8]) -> Result<Option<u32>, ToolsError> {
-    let mut found = find_all_writable_bytes(pid, needle)?;
-    Ok(found.pop())
+    Ok(find_all_writable_bytes(pid, needle)?.into_iter().next())
 }
 
 pub fn find_all_writable_bytes(pid: u32, needle: &[u8]) -> Result<Vec<u32>, ToolsError> {

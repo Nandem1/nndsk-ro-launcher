@@ -67,8 +67,10 @@ export function AutobuffPanel() {
             </p>
           </div>
           <ToggleSwitch
-            checked={config.enabled && available && hasEnabledRule}
-            disabled={!available || busy || !hasEnabledRule}
+            checked={
+              config.enabled && available && memoryReady && hasEnabledRule
+            }
+            disabled={!available || !memoryReady || busy || !hasEnabledRule}
             onChange={(enabled) => void setEnabled(enabled)}
             tone="emerald"
           />

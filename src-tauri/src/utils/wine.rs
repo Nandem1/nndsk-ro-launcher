@@ -131,6 +131,25 @@ pub(crate) fn sanitize_appimage_env(cmd: &mut Command) {
     sanitize_appimage_env_with(cmd, Path::new(&app_dir), |key| std::env::var_os(key));
 }
 
+/// Returns the host-facing PATH that external runners should receive.
+///
+/// Supervised invocations serialize PATH after `ro-sessiond` was spawned, so they cannot rely on
+/// command-level sanitation alone: an explicit delta would overwrite the sidecar's clean PATH.
+pub(crate) fn sanitized_external_path() -> Option<OsString> {
+    sanitized_external_path_from(std::env::var_os("PATH"), std::env::var_os("APPDIR"))
+}
+
+fn sanitized_external_path_from(
+    path: Option<OsString>,
+    app_dir: Option<OsString>,
+) -> Option<OsString> {
+    let path = path?;
+    let Some(app_dir) = app_dir else {
+        return Some(path);
+    };
+    Some(sanitize_path_value(&path, Path::new(&app_dir)))
+}
+
 fn sanitize_appimage_env_with<F>(cmd: &mut Command, app_dir: &Path, mut current_var: F)
 where
     F: FnMut(&str) -> Option<OsString>,
@@ -139,12 +158,13 @@ where
         let Some(value) = current_var(key) else {
             continue;
         };
+        if *key == "PATH" {
+            cmd.env(key, sanitize_path_value(&value, app_dir));
+            continue;
+        }
         match filter_appimage_paths(&value, app_dir) {
             Some(filtered) => {
                 cmd.env(key, filtered);
-            }
-            None if *key == "PATH" => {
-                cmd.env(key, "/usr/local/bin:/usr/bin:/bin");
             }
             None => {
                 cmd.env_remove(key);
@@ -164,6 +184,11 @@ where
     for key in APPIMAGE_METADATA_ENV {
         cmd.env_remove(key);
     }
+}
+
+fn sanitize_path_value(value: &OsStr, app_dir: &Path) -> OsString {
+    filter_appimage_paths(value, app_dir)
+        .unwrap_or_else(|| OsString::from("/usr/local/bin:/usr/bin:/bin"))
 }
 
 fn filter_appimage_paths(value: &OsStr, app_dir: &Path) -> Option<OsString> {
@@ -245,6 +270,13 @@ mod tests {
         assert_eq!(
             command_env(&command, "PATH"),
             Some(Some("/usr/local/bin:/usr/bin:/bin".into()))
+        );
+        assert_eq!(
+            sanitized_external_path_from(
+                Some("/tmp/.mount_RO/usr/bin:/usr/bin".into()),
+                Some("/tmp/.mount_RO".into())
+            ),
+            Some("/usr/bin".into())
         );
     }
 

@@ -35,7 +35,11 @@ pub struct EnvironmentChange {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum SessionRequest {
     Hello {
         #[serde(rename = "protocolVersion")]
@@ -53,7 +57,11 @@ pub enum SessionRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum SessionEvent {
     Ready {
         protocol_version: u16,
@@ -193,7 +201,10 @@ mod tests {
             subreaper: true,
         };
         let json = serde_json::to_string(&ev).unwrap();
-        assert!(json.contains(r#""subreaper":true"#));
+        assert_eq!(
+            json,
+            r#"{"type":"ready","protocolVersion":1,"supervisorPid":1234,"prefix":"/abs/prefix","subreaper":true}"#
+        );
         let back: SessionEvent = serde_json::from_str(&json).unwrap();
         assert_eq!(back, ev);
     }
@@ -205,8 +216,10 @@ mod tests {
             spec: sample_spec(),
         };
         let json = serde_json::to_string(&req).unwrap();
-        assert!(json.contains(r#""type":"launch""#));
-        assert!(json.contains(r#""WINEPREFIX""#));
+        assert_eq!(
+            json,
+            r#"{"type":"launch","requestId":"550e8400-e29b-41d4-a716-446655440000","spec":{"program":"/usr/bin/wine","args":["a.exe"],"cwd":"/game","env":[{"key":"WINEPREFIX","value":"/abs/prefix"}]}}"#
+        );
         let back: SessionRequest = serde_json::from_str(&json).unwrap();
         assert_eq!(back, req);
     }

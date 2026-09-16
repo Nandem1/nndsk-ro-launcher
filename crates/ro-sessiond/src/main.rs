@@ -287,7 +287,7 @@ fn run_session(config: Config) -> i32 {
 
         let _sigchld = SIGCHLD_FLAG.swap(false, Ordering::SeqCst);
 
-        if !stdin_eof && (poll_stdin(0) || stdin_poll_hup_or_err()) {
+        if !stdin_eof && (reader.has_buffered_line() || poll_stdin(0) || stdin_poll_hup_or_err()) {
             match reader.read_line() {
                 Ok(Some(line)) => {
                     if let Err(e) = sup.handle_line(&line) {

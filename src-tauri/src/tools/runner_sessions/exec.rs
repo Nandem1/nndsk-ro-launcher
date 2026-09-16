@@ -117,6 +117,35 @@ impl RunnerOperation {
         Ok(())
     }
 
+    /// Quiesces every process owned by this prefix before transactional filesystem rollback.
+    ///
+    /// In supervised mode this consumes the operation lease and closes the whole sidecar, whose
+    /// `Stopped` event is only emitted after `waitpid` reaches `ECHILD`. Direct rollback retains the
+    /// legacy wineserver shutdown plus an explicit prefix-process check.
+    pub async fn quiesce_for_restore(&mut self) -> Result<(), String> {
+        if self.lease.take().is_some() {
+            self.sessions
+                .shutdown_prefix(&self.ctx)
+                .await
+                .map_err(|error| error.message)?;
+        } else if !find_prefix_processes(&self.ctx.prefix).is_empty() {
+            self.run_shutdown_ok(
+                self.ctx.resolved.shutdown_invocation(&self.ctx.prefix)?,
+                "apagado del entorno incompleto",
+            )
+            .await?;
+        }
+
+        let remaining = find_prefix_processes(&self.ctx.prefix).len();
+        if remaining == 0 {
+            Ok(())
+        } else {
+            Err(format!(
+                "quedan {remaining} proceso(s) usando el prefix reconstruido"
+            ))
+        }
+    }
+
     pub async fn spawn(
         &self,
         invocation: RunnerInvocation,

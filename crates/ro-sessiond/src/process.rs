@@ -1,4 +1,7 @@
 use ro_session_protocol::{validate_process_spec_structure, ProcessSpec};
+use ro_tools_linux::{
+    capture_process_identity, signal_process_identity, verify_process_identity, ProcessIdentity,
+};
 use std::collections::HashMap;
 use std::ffi::CString;
 use std::fs::{self, File};
@@ -44,6 +47,10 @@ pub fn validate_spec_for_launch(
     }
 
     let mut env = base_env.clone();
+    // Prefix ownership must come from the validated request, not from a Steam/wrapper environment
+    // inherited by the launcher.
+    env.remove("WINEPREFIX");
+    env.remove("STEAM_COMPAT_DATA_PATH");
     for change in &spec.env {
         match &change.value {
             Some(value) => {
@@ -369,7 +376,7 @@ pub fn read_ppid(pid: u32) -> Option<u32> {
     fields.get(1)?.parse().ok()
 }
 
-pub fn descendants_of(root: u32) -> Vec<u32> {
+pub fn descendants_of(root: u32) -> Vec<ProcessIdentity> {
     let mut all_pids = Vec::new();
     if let Ok(entries) = fs::read_dir("/proc") {
         for entry in entries.flatten() {
@@ -383,6 +390,7 @@ pub fn descendants_of(root: u32) -> Vec<u32> {
     all_pids
         .into_iter()
         .filter(|pid| *pid != root && is_descendant_of(*pid, root))
+        .filter_map(capture_process_identity)
         .collect()
 }
 
@@ -407,9 +415,11 @@ fn is_descendant_of(pid: u32, ancestor: u32) -> bool {
 }
 
 pub fn signal_descendants(root: u32, sig: i32) {
-    for pid in descendants_of(root) {
-        unsafe {
-            libc::kill(pid as libc::pid_t, sig);
+    for identity in descendants_of(root) {
+        // Recheck ancestry and stable identity immediately before signalling. A process that was
+        // reparented, exited, or reused is no longer a valid target.
+        if is_descendant_of(identity.pid, root) && verify_process_identity(&identity) {
+            let _ = signal_process_identity(&identity, sig);
         }
     }
 }
@@ -452,6 +462,7 @@ pub fn waitpid_reap_with_signal() -> ReapResult {
 #[cfg(test)]
 mod runner_line_tests {
     use super::*;
+    use ro_session_protocol::EnvironmentChange;
 
     #[test]
     fn runner_carry_sets_continuation_across_reads() {
@@ -461,5 +472,48 @@ mod runner_line_tests {
         let cont = flush_runner_carry_for_test(&writer, "[runner:stdout]", &mut carry, false);
         assert!(cont);
         assert_eq!(carry.len(), 1);
+    }
+
+    #[test]
+    fn validated_request_replaces_inherited_prefix_ownership_variables() {
+        let owned = std::env::temp_dir().join(format!("ro-sessiond-env-{}", std::process::id()));
+        fs::create_dir_all(&owned).unwrap();
+        let owned = fs::canonicalize(&owned).unwrap();
+        let mut base = HashMap::new();
+        base.insert("WINEPREFIX".into(), "/tmp/inherited-prefix".into());
+        base.insert(
+            "STEAM_COMPAT_DATA_PATH".into(),
+            "/tmp/inherited-steam-prefix".into(),
+        );
+        let spec = ProcessSpec {
+            program: "/usr/bin/true".into(),
+            args: vec![],
+            cwd: owned.to_string_lossy().into_owned(),
+            env: vec![EnvironmentChange {
+                key: "WINEPREFIX".into(),
+                value: Some(owned.to_string_lossy().into_owned()),
+            }],
+        };
+
+        let merged = validate_spec_for_launch(&spec, &owned, &base).unwrap();
+        assert_eq!(merged.get("WINEPREFIX"), spec.env[0].value.as_ref());
+        assert!(!merged.contains_key("STEAM_COMPAT_DATA_PATH"));
+
+        let mut explicit_steam = spec.clone();
+        explicit_steam.env.push(EnvironmentChange {
+            key: "STEAM_COMPAT_DATA_PATH".into(),
+            value: Some(owned.to_string_lossy().into_owned()),
+        });
+        let merged = validate_spec_for_launch(&explicit_steam, &owned, &base).unwrap();
+        assert_eq!(
+            merged.get("STEAM_COMPAT_DATA_PATH"),
+            explicit_steam.env[1].value.as_ref()
+        );
+
+        explicit_steam.env[1].value = Some("/tmp".into());
+        assert!(validate_spec_for_launch(&explicit_steam, &owned, &base)
+            .unwrap_err()
+            .contains("STEAM_COMPAT_DATA_PATH"));
+        fs::remove_dir_all(owned).unwrap();
     }
 }

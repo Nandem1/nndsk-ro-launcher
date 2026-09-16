@@ -194,8 +194,8 @@ export function AutopotPanel() {
             </p>
           </div>
           <ToggleSwitch
-            checked={config.enabled && available}
-            disabled={!available || busy}
+            checked={config.enabled && available && memoryReady}
+            disabled={!available || !memoryReady || busy}
             onChange={(enabled) => void setEnabled(enabled)}
             tone="emerald"
           />
