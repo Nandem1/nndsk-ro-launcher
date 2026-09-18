@@ -196,6 +196,7 @@ pub fn v3_path_digest_prefix24(prefix_fingerprint_digest_hex: &str) -> &str {
         .unwrap_or(prefix_fingerprint_digest_hex)
 }
 
+#[allow(dead_code)]
 pub fn digests_share_v3_path_suffix(left_hex: &str, right_hex: &str) -> bool {
     v3_path_digest_prefix24(left_hex) == v3_path_digest_prefix24(right_hex)
 }

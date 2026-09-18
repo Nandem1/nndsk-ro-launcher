@@ -9,9 +9,9 @@ use crate::tools::runtime::{probe_runner, resolve_prefix_binding, PrefixBinding,
 use crate::utils::{
     apply_prefix_env, ensure_custom_setup_allowed, ensure_managed_path_safe, find_umu_run,
     inspect_prefix, is_executable_file, manifest_matches_runner, manifest_matches_stored_location,
-    proton_vkd3d_companions_available, sanitize_appimage_env,
-    sanitized_external_path, winetricks_path, PrefixHealth, PrefixLocation, PrefixScope,
-    ProcessEnv, PREFIX_SCHEMA_V3, PREFIX_SCHEMA_VERSION, UMU_RUN_BIN,
+    proton_vkd3d_companions_available, sanitize_appimage_env, sanitized_external_path,
+    winetricks_path, PrefixHealth, PrefixLocation, PrefixScope, ProcessEnv, PREFIX_SCHEMA_V3,
+    PREFIX_SCHEMA_VERSION, UMU_RUN_BIN,
 };
 
 const DEFAULT_GAME_ID: &str = "0";

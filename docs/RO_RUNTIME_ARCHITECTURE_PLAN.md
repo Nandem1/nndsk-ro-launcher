@@ -1276,12 +1276,17 @@ dgVoodoo bundled en su boundary.
 
 **Entregables.**
 
-- [ ] `ArtifactDescriptor`/`ArtifactReceipt` tipados por kind, versión y arquitectura.
-- [ ] Validación común de URL allowlist, tamaño, checksum, archive traversal y symlinks.
-- [ ] Staging/commit/restore común con ownership explícito.
-- [ ] Adapters que conservan IDs, URLs, digests y paths actuales.
-- [ ] Lectura compatible de runtime markers schema 1.
-- [ ] Fault injection en download, extract, validation, rename y restore.
+- [x] `ArtifactDescriptor`/`ArtifactReceipt` tipados por kind, versión y arquitectura.
+- [x] Validación común de URL allowlist, tamaño, checksum, archive traversal y symlinks.
+- [x] Staging/commit/restore común con ownership explícito.
+- [x] Adapters que conservan IDs, URLs, digests y paths actuales.
+- [x] Lectura compatible de runtime markers schema 1.
+- [x] Fault injection en download, extract, validation, rename y restore.
+
+**Registro de implementación (2026-09-17).** Pipeline en
+[`src-tauri/src/tools/artifacts/`](src-tauri/src/tools/artifacts/); ADR-003 y
+[`docs/RO_RUNTIME_PHASE_3_CONTRACT.md`](RO_RUNTIME_PHASE_3_CONTRACT.md). Receipt v2 en el mismo marker;
+elevación v1→v2 bajo lock `runtime`. Smoke `tauri:dev`/AppImage no ejecutado en esta pasada.
 
 **No entra.** Actualizar versiones, incorporar DXVK 3, D7VK, mirrors dinámicos, firma remota, package
 manager ni mover recursos bundled.

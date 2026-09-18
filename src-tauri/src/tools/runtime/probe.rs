@@ -9,10 +9,10 @@ use super::managed_identity::{
 };
 use super::material::FileDigestCache;
 use super::model::{
-    ArtifactReceipt, CapabilityEvidence, CapabilitySource, ComponentProvenance,
-    ExternalObserved, ObservedMaterial, ObservedMaterialRole, ObservedRunnerMaterial,
-    PayloadVerification, PrefixArchitecture, RunnerCapabilities, RunnerIdentity, SyncPlan,
-    SyncSupport, UnknownCapabilityReason, Wow64Layout,
+    ArtifactReceipt, CapabilityEvidence, CapabilitySource, ComponentProvenance, ExternalObserved,
+    ObservedMaterial, ObservedMaterialRole, ObservedRunnerMaterial, PayloadVerification,
+    PrefixArchitecture, RunnerCapabilities, RunnerIdentity, SyncPlan, SyncSupport,
+    UnknownCapabilityReason, Wow64Layout,
 };
 
 #[derive(Debug, Clone)]

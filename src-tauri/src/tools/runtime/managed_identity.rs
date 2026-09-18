@@ -59,3 +59,27 @@ pub(crate) fn managed_umu_artifact_identity() -> ArtifactIdentity {
         install_recipe_revision: 1,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn managed_identity_still_shape_verified_not_source_and_payload() {
+        assert_ne!(
+            PayloadVerification::ShapeVerified,
+            PayloadVerification::SourceAndPayloadVerified
+        );
+        if managed_runtime_ready() {
+            assert_eq!(
+                managed_runtime_payload_verification(),
+                PayloadVerification::ShapeVerified
+            );
+        } else {
+            assert_eq!(
+                managed_runtime_payload_verification(),
+                PayloadVerification::Unverified
+            );
+        }
+    }
+}
