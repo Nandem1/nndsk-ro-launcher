@@ -189,11 +189,20 @@ fn server_path_token16(server_id: &str) -> String {
         .collect()
 }
 
+/// Primeros 24 hex del digest completo (96 bits). El path v3 sólo los expone; el manifiesto guarda los 64.
+pub fn v3_path_digest_prefix24(prefix_fingerprint_digest_hex: &str) -> &str {
+    prefix_fingerprint_digest_hex
+        .get(..24)
+        .unwrap_or(prefix_fingerprint_digest_hex)
+}
+
+pub fn digests_share_v3_path_suffix(left_hex: &str, right_hex: &str) -> bool {
+    v3_path_digest_prefix24(left_hex) == v3_path_digest_prefix24(right_hex)
+}
+
 pub fn isolated_prefix_path_v3(server_id: &str, prefix_fingerprint_digest_hex: &str) -> String {
     let token16 = server_path_token16(server_id);
-    let digest24 = prefix_fingerprint_digest_hex
-        .get(..24)
-        .unwrap_or(prefix_fingerprint_digest_hex);
+    let digest24 = v3_path_digest_prefix24(prefix_fingerprint_digest_hex);
     isolated_prefix_root()
         .join(format!("{token16}-v3-{digest24}"))
         .to_string_lossy()
@@ -855,6 +864,24 @@ mod tests {
             "/opt/portable-wine/bin/wine"
         ));
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn golden_managed_proton_path24_matches_plan() {
+        const GOLDEN: &str = "a23f2a940a9cb8e5110b0e454ad68a35a22af760c005bcd0ebdf47ab44330270";
+        assert_eq!(v3_path_digest_prefix24(GOLDEN), "a23f2a940a9cb8e5110b0e45");
+    }
+
+    #[test]
+    fn distinct_full_digests_can_share_v3_path_suffix_without_adoption() {
+        const FULL_A: &str = "a23f2a940a9cb8e5110b0e454ad68a35a22af760c005bcd0ebdf47ab44330270";
+        const FULL_B: &str = "a23f2a940a9cb8e5110b0e45ffffffffffffffffffffffffffffffffffffffff";
+        assert!(digests_share_v3_path_suffix(FULL_A, FULL_B));
+        assert_ne!(FULL_A, FULL_B);
+        assert_eq!(
+            isolated_prefix_path_v3("fixture-server", FULL_A),
+            isolated_prefix_path_v3("fixture-server", FULL_B)
+        );
     }
 
     #[test]

@@ -124,6 +124,22 @@ pub(crate) fn encode_artifact_identity(identity: &ArtifactIdentity) -> Canonical
     ])
 }
 
+pub(crate) fn prefix_fingerprint_from_hex(hex_digest: &str) -> PrefixFingerprint {
+    assert_eq!(hex_digest.len(), 64, "se esperan 64 hex de digest SHA-256");
+    let mut digest = [0u8; 32];
+    for index in 0..32 {
+        digest[index] = u8::from_str_radix(&hex_digest[index * 2..index * 2 + 2], 16)
+            .expect("hex digest inválido");
+    }
+    PrefixFingerprint {
+        digest: FingerprintDigest {
+            schema_version: FINGERPRINT_SCHEMA_VERSION,
+            algorithm: "sha256".to_string(),
+            digest,
+        },
+    }
+}
+
 pub(crate) fn compute_prefix_fingerprint(input: &PrefixFingerprintInput) -> PrefixFingerprint {
     let root = encode_prefix_fingerprint_input(input);
     let digest = fingerprint_digest(PREFIX_FINGERPRINT_DOMAIN, &root);

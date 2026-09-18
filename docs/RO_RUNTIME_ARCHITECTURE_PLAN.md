@@ -29,8 +29,9 @@ Este documento es un roadmap ejecutable, no un compromiso con todos los tipos o 
 Cada fase debe volver a contrastar su diseño con el código vigente y puede ajustar nombres sin
 cambiar las decisiones cerradas ni las invariantes.
 
-Para Fases 0–2, los ADR-001/ADR-002 y `RO_RUNTIME_PHASE_0_1_CONTRACT.md` son normativos y prevalecen
-sobre sketches anteriores de este roadmap. En particular, simplifican Fase 1 y difieren
+Para Fases 0–2, los ADR-001/ADR-002, `RO_RUNTIME_PHASE_0_1_CONTRACT.md` y (Fase 2)
+`RO_RUNTIME_PHASE_2_CONTRACT.md` son normativos y prevalecen sobre sketches anteriores de este
+roadmap. En particular, simplifican Fase 1 y difieren
 `ClientInspection`, `DependencyPlan`, `PrefixPlan` y compatibility productiva hasta que exista su
 consumidor correspondiente.
 
@@ -1206,11 +1207,6 @@ arranque `tauri:dev` no sustituye esos casos.
 
 ### Fase 2 — Fingerprints e identidad de prefix compatible
 
-**Estado (implementación).** Código y contrato en
-[`RO_RUNTIME_PHASE_2_CONTRACT.md`](RO_RUNTIME_PHASE_2_CONTRACT.md). `RuntimeFingerprint` operacional
-completo y goldens de runtime quedan sujetos a facts de dgVoodoo en orquestación (stub hasta cerrar
-ese cableado).
-
 **Objetivo.** Hacer explícitas identidad de runtime y de prefix sin mover ni reinterpretar prefixes
 existentes.
 
@@ -1223,12 +1219,13 @@ seguridad y agrega path v3; `tools/prefix/` escribe v3 sólo para prefixes nuevo
 
 **Entregables.**
 
-- [ ] Canonical encoding versionado y collision check del digest truncado del path.
-- [ ] Reader v2/v3 con estados `V3Verified`, `LegacyV2RunnerMatched`, `Unknown` e `Incompatible`.
-- [ ] Algoritmo legacy alias implementado exactamente como §11.2.
-- [ ] Nuevo path sólo para material prefix-owned distinto.
-- [ ] Session anchor con full runtime fingerprint para impedir cambio de profile en uso.
-- [ ] Diagnóstico que explica qué campo causó una identidad nueva.
+- [x] Canonical encoding versionado (goldens en `tools/runtime/encode.rs` y `fingerprint.rs`).
+- [x] Collision check del digest truncado del path (`digests_share_v3_path_suffix`, binding `Incompatible`).
+- [x] Reader v2/v3 con estados `V3Verified`, `LegacyV2RunnerMatched`, `Unknown` e `Incompatible`.
+- [x] Algoritmo legacy alias según §11.2 (`resolve_prefix_binding` + flag `RO_LAUNCHER_PREFIX_V3`).
+- [x] Nuevo path v3 sólo para material prefix-owned distinto (preserva v2).
+- [x] Session anchor con `plan_id` en registry (rechazo bajo lease); digest de runtime **placeholder** hasta facts dgVoodoo.
+- [x] `explain_identity_delta` en `fingerprint.rs` (diagnóstico de campos).
 
 **No entra.** Migrar/renombrar v2, cleanup automático, elegir D7VK, mover dgVoodoo al prefix ni
 rehacer un custom prefix.
@@ -1249,6 +1246,22 @@ interrumpido. Confirmar que ningún caso adopta o elimina datos.
 ambiguo sin pérdida ni migración automática.
 
 **Dependencias.** Fase 1 y ADR-002.
+
+**Estado de implementación (2026-09-17).** Commit local `aaf5836`: encoder y `PrefixFingerprint`
+operacionales; `StoredPrefixManifest` v2/v3; path `*-v3-*`; writer v3 en setup; `WineContext` con
+`identity`/`probe`; `commands/prefix` no rearmar por schema futuro; contrato en
+[`RO_RUNTIME_PHASE_2_CONTRACT.md`](RO_RUNTIME_PHASE_2_CONTRACT.md). Shadow de gráficos/env sin
+cambio de autoridad de spawn.
+
+Pasaron: `npm run lint`, `npm test`, `npm run build`, `cargo fmt --check`,
+`cargo clippy --workspace --all-targets --all-features -- -D warnings`,
+`cargo test --workspace --all-features`. No se ejecutó en esta pasada: `npm run format:check`,
+`npm run tauri:dev`, matriz runtime Sakura/Honey/AppImage/multi-client.
+
+Pendiente antes de declarar Fase 2 cerrada en producción: `compute_runtime_fingerprint` completo
+post-scan dgVoodoo; smokes del plan §12; tests de conflicto `plan_id`; goldens de
+`RuntimeFingerprint`. Un binario anterior ante prefixes schema 3 en disco los verá incompatibles
+sin borrarlos (mismo commit que introduce reader v3).
 
 ### Fase 3 — Catálogo de artefactos y receipts tipados
 

@@ -3,8 +3,8 @@ use std::path::Path;
 use crate::models::server::ServerConfig;
 use crate::tools::runners::{managed_proton_path, MANAGED_RUNNER_ID};
 use crate::utils::{
-    inspect_prefix, isolated_prefix_path_for_runner, PrefixLocation, PrefixScope, ResolvedRunner,
-    RunnerKind,
+    inspect_prefix, isolated_prefix_path_for_runner, isolated_prefix_path_v3, PrefixLocation,
+    PrefixScope, ResolvedRunner, RunnerKind, PREFIX_SCHEMA_V3,
 };
 
 use super::fingerprint::{
@@ -140,6 +140,18 @@ fn resolve_prefix_binding_for_location(
         });
     }
 
+    if let Some(reason) = v3_path_fingerprint_conflict(server_id, desired) {
+        location.path = isolated_prefix_path_v3(server_id, &desired.digest.hex_digest());
+        return Ok(PrefixBinding {
+            status: PrefixIdentityStatus::Incompatible,
+            desired_fingerprint: desired.clone(),
+            location,
+            eligibility: RuntimeEligibility::Ineligible {
+                reasons: vec![reason],
+            },
+        });
+    }
+
     let runner_path = std::fs::canonicalize(resolved.runner_path())
         .unwrap_or_else(|_| resolved.runner_path().to_path_buf());
     let v2_path =
@@ -199,6 +211,38 @@ fn resolve_prefix_binding_for_location(
         location,
         eligibility: RuntimeEligibility::Eligible,
     })
+}
+
+/// Directorio v3 en el path truncado con manifiesto cuyo digest completo no coincide (colisión o mismatch).
+fn v3_path_fingerprint_conflict(server_id: &str, desired: &PrefixFingerprint) -> Option<String> {
+    let path = isolated_prefix_path_v3(server_id, &desired.digest.hex_digest());
+    v3_path_fingerprint_conflict_at(&path, server_id, desired)
+}
+
+fn v3_path_fingerprint_conflict_at(
+    path: &str,
+    server_id: &str,
+    desired: &PrefixFingerprint,
+) -> Option<String> {
+    let root = Path::new(path);
+    if !root.is_dir() {
+        return None;
+    }
+    let health = inspect_prefix(path);
+    let manifest = health.manifest.as_ref()?;
+    if manifest.schema_version() != PREFIX_SCHEMA_V3 {
+        return None;
+    }
+    if manifest.server_id() != Some(server_id) {
+        return None;
+    }
+    let on_disk = manifest.prefix_fingerprint_digest();
+    let wanted = desired.digest.hex_digest();
+    if on_disk.is_some_and(|digest| digest != wanted) {
+        Some("v3-prefix-fingerprint-mismatch".to_string())
+    } else {
+        None
+    }
 }
 
 fn try_v3_verified(server_id: &str, desired: &PrefixFingerprint) -> Option<String> {
@@ -349,5 +393,69 @@ mod tests {
             binding.desired_fingerprint.digest.hex_digest(),
             "a23f2a940a9cb8e5110b0e454ad68a35a22af760c005bcd0ebdf47ab44330270"
         );
+    }
+
+    #[test]
+    fn v3_truncation_collision_rejects_mismatched_manifest_digest() {
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        use crate::utils::{
+            write_prefix_manifest_v3, PrefixFingerprintEnvelope, PrefixManifestV3, PREFIX_SCHEMA_V3,
+        };
+
+        static SEQUENCE: AtomicU64 = AtomicU64::new(0);
+        const DIGEST_ON_DISK: &str =
+            "a23f2a940a9cb8e5110b0e454ad68a35a22af760c005bcd0ebdf47ab44330270";
+        const DIGEST_DESIRED: &str =
+            "a23f2a940a9cb8e5110b0e45ffffffffffffffffffffffffffffffffffffffff";
+
+        let server_id = format!(
+            "trunc-collision-{}-{}",
+            std::process::id(),
+            SEQUENCE.fetch_add(1, Ordering::Relaxed)
+        );
+        let root = std::env::temp_dir().join(format!(
+            "ro-launcher-v3-collision-{}",
+            SEQUENCE.fetch_add(1, Ordering::Relaxed)
+        ));
+        if root.exists() {
+            std::fs::remove_dir_all(&root).unwrap();
+        }
+        std::fs::create_dir_all(root.join("drive_c/windows/system32")).unwrap();
+        std::fs::create_dir_all(root.join("dosdevices")).unwrap();
+        std::fs::write(root.join("system.reg"), "reg").unwrap();
+        std::fs::write(root.join("user.reg"), "reg").unwrap();
+        let path = root.to_string_lossy().to_string();
+        write_prefix_manifest_v3(
+            &path,
+            &PrefixManifestV3 {
+                schema_version: PREFIX_SCHEMA_V3,
+                scope: PrefixScope::Isolated,
+                server_id: Some(server_id.clone()),
+                runner_kind: "proton".to_string(),
+                runner_path: "/opt/managed/proton".to_string(),
+                components: Vec::new(),
+                prefix_fingerprint: PrefixFingerprintEnvelope {
+                    schema_version: 1,
+                    algorithm: "sha256".to_string(),
+                    digest: DIGEST_ON_DISK.to_string(),
+                },
+            },
+        )
+        .expect("manifest v3");
+
+        let desired =
+            crate::tools::runtime::fingerprint::prefix_fingerprint_from_hex(DIGEST_DESIRED);
+        assert!(crate::utils::digests_share_v3_path_suffix(
+            DIGEST_ON_DISK,
+            DIGEST_DESIRED
+        ));
+        assert_eq!(
+            v3_path_fingerprint_conflict_at(&path, &server_id, &desired),
+            Some("v3-prefix-fingerprint-mismatch".to_string())
+        );
+        assert!(try_v3_verified(&server_id, &desired).is_none());
+
+        std::fs::remove_dir_all(&root).unwrap();
     }
 }
