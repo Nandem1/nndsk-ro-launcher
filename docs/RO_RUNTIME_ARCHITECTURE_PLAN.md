@@ -1206,6 +1206,11 @@ arranque `tauri:dev` no sustituye esos casos.
 
 ### Fase 2 — Fingerprints e identidad de prefix compatible
 
+**Estado (implementación).** Código y contrato en
+[`RO_RUNTIME_PHASE_2_CONTRACT.md`](RO_RUNTIME_PHASE_2_CONTRACT.md). `RuntimeFingerprint` operacional
+completo y goldens de runtime quedan sujetos a facts de dgVoodoo en orquestación (stub hasta cerrar
+ese cableado).
+
 **Objetivo.** Hacer explícitas identidad de runtime y de prefix sin mover ni reinterpretar prefixes
 existentes.
 

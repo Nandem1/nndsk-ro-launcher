@@ -7,17 +7,18 @@ use crate::models::server::ServerConfig;
 use crate::tools::prefix::{DxvkProvision, MANAGED_DXVK_COMPONENT};
 use crate::tools::runners::{managed_dxvk_ready, managed_proton_path, managed_runtime_ready};
 use crate::tools::runtime::{
-    observe_legacy_runtime, runtime_shadow_enabled, DgVoodooObservation, LegacyRuntimeInput,
-    ShadowOperation,
+    observe_legacy_runtime, paths_match, resolve_prefix_binding_for_managed_descriptor,
+    runtime_shadow_enabled, DgVoodooObservation, LegacyRuntimeInput, ShadowOperation,
 };
 use crate::tools::server_tools;
 use crate::utils::audio;
 use crate::utils::{
     ensure_custom_setup_allowed, ensure_managed_path_safe, ensure_managed_reset_allowed,
-    inspect_prefix, is_dxvk_installed, manifest_matches_location, manifest_matches_runner,
+    inspect_prefix, is_dxvk_installed, manifest_matches_stored_location,
     proton_runner_vkd3d_companions_available, proton_vkd3d_companions_available,
     resolve_server_prefix_with_runner, resolve_server_wine_context_with_runner,
-    resolve_wine_context, runtime_prefix_blockers, PrefixScope, WineContext, PREFIX_SCHEMA_VERSION,
+    resolve_wine_context, runtime_prefix_blockers, stored_manifest_matches_runner, PrefixScope,
+    WineContext, PREFIX_SCHEMA_V3, PREFIX_SCHEMA_VERSION,
 };
 use ro_tools_linux::{detect_input_permissions, detect_uinput_permissions};
 
@@ -43,7 +44,7 @@ pub async fn check_dependencies(
     let mut prefix_issues = health.issues.clone();
 
     let manifest_compatible = match &health.manifest {
-        Some(manifest) if manifest.runner_kind == "unknown" => {
+        Some(manifest) if manifest.runner_kind() == "unknown" => {
             prefix_issues.push(
                 "El manifiesto es legacy y no identifica el runner; rearma el entorno antes de instalar componentes"
                     .to_string(),
@@ -51,13 +52,15 @@ pub async fn check_dependencies(
             false
         }
         Some(manifest) => {
-            let matches = manifest.schema_version == PREFIX_SCHEMA_VERSION
-                && manifest_matches_location(manifest, &ctx.location)
-                && manifest_matches_runner(manifest, &runner_kind, &runner_path);
+            let schema = manifest.schema_version();
+            let matches = (schema == PREFIX_SCHEMA_VERSION || schema == PREFIX_SCHEMA_V3)
+                && manifest_matches_stored_location(manifest, &ctx.location)
+                && (schema == PREFIX_SCHEMA_V3
+                    || stored_manifest_matches_runner(manifest, &runner_kind, &runner_path));
             if !matches {
                 prefix_issues.push(format!(
                     "El entorno fue creado con otro runner ({})",
-                    manifest.runner_path
+                    manifest.runner_path()
                 ));
             }
             matches
@@ -111,7 +114,7 @@ pub async fn check_dependencies(
     let manifest_has_component = |component: &str| {
         health.manifest.as_ref().is_some_and(|manifest| {
             manifest
-                .components
+                .components()
                 .iter()
                 .any(|installed| installed == component)
         })
@@ -149,10 +152,17 @@ pub async fn check_dependencies(
     let path_safe = ensure_managed_path_safe(&ctx.location).is_ok()
         && ensure_custom_setup_allowed(&ctx.location).is_ok();
     let incompatible_manifest = health.manifest.as_ref().is_some_and(|manifest| {
-        manifest.schema_version != PREFIX_SCHEMA_VERSION
-            || !manifest_matches_location(manifest, &ctx.location)
-            || (manifest.runner_kind != "unknown"
-                && !manifest_matches_runner(manifest, &runner_kind, &runner_path))
+        let schema = manifest.schema_version();
+        if schema > PREFIX_SCHEMA_V3 {
+            return true;
+        }
+        if schema == PREFIX_SCHEMA_V3 {
+            return !manifest_matches_stored_location(manifest, &ctx.location);
+        }
+        schema != PREFIX_SCHEMA_VERSION
+            || !manifest_matches_stored_location(manifest, &ctx.location)
+            || (manifest.runner_kind() != "unknown"
+                && !stored_manifest_matches_runner(manifest, &runner_kind, &runner_path))
     });
     let mut required_verbs = vec!["vcrun2019", "d3dx9", "corefonts"];
     if dxvk_provision == DxvkProvision::Winetricks {
@@ -177,7 +187,7 @@ pub async fn check_dependencies(
     let runner_unknown = health
         .manifest
         .as_ref()
-        .is_some_and(|manifest| manifest.runner_kind == "unknown");
+        .is_some_and(|manifest| manifest.runner_kind() == "unknown");
     let prefix_root = Path::new(&ctx.prefix);
     let managed_unclaimed = ctx.location.managed
         && prefix_root.is_dir()
@@ -388,7 +398,14 @@ fn managed_runtime_pending(
         .and_then(|server| server.runner.as_deref())
         .or(selected_runner)
         .filter(|runner| !runner.trim().is_empty());
-    let location = resolve_server_prefix_with_runner(server, effective_runner)?;
+    let location = if effective_runner.is_none()
+        || effective_runner
+            .is_some_and(|runner| paths_match(Path::new(runner), &managed_proton_path()))
+    {
+        resolve_prefix_binding_for_managed_descriptor(server)?.location
+    } else {
+        resolve_server_prefix_with_runner(server, effective_runner)?
+    };
     let health = inspect_prefix(&location.path);
     let prefix_root = Path::new(&location.path);
     let managed_unclaimed = location.managed
@@ -413,13 +430,15 @@ fn managed_runtime_pending(
         "wine"
     };
     let manifest_compatible = health.manifest.as_ref().is_some_and(|manifest| {
-        manifest.schema_version == PREFIX_SCHEMA_VERSION
-            && manifest_matches_location(manifest, &location)
-            && manifest_matches_runner(
-                manifest,
-                expected_runner_kind,
-                expected_runner_path.to_string_lossy().as_ref(),
-            )
+        let schema = manifest.schema_version();
+        (schema == PREFIX_SCHEMA_VERSION || schema == PREFIX_SCHEMA_V3)
+            && manifest_matches_stored_location(manifest, &location)
+            && (schema == PREFIX_SCHEMA_V3
+                || stored_manifest_matches_runner(
+                    manifest,
+                    expected_runner_kind,
+                    expected_runner_path.to_string_lossy().as_ref(),
+                ))
     });
     let requires_rebuild = health.legacy_marker
         || health

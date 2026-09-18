@@ -11,8 +11,9 @@ use crate::utils::audio;
 use crate::utils::gecko::install_gecko_for_runner;
 use crate::utils::{
     dxvk_cache_path, dxvk_config_path, dxvk_log_path, emit_log, emit_progress, inspect_prefix,
-    resolve_runner, write_prefix_manifest, OperationGuard, PrefixManifest, ResolvedRunner,
-    WineContext, WineSyncMode, PREFIX_SCHEMA_VERSION,
+    is_v3_managed_prefix_path, resolve_runner, write_prefix_manifest, write_prefix_manifest_v3,
+    OperationGuard, PrefixFingerprintEnvelope, PrefixManifest, PrefixManifestV3, PrefixScope,
+    ResolvedRunner, WineContext, WineSyncMode, PREFIX_SCHEMA_V3, PREFIX_SCHEMA_VERSION,
 };
 
 pub const MANAGED_DXVK_COMPONENT: &str = "dxvk-2.6.2";
@@ -71,7 +72,8 @@ pub async fn setup_runtime_prefix(
                     .read_dir()
                     .is_ok_and(|mut entries| entries.next().is_none())));
 
-    let mut op = RunnerOperation::begin(Some(app), sessions, game, ctx).await?;
+    let anchor = crate::tools::runtime::session_anchor_from_context(ctx);
+    let mut op = RunnerOperation::begin(Some(app), sessions, game, ctx, &anchor).await?;
     let _operation = OperationGuard::acquire("prefix", root)?;
 
     let result = async {
@@ -115,7 +117,8 @@ pub async fn reset_runtime_prefix(
 ) -> Result<(), String> {
     emit_progress(app, "Preparando reconstrucción del entorno...", 40)?;
 
-    let mut op = RunnerOperation::begin(Some(app), sessions, game, ctx).await?;
+    let anchor = crate::tools::runtime::session_anchor_from_context(ctx);
+    let mut op = RunnerOperation::begin(Some(app), sessions, game, ctx, &anchor).await?;
     let _operation = OperationGuard::acquire("prefix", Path::new(&ctx.prefix))?;
 
     shutdown_existing_prefix_for_reset(app, &op, ctx).await?;
@@ -334,17 +337,54 @@ fn write_runtime_manifest(
     }
     let runner_path = std::fs::canonicalize(ctx.resolved.runner_path())
         .unwrap_or_else(|_| ctx.resolved.runner_path().to_path_buf());
-    write_prefix_manifest(
-        &ctx.prefix,
-        &PrefixManifest {
-            schema_version: PREFIX_SCHEMA_VERSION,
-            scope: ctx.location.scope,
-            server_id: ctx.location.server_id.clone(),
-            runner_kind: ctx.resolved.kind_label().to_string(),
-            runner_path: runner_path.to_string_lossy().to_string(),
-            components,
-        },
-    )
+    let write_v3 = should_write_prefix_manifest_v3(ctx);
+    if write_v3 {
+        write_prefix_manifest_v3(
+            &ctx.prefix,
+            &PrefixManifestV3 {
+                schema_version: PREFIX_SCHEMA_V3,
+                scope: ctx.location.scope,
+                server_id: ctx.location.server_id.clone(),
+                runner_kind: ctx.resolved.kind_label().to_string(),
+                runner_path: runner_path.to_string_lossy().to_string(),
+                components,
+                prefix_fingerprint: PrefixFingerprintEnvelope {
+                    schema_version: 1,
+                    algorithm: "sha256".to_string(),
+                    digest: ctx.identity.desired_fingerprint.digest.hex_digest(),
+                },
+            },
+        )
+    } else {
+        write_prefix_manifest(
+            &ctx.prefix,
+            &PrefixManifest {
+                schema_version: crate::utils::PREFIX_SCHEMA_VERSION,
+                scope: ctx.location.scope,
+                server_id: ctx.location.server_id.clone(),
+                runner_kind: ctx.resolved.kind_label().to_string(),
+                runner_path: runner_path.to_string_lossy().to_string(),
+                components,
+            },
+        )
+    }
+}
+
+fn should_write_prefix_manifest_v3(ctx: &WineContext) -> bool {
+    use crate::tools::runtime::{prefix_v3_write_enabled, PrefixIdentityStatus};
+    if ctx.location.scope != PrefixScope::Isolated || !ctx.location.managed {
+        return false;
+    }
+    if matches!(ctx.identity.status, PrefixIdentityStatus::V3Verified) {
+        return true;
+    }
+    if !prefix_v3_write_enabled() {
+        return false;
+    }
+    let Some(server_id) = ctx.location.server_id.as_deref() else {
+        return false;
+    };
+    is_v3_managed_prefix_path(Path::new(&ctx.prefix), server_id)
 }
 
 fn install_managed_dxvk(app: &AppHandle, prefix: &str) -> Result<(), String> {
@@ -545,23 +585,20 @@ async fn shutdown_existing_prefix_for_reset(
 
     let health = inspect_prefix(&ctx.prefix);
     let recorded = health.manifest.as_ref().filter(|manifest| {
-        manifest.schema_version == PREFIX_SCHEMA_VERSION && manifest.runner_kind != "unknown"
+        manifest.schema_version() == PREFIX_SCHEMA_VERSION && manifest.runner_kind() != "unknown"
     });
 
     match plan_reset_shutdown(
         find_prefix_processes(&ctx.prefix).len(),
         recorded.map(|manifest| ResetManifestView {
-            runner_kind: &manifest.runner_kind,
-            runner_path: &manifest.runner_path,
+            runner_kind: manifest.runner_kind(),
+            runner_path: manifest.runner_path(),
             resolved: recorded.and_then(|manifest| {
-                resolve_runner(&manifest.runner_path)
+                resolve_runner(manifest.runner_path())
                     .ok()
                     .map(|runner| (runner.kind_label().to_string(), runner.runner_path().to_path_buf()))
             }),
-            resolve_error: recorded.and_then(|manifest| {
-                resolve_runner(&manifest.runner_path)
-                    .err()
-            }),
+            resolve_error: recorded.and_then(|manifest| resolve_runner(manifest.runner_path()).err()),
             current_runner_path: ctx.resolved.runner_path(),
         }),
     ) {
@@ -572,10 +609,10 @@ async fn shutdown_existing_prefix_for_reset(
                 app,
                 format!(
                     "Deteniendo el entorno con su runner original: {}",
-                    manifest.runner_path
+                    manifest.runner_path()
                 ),
             )?;
-            let runner = resolve_runner(&manifest.runner_path)?;
+            let runner = resolve_runner(manifest.runner_path())?;
             op.run_shutdown_ok(runner.shutdown_invocation(&ctx.prefix)?, "apagado del entorno")
                 .await?;
             if find_prefix_processes(&ctx.prefix).is_empty() {
@@ -589,7 +626,7 @@ async fn shutdown_existing_prefix_for_reset(
         }
         ResetShutdownDecision::KindMismatch => Err(format!(
             "El runner registrado {} ya no coincide con su tipo; cierra todos los procesos del entorno antes de rearmarlo",
-            recorded.expect("mismatch requires manifest").runner_path
+            recorded.expect("mismatch requires manifest").runner_path()
         )),
         ResetShutdownDecision::Unresolvable { error } => Err(format!(
             "Hay procesos activos en el entorno y no se pudo resolver su runner original: {error}"

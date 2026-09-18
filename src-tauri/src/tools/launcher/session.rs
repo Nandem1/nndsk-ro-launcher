@@ -117,7 +117,8 @@ pub async fn launch_game(
         format!("[Launch] uinput preparado antes del runner: {devices}"),
     );
 
-    let op = RunnerOperation::begin(Some(&app), sessions, &game, &ctx).await?;
+    let anchor = crate::tools::runtime::session_anchor_from_context(&ctx);
+    let op = RunnerOperation::begin(Some(&app), sessions, &game, &ctx, &anchor).await?;
     let game_dir = required_game_dir(&server.executable_path)?;
     let prefix_operation =
         OperationGuard::acquire_shared("prefix", std::path::Path::new(&ctx.prefix))?;
@@ -134,7 +135,7 @@ pub async fn launch_game(
     let use_managed_dxvk = wine_7_16
         && prefix_health.manifest.as_ref().is_some_and(|manifest| {
             manifest
-                .components
+                .components()
                 .iter()
                 .any(|component| component == MANAGED_DXVK_COMPONENT)
         });

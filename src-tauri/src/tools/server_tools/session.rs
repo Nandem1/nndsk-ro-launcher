@@ -106,14 +106,15 @@ pub async fn launch_tool(
     };
 
     let ctx = resolve_server_wine_context_with_runner(Some(server), runner).await?;
-    let op = RunnerOperation::begin(Some(app), sessions, game, &ctx).await?;
+    let anchor = crate::tools::runtime::session_anchor_from_context(&ctx);
+    let op = RunnerOperation::begin(Some(app), sessions, game, &ctx, &anchor).await?;
     let prefix_operation = OperationGuard::acquire("prefix", Path::new(&ctx.prefix))?;
     let prefix_health = validate_runtime_prefix(&ctx)?;
     let wine_7_16 = ctx.resolved.is_wine_7_16();
     let use_managed_dxvk = wine_7_16
         && prefix_health.manifest.as_ref().is_some_and(|manifest| {
             manifest
-                .components
+                .components()
                 .iter()
                 .any(|component| component == MANAGED_DXVK_COMPONENT)
         });

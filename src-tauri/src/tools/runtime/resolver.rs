@@ -2,6 +2,7 @@ use crate::tools::prefix::MANAGED_DXVK_COMPONENT;
 use crate::tools::runners::MANAGED_RUNNER_ID;
 use crate::utils::{is_wine_7_16_version, PrefixLocation, ResolvedRunner, RunnerKind};
 
+use super::identity::PrefixBinding;
 use super::model::{
     ArtifactId, CapabilityEvidence, ComponentId, ComponentProvenance, DgVoodooOverlayPlan,
     DxvkProvider, GraphicsPlan, GraphicsProfile, LegacyUnpinned, PrefixArchitecture, RunnerPlan,
@@ -11,7 +12,7 @@ use super::model::{
 use super::probe::{is_managed_proton, paths_match, RunnerProbe};
 
 const RUNNER_DXVK_COMPONENT: &str = "runner/dxvk";
-const WINETRICKS_DXVK_RECIPE: &str = "winetricks/dxvk-legacy-unpinned";
+pub(crate) const WINETRICKS_DXVK_RECIPE: &str = "winetricks/dxvk-legacy-unpinned";
 const DGVOODOO_COMPONENT: &str = "game-dir/dgvoodoo";
 const DGVOODOO_RESOURCE: &str = "bundled/dgvoodoo";
 
@@ -86,6 +87,7 @@ pub(super) struct RuntimeResolutionInput<'a> {
     pub(super) profile: RuntimeProfile,
     pub(super) resolved: &'a ResolvedRunner,
     pub(super) prefix: PrefixLocation,
+    pub(super) prefix_binding: PrefixBinding,
     pub(super) probe: RunnerProbe,
     pub(super) dgvoodoo: DgVoodooState,
     pub(super) webview2_required: bool,
@@ -151,6 +153,7 @@ pub(super) fn resolve_runtime(
         graphics,
         prefix: input.prefix,
         webview2_required: input.webview2_required,
+        prefix_binding: input.prefix_binding,
     })
 }
 
@@ -169,7 +172,7 @@ fn validate_runner_request(
             }
             match &probe.identity.provenance {
                 ComponentProvenance::ArtifactReceipt(receipt)
-                    if receipt.artifact_id == *artifact_id =>
+                    if receipt.identity.artifact_id == *artifact_id =>
                 {
                     let _verification = receipt.payload_verification;
                 }
@@ -295,11 +298,28 @@ mod tests {
         )
     }
 
+    fn test_prefix_binding(location: PrefixLocation) -> PrefixBinding {
+        use crate::tools::runtime::fingerprint::{
+            compute_prefix_fingerprint, managed_proton_prefix_fingerprint_input,
+        };
+        use crate::tools::runtime::identity::{PrefixIdentityStatus, RuntimeEligibility};
+        PrefixBinding {
+            status: PrefixIdentityStatus::Unknown,
+            desired_fingerprint: compute_prefix_fingerprint(
+                &managed_proton_prefix_fingerprint_input(),
+            ),
+            location,
+            eligibility: RuntimeEligibility::Eligible,
+        }
+    }
+
     fn resolve(runner: &ResolvedRunner, profile: RuntimeProfile, dg: DgVoodooState) -> RuntimePlan {
+        let location = prefix();
         resolve_runtime(RuntimeResolutionInput {
             profile,
             resolved: runner,
-            prefix: prefix(),
+            prefix: location.clone(),
+            prefix_binding: test_prefix_binding(location),
             probe: probe_runner(runner),
             dgvoodoo: dg,
             webview2_required: false,
@@ -415,10 +435,12 @@ mod tests {
     fn dgvoodoo_requires_verified_wrappers_and_keeps_dxvk() {
         let wine = wine_with_version("wine-7.16");
         let profile = external_profile(&wine, GraphicsProfile::DgVoodooDxvk);
+        let location = prefix();
         let error = resolve_runtime(RuntimeResolutionInput {
             profile,
             resolved: &wine,
-            prefix: prefix(),
+            prefix: location.clone(),
+            prefix_binding: test_prefix_binding(location),
             probe: probe_runner(&wine),
             dgvoodoo: DgVoodooState::unverified_configured(),
             webview2_required: false,
@@ -446,10 +468,12 @@ mod tests {
             RunnerSelectionSource::ProductDefault,
             GraphicsProfile::Dxvk,
         );
+        let location = prefix();
         let error = resolve_runtime(RuntimeResolutionInput {
             profile,
             resolved: &runner,
-            prefix: prefix(),
+            prefix: location.clone(),
+            prefix_binding: test_prefix_binding(location),
             probe: probe_runner(&runner),
             dgvoodoo: DgVoodooState::verified(false),
             webview2_required: false,

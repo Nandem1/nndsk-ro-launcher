@@ -12,6 +12,8 @@ use crate::utils::{apply_game_env, emit_tool_log_opt, ProcessEnv, WineContext, W
 use super::environment::{
     ComponentOwner, DllLoadOrder, EnvironmentChange, GraphicsEnvironment, OwnershipDomain,
 };
+use super::fingerprint::{compute_prefix_fingerprint, managed_proton_prefix_fingerprint_input};
+use super::identity::{PrefixBinding, PrefixIdentityStatus, RuntimeEligibility};
 use super::model::{
     BaseRecipeStep, ComponentProvenance, GraphicsProfile, InvocationTarget, RunnerRequest,
     RunnerSelectionSource, RuntimePlan, RuntimeProfile, SyncPlan,
@@ -20,6 +22,15 @@ use super::probe::probe_runner;
 use super::resolver::{
     profile_from_legacy, resolve_runtime, DgVoodooState, LegacyProfileInput, RuntimeResolutionInput,
 };
+
+fn shadow_prefix_binding(location: crate::utils::PrefixLocation) -> PrefixBinding {
+    PrefixBinding {
+        status: PrefixIdentityStatus::Unknown,
+        desired_fingerprint: compute_prefix_fingerprint(&managed_proton_prefix_fingerprint_input()),
+        location,
+        eligibility: RuntimeEligibility::Eligible,
+    }
+}
 
 const MANAGED_DXVK_COMPONENT: &str = "dxvk-2.6.2";
 const RUNNER_DXVK_COMPONENT: &str = "runner/dxvk";
@@ -122,10 +133,12 @@ pub(crate) fn observe_legacy_runtime(
             return ShadowOutcome::Failed(reason);
         }
     };
+    let prefix = input.context.location.clone();
     let plan = match resolve_runtime(RuntimeResolutionInput {
         profile: profile.clone(),
         resolved: &input.context.resolved,
-        prefix: input.context.location.clone(),
+        prefix: prefix.clone(),
+        prefix_binding: shadow_prefix_binding(prefix),
         probe: probe_runner(&input.context.resolved),
         dgvoodoo,
         webview2_required: input.webview2_required,
@@ -591,7 +604,7 @@ fn has_managed_dxvk_claims(environment: &NormalizedEnvironment) -> bool {
 mod tests {
     use super::*;
     use crate::tools::runners::managed_proton_path;
-    use crate::utils::{PrefixLocation, PrefixScope, ResolvedRunner};
+    use crate::utils::ResolvedRunner;
     use std::ops::Deref;
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -599,15 +612,21 @@ mod tests {
     static SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
     fn context(resolved: ResolvedRunner) -> WineContext {
+        let probe = probe_runner(&resolved);
+        let identity = crate::tools::runtime::resolve_prefix_binding(
+            None,
+            &resolved,
+            &probe,
+            resolved.is_wine_7_16(),
+        )
+        .expect("shadow test binding");
+        let location = identity.location.clone();
         WineContext {
-            prefix: "/private/home/player/prefix".to_string(),
-            location: PrefixLocation {
-                path: "/private/home/player/prefix".to_string(),
-                scope: PrefixScope::Isolated,
-                managed: true,
-                server_id: Some("private-server-name".to_string()),
-            },
+            prefix: location.path.clone(),
+            location,
             resolved,
+            identity,
+            probe,
         }
     }
 
@@ -640,10 +659,12 @@ mod tests {
             recommendation: Some(GepardRunnerProfile::Wine716Legacy),
         };
         let legacy = capture_legacy_runtime(&input, &profile).unwrap();
+        let prefix = context.location.clone();
         let plan = resolve_runtime(RuntimeResolutionInput {
             profile: profile.clone(),
             resolved: &context.resolved,
-            prefix: context.location.clone(),
+            prefix: prefix.clone(),
+            prefix_binding: shadow_prefix_binding(prefix),
             probe: probe_runner(&context.resolved),
             dgvoodoo: DgVoodooState::verified(true),
             webview2_required: true,
@@ -698,10 +719,12 @@ mod tests {
                 recommendation,
             };
             let legacy = capture_legacy_runtime(&input, &profile).unwrap();
+            let prefix = context.location.clone();
             let plan = resolve_runtime(RuntimeResolutionInput {
                 profile: profile.clone(),
                 resolved: &context.resolved,
-                prefix: context.location.clone(),
+                prefix: prefix.clone(),
+                prefix_binding: shadow_prefix_binding(prefix),
                 probe: probe_runner(&context.resolved),
                 dgvoodoo: DgVoodooState::verified(false),
                 webview2_required: false,
@@ -784,10 +807,12 @@ mod tests {
             recommendation: None,
         };
         let mut legacy = capture_legacy_runtime(&input, &profile).unwrap();
+        let prefix = context.location.clone();
         let plan = resolve_runtime(RuntimeResolutionInput {
             profile: profile.clone(),
             resolved: &context.resolved,
-            prefix: context.location.clone(),
+            prefix: prefix.clone(),
+            prefix_binding: shadow_prefix_binding(prefix),
             probe: probe_runner(&context.resolved),
             dgvoodoo: DgVoodooState::verified(false),
             webview2_required: false,

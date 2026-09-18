@@ -249,6 +249,7 @@ struct RunnerAnchor {
 struct RunnerSessionInner {
     prefix: PathBuf,
     runner: RunnerAnchor,
+    plan_id: String,
     shutdown_spec: ProcessSpec,
     state: Mutex<SessionState>,
     protocol: Arc<SessionProtocol>,
@@ -372,8 +373,9 @@ impl RunnerSessionRegistry {
         app: &AppHandle,
         ctx: &WineContext,
         game: &GameProcessHandle,
+        anchor: &crate::tools::runtime::SessionAnchorV2,
     ) -> Result<OperationLease, SessionError> {
-        self.begin_operation_opt(Some(app), ctx, game).await
+        self.begin_operation_opt(Some(app), ctx, game, anchor).await
     }
 
     pub async fn begin_operation_opt(
@@ -381,6 +383,7 @@ impl RunnerSessionRegistry {
         app: Option<&AppHandle>,
         ctx: &WineContext,
         game: &GameProcessHandle,
+        anchor: &crate::tools::runtime::SessionAnchorV2,
     ) -> Result<OperationLease, SessionError> {
         let prefix = canonicalize_prefix_path(Path::new(&ctx.prefix))
             .ok_or_else(|| SessionError::validation("prefix path could not be canonicalized"))?;
@@ -396,6 +399,11 @@ impl RunnerSessionRegistry {
                 SessionState::Ready => {
                     if existing.runner != runner {
                         return Err(SessionError::validation(RUNNER_CONFLICT_MSG));
+                    }
+                    if existing.plan_id != anchor.plan_id {
+                        return Err(SessionError::validation(
+                            "El prefix ya está activo con otro runtime plan; ciérralo antes de cambiarlo.",
+                        ));
                     }
                     existing.bump_idle_generation();
                     existing.operation_leases.fetch_add(1, Ordering::SeqCst);
@@ -426,6 +434,7 @@ impl RunnerSessionRegistry {
         let session = Arc::new(RunnerSessionInner {
             prefix: prefix.clone(),
             runner,
+            plan_id: anchor.plan_id.clone(),
             shutdown_spec,
             state: Mutex::new(SessionState::Ready),
             protocol: Arc::clone(&spawned.protocol),
@@ -834,7 +843,7 @@ mod integration {
 
         let ctx = test_wine_context(&prefix);
         let lease = registry
-            .begin_operation_opt(None, &ctx, &GameProcessHandle::new())
+            .begin_operation_opt(None, &ctx, &GameProcessHandle::new(), &placeholder_anchor())
             .await
             .expect("begin");
         let mut child = registry
@@ -868,19 +877,35 @@ mod integration {
         let registry = RunnerSessionRegistry::with_sidecar_for_test(sessiond.clone());
         let ctx = test_wine_context(&prefix);
         let lease = registry
-            .begin_operation_opt(None, &ctx, &GameProcessHandle::new())
+            .begin_operation_opt(None, &ctx, &GameProcessHandle::new(), &placeholder_anchor())
             .await
             .unwrap();
         let _client = registry.attach_client(&lease, "client-1").unwrap();
 
+        let other_resolved = other_runner(&ctx.resolved);
+        let other_probe = crate::tools::runtime::probe_runner(&other_resolved);
+        let other_identity = crate::tools::runtime::resolve_prefix_binding(
+            None,
+            &other_resolved,
+            &other_probe,
+            other_resolved.is_wine_7_16(),
+        )
+        .expect("other prefix binding");
         let other_ctx = WineContext {
             prefix: ctx.prefix.clone(),
             location: ctx.location.clone(),
-            resolved: other_runner(&ctx.resolved),
+            resolved: other_resolved,
+            identity: other_identity,
+            probe: other_probe,
         };
 
         match registry
-            .begin_operation_opt(None, &other_ctx, &GameProcessHandle::new())
+            .begin_operation_opt(
+                None,
+                &other_ctx,
+                &GameProcessHandle::new(),
+                &placeholder_anchor(),
+            )
             .await
         {
             Err(SessionError { message }) => {
@@ -914,6 +939,14 @@ mod integration {
         let wine_path = runner_dir.join("wine");
         let resolved =
             resolve_runner(wine_path.to_string_lossy().as_ref()).expect("fake wine runner");
+        let probe = crate::tools::runtime::probe_runner(&resolved);
+        let identity = crate::tools::runtime::resolve_prefix_binding(
+            None,
+            &resolved,
+            &probe,
+            resolved.is_wine_7_16(),
+        )
+        .expect("test prefix binding");
         WineContext {
             prefix: prefix.to_string_lossy().into_owned(),
             location: PrefixLocation {
@@ -923,7 +956,15 @@ mod integration {
                 server_id: None,
             },
             resolved,
+            identity,
+            probe,
         }
+    }
+
+    fn placeholder_anchor() -> crate::tools::runtime::SessionAnchorV2 {
+        crate::tools::runtime::session_anchor_from_context(
+            &test_wine_context(&std::env::temp_dir()),
+        )
     }
 
     fn other_runner(primary: &crate::utils::ResolvedRunner) -> crate::utils::ResolvedRunner {
@@ -968,7 +1009,7 @@ mod integration {
         let ctx = test_wine_context(&prefix);
         let prefix_key = prefix.to_string_lossy().to_string();
         assert!(registry
-            .begin_operation_opt(None, &ctx, &GameProcessHandle::new())
+            .begin_operation_opt(None, &ctx, &GameProcessHandle::new(), &placeholder_anchor())
             .await
             .is_err());
         assert!(!registry.has_session(&prefix_key));
@@ -983,7 +1024,7 @@ mod integration {
         let ctx = test_wine_context(&prefix);
         let prefix_key = prefix.to_string_lossy().to_string();
         assert!(registry
-            .begin_operation_opt(None, &ctx, &GameProcessHandle::new())
+            .begin_operation_opt(None, &ctx, &GameProcessHandle::new(), &placeholder_anchor())
             .await
             .is_err());
         assert!(!registry.has_session(&prefix_key));
@@ -998,7 +1039,7 @@ mod integration {
         let ctx = test_wine_context(&prefix);
         let prefix_key = prefix.to_string_lossy().to_string();
         let _lease = registry
-            .begin_operation_opt(None, &ctx, &GameProcessHandle::new())
+            .begin_operation_opt(None, &ctx, &GameProcessHandle::new(), &placeholder_anchor())
             .await
             .expect("begin");
         let errors = registry.shutdown_all().await;
@@ -1015,7 +1056,7 @@ mod integration {
         let ctx = test_wine_context(&prefix);
         let prefix_key = prefix.to_string_lossy().to_string();
         let lease = registry
-            .begin_operation_opt(None, &ctx, &GameProcessHandle::new())
+            .begin_operation_opt(None, &ctx, &GameProcessHandle::new(), &placeholder_anchor())
             .await
             .expect("begin");
         let child = registry
@@ -1049,7 +1090,7 @@ mod integration {
         let ctx = test_wine_context(&prefix);
         let prefix_key = prefix.to_string_lossy().to_string();
         let _lease = registry
-            .begin_operation_opt(None, &ctx, &GameProcessHandle::new())
+            .begin_operation_opt(None, &ctx, &GameProcessHandle::new(), &placeholder_anchor())
             .await
             .expect("begin");
         let session = registry.get_session(&prefix_key).expect("session");
@@ -1077,7 +1118,7 @@ mod integration {
         let ctx = test_wine_context(&prefix);
         let prefix_key = prefix.to_string_lossy().to_string();
         let _lease = registry
-            .begin_operation_opt(None, &ctx, &GameProcessHandle::new())
+            .begin_operation_opt(None, &ctx, &GameProcessHandle::new(), &placeholder_anchor())
             .await
             .expect("begin");
         let reg_a = registry.clone();
@@ -1099,7 +1140,7 @@ mod integration {
         let registry = RunnerSessionRegistry::with_sidecar_for_test(sessiond);
         let ctx = test_wine_context(&prefix);
         let lease = registry
-            .begin_operation_opt(None, &ctx, &GameProcessHandle::new())
+            .begin_operation_opt(None, &ctx, &GameProcessHandle::new(), &placeholder_anchor())
             .await
             .expect("begin");
         let prefix_key = prefix.to_string_lossy().to_string();
@@ -1123,11 +1164,21 @@ mod integration {
         let key_a = prefix_a.to_string_lossy().to_string();
         let key_b = prefix_b.to_string_lossy().to_string();
         let lease_a = registry
-            .begin_operation_opt(None, &ctx_a, &GameProcessHandle::new())
+            .begin_operation_opt(
+                None,
+                &ctx_a,
+                &GameProcessHandle::new(),
+                &placeholder_anchor(),
+            )
             .await
             .expect("begin a");
         let lease_b = registry
-            .begin_operation_opt(None, &ctx_b, &GameProcessHandle::new())
+            .begin_operation_opt(
+                None,
+                &ctx_b,
+                &GameProcessHandle::new(),
+                &placeholder_anchor(),
+            )
             .await
             .expect("begin b");
         assert!(registry.has_session(&key_a));
@@ -1149,7 +1200,7 @@ mod integration {
         let registry = RunnerSessionRegistry::with_sidecar_for_test(sessiond);
         let ctx = test_wine_context(&prefix);
         let lease = registry
-            .begin_operation_opt(None, &ctx, &GameProcessHandle::new())
+            .begin_operation_opt(None, &ctx, &GameProcessHandle::new(), &placeholder_anchor())
             .await
             .expect("begin");
         let prefix_key = prefix.to_string_lossy().to_string();

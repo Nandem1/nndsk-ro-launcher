@@ -13,9 +13,9 @@ use crate::tools::runtime::{
 use crate::tools::server_tools;
 use crate::utils::{
     ensure_custom_setup_allowed, ensure_managed_path_safe, ensure_managed_reset_allowed,
-    inspect_prefix, manifest_matches_location, manifest_matches_runner,
-    proton_runner_vkd3d_companions_available, resolve_server_wine_context_with_runner,
-    resolve_wine_context, WineContext, PREFIX_SCHEMA_VERSION,
+    inspect_prefix, manifest_matches_stored_location, proton_runner_vkd3d_companions_available,
+    resolve_server_wine_context_with_runner, resolve_wine_context, stored_manifest_matches_runner,
+    WineContext, PREFIX_SCHEMA_V3, PREFIX_SCHEMA_VERSION,
 };
 
 #[tauri::command]
@@ -54,42 +54,54 @@ pub async fn setup_prefix(
     let runner_unknown = health
         .manifest
         .as_ref()
-        .is_some_and(|manifest| manifest.runner_kind == "unknown");
+        .is_some_and(|manifest| manifest.runner_kind() == "unknown");
     let mut rebuild_managed = ctx.location.managed && (health.legacy_marker || runner_unknown);
     if let Some(manifest) = &health.manifest {
-        if manifest.schema_version != PREFIX_SCHEMA_VERSION
-            || !manifest_matches_location(manifest, &ctx.location)
-        {
-            if ctx.location.managed {
-                rebuild_managed = true;
-            } else {
-                return Err(
-                    "El manifiesto del entorno no coincide con esta ruta o servidor; no se modificará"
-                        .to_string(),
-                );
-            }
+        let schema = manifest.schema_version();
+        if schema > PREFIX_SCHEMA_V3 {
+            return Err(
+                "El manifiesto usa un schema no soportado; no se adoptará ni rearmará".to_string(),
+            );
         }
-        let runner_path = ctx.resolved.runner_path().to_string_lossy();
-        if manifest.runner_kind != "unknown"
-            && !manifest_matches_runner(manifest, ctx.resolved.kind_label(), runner_path.as_ref())
-        {
-            if ctx.location.managed {
-                rebuild_managed = true;
-            } else {
-                return Err(
-                    "El entorno personalizado pertenece a otro runner y no se modificará"
-                        .to_string(),
-                );
+        if schema == PREFIX_SCHEMA_V3 {
+            // La identidad v3 se valida en el binding; no promover ni rearmar por mismatch aquí.
+        } else if schema == PREFIX_SCHEMA_VERSION {
+            if !manifest_matches_stored_location(manifest, &ctx.location) {
+                if ctx.location.managed {
+                    rebuild_managed = true;
+                } else {
+                    return Err(
+                        "El manifiesto del entorno no coincide con esta ruta o servidor; no se modificará"
+                            .to_string(),
+                    );
+                }
             }
-        }
-        let required_graphics = requirements.dxvk.manifest_component();
-        if ctx.location.managed
-            && !manifest
-                .components
-                .iter()
-                .any(|component| component == required_graphics)
-        {
-            rebuild_managed = true;
+            let runner_path = ctx.resolved.runner_path().to_string_lossy();
+            if manifest.runner_kind() != "unknown"
+                && !stored_manifest_matches_runner(
+                    manifest,
+                    ctx.resolved.kind_label(),
+                    runner_path.as_ref(),
+                )
+            {
+                if ctx.location.managed {
+                    rebuild_managed = true;
+                } else {
+                    return Err(
+                        "El entorno personalizado pertenece a otro runner y no se modificará"
+                            .to_string(),
+                    );
+                }
+            }
+            let required_graphics = requirements.dxvk.manifest_component();
+            if ctx.location.managed
+                && !manifest
+                    .components()
+                    .iter()
+                    .any(|component| component == required_graphics)
+            {
+                rebuild_managed = true;
+            }
         }
     }
     if rebuild_managed {

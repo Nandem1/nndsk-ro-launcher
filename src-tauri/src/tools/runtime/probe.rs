@@ -1,24 +1,61 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use crate::tools::runners::{managed_proton_path, managed_runtime_ready, MANAGED_RUNNER_ID};
+use crate::tools::runners::managed_proton_path;
 use crate::utils::{ResolvedRunner, RunnerKind};
 
+use super::managed_identity::{
+    managed_proton_artifact_identity, managed_runtime_payload_verification,
+};
+use super::material::FileDigestCache;
 use super::model::{
-    ArtifactId, ArtifactReceipt, CapabilityEvidence, CapabilitySource, ComponentProvenance,
-    ExternalObserved, ObservedMaterialRole, ObservedRunnerMaterial, PayloadVerification,
-    PrefixArchitecture, RunnerCapabilities, RunnerIdentity, SyncPlan, SyncSupport,
-    UnknownCapabilityReason, Wow64Layout,
+    ArtifactReceipt, CapabilityEvidence, CapabilitySource, ComponentProvenance,
+    ExternalObserved, ObservedMaterial, ObservedMaterialRole, ObservedRunnerMaterial,
+    PayloadVerification, PrefixArchitecture, RunnerCapabilities, RunnerIdentity, SyncPlan,
+    SyncSupport, UnknownCapabilityReason, Wow64Layout,
 };
 
 #[derive(Debug, Clone)]
-pub(super) struct RunnerProbe {
+pub(crate) struct RunnerProbe {
     pub(super) identity: RunnerIdentity,
     pub(super) capabilities: RunnerCapabilities,
     pub(super) sync: SyncPlan,
 }
 
-pub(super) fn probe_runner(resolved: &ResolvedRunner) -> RunnerProbe {
+pub(crate) fn probe_managed_proton_descriptor(payload: PayloadVerification) -> RunnerProbe {
+    RunnerProbe {
+        identity: RunnerIdentity {
+            kind: RunnerKind::Proton,
+            provenance: ComponentProvenance::ArtifactReceipt(ArtifactReceipt {
+                identity: managed_proton_artifact_identity(),
+                payload_verification: payload,
+            }),
+            observed_material: ObservedRunnerMaterial {
+                roles: BTreeSet::new(),
+            },
+        },
+        capabilities: RunnerCapabilities {
+            reported_version: CapabilityEvidence::Unknown {
+                reason: UnknownCapabilityReason::DescriptorDoesNotDeclare,
+            },
+            wow64_layout: CapabilityEvidence::Unknown {
+                reason: UnknownCapabilityReason::DescriptorDoesNotDeclare,
+            },
+            supported_prefix_architectures: CapabilityEvidence::Unknown {
+                reason: UnknownCapabilityReason::DescriptorDoesNotDeclare,
+            },
+            sync_support: SyncSupport::RunnerManaged,
+        },
+        sync: SyncPlan::RunnerManaged,
+    }
+}
+
+pub(crate) fn probe_runner(resolved: &ResolvedRunner) -> RunnerProbe {
+    let mut cache = FileDigestCache::default();
+    probe_runner_with_cache(resolved, &mut cache)
+}
+
+fn probe_runner_with_cache(resolved: &ResolvedRunner, cache: &mut FileDigestCache) -> RunnerProbe {
     let kind = resolved.kind();
     let reported_version = match resolved.reported_version() {
         Some(value) => CapabilityEvidence::Known {
@@ -65,20 +102,15 @@ pub(super) fn probe_runner(resolved: &ResolvedRunner) -> RunnerProbe {
         }
     };
 
-    let roles = observed_roles(resolved);
+    let roles = observed_roles(resolved, cache);
     let provenance = if is_managed_proton(resolved) {
         ComponentProvenance::ArtifactReceipt(ArtifactReceipt {
-            artifact_id: ArtifactId::new(MANAGED_RUNNER_ID)
-                .expect("the managed runner id is a stable internal constant"),
-            payload_verification: if managed_runtime_ready() {
-                PayloadVerification::ShapeVerified
-            } else {
-                PayloadVerification::Unverified
-            },
+            identity: managed_proton_artifact_identity(),
+            payload_verification: managed_runtime_payload_verification(),
         })
     } else {
         ComponentProvenance::ExternalObserved(ExternalObserved {
-            roles: roles.clone(),
+            roles: roles.iter().map(|material| material.role).collect(),
             complete: false,
         })
     };
@@ -104,7 +136,7 @@ pub(super) fn is_managed_proton(resolved: &ResolvedRunner) -> bool {
         && paths_match(resolved.runner_path(), &managed_proton_path())
 }
 
-pub(super) fn paths_match(left: &Path, right: &Path) -> bool {
+pub(crate) fn paths_match(left: &Path, right: &Path) -> bool {
     canonical_or_original(left) == canonical_or_original(right)
 }
 
@@ -112,36 +144,76 @@ fn canonical_or_original(path: &Path) -> PathBuf {
     std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
-fn observed_roles(resolved: &ResolvedRunner) -> BTreeSet<ObservedMaterialRole> {
-    let mut roles = BTreeSet::from([ObservedMaterialRole::Entrypoint]);
+fn observed_roles(
+    resolved: &ResolvedRunner,
+    cache: &mut FileDigestCache,
+) -> BTreeSet<ObservedMaterial> {
+    let mut roles = BTreeSet::new();
+    roles.insert(material_for_path(
+        resolved.runner_path(),
+        ObservedMaterialRole::Entrypoint,
+        cache,
+    ));
     match resolved.kind() {
         RunnerKind::Wine => {
-            if resolved.wineserver_path().is_some() {
-                roles.insert(ObservedMaterialRole::WineServer);
+            if let Some(path) = resolved.wineserver_path() {
+                roles.insert(material_for_path(
+                    path,
+                    ObservedMaterialRole::WineServer,
+                    cache,
+                ));
             }
-            if wine_root(resolved).is_some_and(|root| root.join("wine-tkg-config.txt").is_file()) {
-                roles.insert(ObservedMaterialRole::WineTkgConfig);
+            if let Some(root) = wine_root(resolved) {
+                let config = root.join("wine-tkg-config.txt");
+                if config.is_file() {
+                    roles.insert(material_for_path(
+                        &config,
+                        ObservedMaterialRole::WineTkgConfig,
+                        cache,
+                    ));
+                }
             }
         }
         RunnerKind::Proton => {
-            if resolved
-                .proton_root()
-                .is_some_and(|root| root.join("files/bin/wine").is_file())
-            {
-                roles.insert(ObservedMaterialRole::ProtonInnerWine);
+            if let Some(root) = resolved.proton_root() {
+                let inner = root.join("files/bin/wine");
+                if inner.is_file() {
+                    roles.insert(material_for_path(
+                        &inner,
+                        ObservedMaterialRole::ProtonInnerWine,
+                        cache,
+                    ));
+                }
+                let version = root.join("version");
+                if version.is_file() {
+                    roles.insert(material_for_path(
+                        &version,
+                        ObservedMaterialRole::ProtonVersion,
+                        cache,
+                    ));
+                }
             }
-            if resolved
-                .proton_root()
-                .is_some_and(|root| root.join("version").is_file())
-            {
-                roles.insert(ObservedMaterialRole::ProtonVersion);
-            }
-            if resolved.proton_umu_path().is_some() {
-                roles.insert(ObservedMaterialRole::UmuEntrypoint);
+            if let Some(path) = resolved.proton_umu_path() {
+                roles.insert(material_for_path(
+                    path,
+                    ObservedMaterialRole::UmuEntrypoint,
+                    cache,
+                ));
             }
         }
     }
     roles
+}
+
+fn material_for_path(
+    path: &Path,
+    role: ObservedMaterialRole,
+    cache: &mut FileDigestCache,
+) -> ObservedMaterial {
+    ObservedMaterial {
+        role,
+        digest: cache.sha256_file(path),
+    }
 }
 
 fn probe_layout(

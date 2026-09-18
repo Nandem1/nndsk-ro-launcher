@@ -12,7 +12,7 @@ use crate::utils::{app_data_dir, emit_log, emit_progress, replace_json, Operatio
 
 pub const MANAGED_RUNNER_ID: &str = "ro-proton-cachyos-11.0-20260702-slr";
 pub const MANAGED_RUNNER_LABEL: &str = "proton-cachyos-11.0-20260702-slr-x86_64";
-const MANAGED_DXVK_ID: &str = "dxvk-2.6.2";
+pub(crate) const MANAGED_DXVK_ID: &str = "dxvk-2.6.2";
 
 const RUNTIME_SCHEMA: u32 = 1;
 const RUNTIME_DIR: &str = "runtime";
@@ -24,7 +24,7 @@ const PROTON_URL: &str = "https://github.com/CachyOS/proton-cachyos/releases/dow
 const PROTON_SHA512: &str = "c8a050077b1d420e5b691dc487eaa998fe03b99b7e05e6ee3e16c8d4bd9f4c9ff5d9f80e5f6cd1a3f6bb5194bf1481fca9f91999f710d505b68ad97aa5592c7b";
 const PROTON_SIZE: u64 = 328_233_608;
 
-const UMU_ID: &str = "umu-launcher-1.4.0";
+pub(crate) const UMU_ID: &str = "umu-launcher-1.4.0";
 const UMU_ARCHIVE_NAME: &str = "umu-launcher-1.4.0-zipapp.tar";
 const UMU_ARCHIVE_ROOT: &str = "umu";
 const UMU_URL: &str = "https://github.com/Open-Wine-Components/umu-launcher/releases/download/1.4.0/umu-launcher-1.4.0-zipapp.tar";
@@ -148,6 +148,26 @@ pub fn managed_umu_path() -> PathBuf {
 
 pub fn managed_runtime_ready() -> bool {
     artifact_ready(&UMU_ARTIFACT) && artifact_ready(&PROTON_ARTIFACT)
+}
+
+fn decode_hex_digest(hex: &str) -> Vec<u8> {
+    hex.chars()
+        .collect::<Vec<_>>()
+        .chunks(2)
+        .map(|pair| u8::from_str_radix(&pair.iter().collect::<String>(), 16).unwrap_or(0))
+        .collect()
+}
+
+pub fn managed_proton_source_digest_bytes() -> Vec<u8> {
+    decode_hex_digest(PROTON_SHA512)
+}
+
+pub fn managed_dxvk_source_digest_bytes() -> Vec<u8> {
+    decode_hex_digest(DXVK_SHA256)
+}
+
+pub fn managed_umu_source_digest_bytes() -> Vec<u8> {
+    decode_hex_digest(UMU_SHA256)
 }
 
 pub async fn ensure_managed_runtime(app: &AppHandle) -> Result<(), String> {

@@ -5,13 +5,13 @@ use tokio::process::Command;
 
 use crate::models::server::ServerConfig;
 use crate::tools::runners::{managed_proton_path, managed_umu_path};
-use crate::utils::prefix::effective_prefix;
+use crate::tools::runtime::{probe_runner, resolve_prefix_binding, PrefixBinding, RunnerProbe};
 use crate::utils::{
     apply_prefix_env, ensure_custom_setup_allowed, ensure_managed_path_safe, find_umu_run,
-    inspect_prefix, is_executable_file, manifest_matches_location, manifest_matches_runner,
-    proton_vkd3d_companions_available, resolve_server_prefix_with_runner, sanitize_appimage_env,
+    inspect_prefix, is_executable_file, manifest_matches_runner, manifest_matches_stored_location,
+    proton_vkd3d_companions_available, sanitize_appimage_env,
     sanitized_external_path, winetricks_path, PrefixHealth, PrefixLocation, PrefixScope,
-    ProcessEnv, PREFIX_SCHEMA_VERSION, UMU_RUN_BIN,
+    ProcessEnv, PREFIX_SCHEMA_V3, PREFIX_SCHEMA_VERSION, UMU_RUN_BIN,
 };
 
 const DEFAULT_GAME_ID: &str = "0";
@@ -165,6 +165,21 @@ enum RunnerStrategy {
 #[derive(Debug, Clone)]
 pub struct ResolvedRunner {
     strategy: RunnerStrategy,
+}
+
+pub(crate) fn resolved_managed_proton_descriptor() -> ResolvedRunner {
+    let proton_script = managed_proton_path();
+    let proton_dir = proton_script
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| proton_script.clone());
+    ResolvedRunner {
+        strategy: RunnerStrategy::Proton {
+            proton_script,
+            proton_dir,
+            umu_bin: managed_umu_path(),
+        },
+    }
 }
 
 impl ResolvedRunner {
@@ -690,6 +705,9 @@ pub struct WineContext {
     pub prefix: String,
     pub location: PrefixLocation,
     pub resolved: ResolvedRunner,
+    pub identity: PrefixBinding,
+    #[allow(dead_code)]
+    pub probe: RunnerProbe,
 }
 
 pub fn runtime_prefix_blockers(ctx: &WineContext, health: &PrefixHealth) -> Vec<String> {
@@ -716,28 +734,31 @@ pub fn runtime_prefix_blockers(ctx: &WineContext, health: &PrefixHealth) -> Vec<
     }
 
     if let Some(manifest) = &health.manifest {
-        if manifest.schema_version != PREFIX_SCHEMA_VERSION {
+        let schema = manifest.schema_version();
+        if schema != PREFIX_SCHEMA_VERSION && schema != PREFIX_SCHEMA_V3 {
             blockers.push(format!(
-                "Schema de entorno incompatible: {} (esperado {PREFIX_SCHEMA_VERSION})",
-                manifest.schema_version
+                "Schema de entorno incompatible: {} (esperado {PREFIX_SCHEMA_VERSION} o {PREFIX_SCHEMA_V3})",
+                schema
             ));
         }
-        if !manifest_matches_location(manifest, &ctx.location) {
+        if !manifest_matches_stored_location(manifest, &ctx.location) {
             blockers.push("El manifiesto pertenece a otro entorno o servidor".to_string());
         }
-        if manifest.runner_kind == "unknown" {
+        if manifest.runner_kind() == "unknown" {
             blockers.push(
                 "El manifiesto no registra qué runner creó el entorno; debe rearmarse".to_string(),
             );
-        } else if !manifest_matches_runner(
-            manifest,
-            ctx.resolved.kind_label(),
-            ctx.resolved.runner_path().to_string_lossy().as_ref(),
-        ) {
-            blockers.push(format!(
-                "El entorno fue creado con otro runner ({})",
-                manifest.runner_path
-            ));
+        } else if let Some(v2) = manifest.as_v2() {
+            if !manifest_matches_runner(
+                v2,
+                ctx.resolved.kind_label(),
+                ctx.resolved.runner_path().to_string_lossy().as_ref(),
+            ) {
+                blockers.push(format!(
+                    "El entorno fue creado con otro runner ({})",
+                    manifest.runner_path()
+                ));
+            }
         }
     }
 
@@ -768,23 +789,20 @@ pub fn validate_runtime_prefix(ctx: &WineContext) -> Result<PrefixHealth, String
 }
 
 pub async fn resolve_wine_context(
-    wine_prefix: Option<String>,
+    _wine_prefix: Option<String>,
     runner: Option<String>,
 ) -> Result<WineContext, String> {
-    let prefix = effective_prefix(wine_prefix.clone());
+    let resolved = resolve_effective_runner(runner).await?;
+    let probe = probe_runner(&resolved);
+    let identity = resolve_prefix_binding(None, &resolved, &probe, resolved.is_wine_7_16())?;
+    let location = identity.location.clone();
+    let prefix = location.path.clone();
     Ok(WineContext {
-        location: PrefixLocation {
-            path: prefix.clone(),
-            scope: if wine_prefix.is_some() {
-                crate::utils::PrefixScope::Custom
-            } else {
-                crate::utils::PrefixScope::Shared
-            },
-            managed: wine_prefix.is_none(),
-            server_id: None,
-        },
+        location,
         prefix,
-        resolved: resolve_effective_runner(runner).await?,
+        resolved,
+        identity,
+        probe,
     })
 }
 
@@ -794,14 +812,15 @@ pub async fn resolve_server_wine_context_with_runner(
 ) -> Result<WineContext, String> {
     let selected_runner = select_effective_runner(server, default_runner);
     let resolved = resolve_effective_runner(selected_runner).await?;
-    let runner_path = std::fs::canonicalize(resolved.runner_path())
-        .unwrap_or_else(|_| resolved.runner_path().to_path_buf());
-    let runner_path = runner_path.to_string_lossy();
-    let location = resolve_server_prefix_with_runner(server, Some(runner_path.as_ref()))?;
+    let probe = probe_runner(&resolved);
+    let identity = resolve_prefix_binding(server, &resolved, &probe, resolved.is_wine_7_16())?;
+    let location = identity.location.clone();
     Ok(WineContext {
         prefix: location.path.clone(),
         location,
         resolved,
+        identity,
+        probe,
     })
 }
 
@@ -1185,15 +1204,22 @@ mod tests {
 
     #[test]
     fn legacy_prefix_without_runner_identity_is_blocked_until_rearm() {
+        let resolved = resolved_managed_proton_descriptor();
+        let probe = probe_runner(&resolved);
+        let identity = resolve_prefix_binding(None, &resolved, &probe, resolved.is_wine_7_16())
+            .expect("test binding");
+        let location = PrefixLocation {
+            path: "/tmp/legacy-prefix".to_string(),
+            scope: PrefixScope::Shared,
+            managed: true,
+            server_id: None,
+        };
         let context = WineContext {
-            prefix: "/tmp/legacy-prefix".to_string(),
-            location: PrefixLocation {
-                path: "/tmp/legacy-prefix".to_string(),
-                scope: PrefixScope::Shared,
-                managed: true,
-                server_id: None,
-            },
-            resolved: test_wine_runner(),
+            prefix: location.path.clone(),
+            location,
+            resolved,
+            identity,
+            probe,
         };
         let health = PrefixHealth {
             structure_ok: true,

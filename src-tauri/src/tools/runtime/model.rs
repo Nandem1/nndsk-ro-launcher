@@ -3,11 +3,19 @@ use std::path::PathBuf;
 
 use crate::utils::{PrefixLocation, ResolvedRunner, RunnerKind};
 
+pub(crate) const PREFIX_MATERIAL_RECIPE_REVISION: u64 = 1;
+pub(crate) const RUNTIME_PLAN_RECIPE_REVISION: u64 = 1;
+pub(crate) const BASE_SETUP_RECIPE_REVISION: u64 = 1;
+pub(crate) const INVOCATION_POLICY_REVISION: u64 = 1;
+pub(crate) const ENVIRONMENT_BUILDER_REVISION: u64 = 1;
+pub(crate) const ARTIFACT_IDENTITY_SCHEMA_VERSION: u64 = 1;
+pub(crate) const FINGERPRINT_SCHEMA_VERSION: u64 = 1;
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub(super) struct ArtifactId(String);
+pub(crate) struct ArtifactId(String);
 
 impl ArtifactId {
-    pub(super) fn new(value: impl Into<String>) -> Result<Self, &'static str> {
+    pub(crate) fn new(value: impl Into<String>) -> Result<Self, &'static str> {
         let value = value.into();
         if valid_stable_id(&value) {
             Ok(Self(value))
@@ -87,14 +95,60 @@ impl RuntimeProfile {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum PayloadVerification {
+pub(crate) enum PayloadVerification {
     ShapeVerified,
     Unverified,
+    SourceAndPayloadVerified,
+    Corrupt,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SourceDigest {
+    pub(crate) algorithm: DigestAlgorithm,
+    pub(crate) bytes: Vec<u8>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DigestAlgorithm {
+    Sha256,
+    Sha512,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ArtifactIdentity {
+    pub(crate) schema_version: u64,
+    pub(crate) artifact_id: ArtifactId,
+    pub(crate) source_digest: SourceDigest,
+    pub(crate) platform: String,
+    pub(crate) architectures: BTreeSet<ArtifactArchitecture>,
+    pub(crate) install_recipe_revision: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum ArtifactArchitecture {
+    X86,
+    X86_64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct FingerprintDigest {
+    pub(crate) schema_version: u64,
+    pub(crate) algorithm: String,
+    pub(crate) digest: [u8; 32],
+}
+
+impl FingerprintDigest {
+    pub(crate) fn hex_digest(&self) -> String {
+        self.digest
+            .iter()
+            .map(|byte| format!("{:02x}", byte))
+            .collect()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct ArtifactReceipt {
-    pub(super) artifact_id: ArtifactId,
+    pub(super) identity: ArtifactIdentity,
     pub(super) payload_verification: PayloadVerification,
 }
 
@@ -106,6 +160,12 @@ pub(super) enum ObservedMaterialRole {
     ProtonVersion,
     UmuEntrypoint,
     WineTkgConfig,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct ObservedMaterial {
+    pub(crate) role: ObservedMaterialRole,
+    pub(crate) digest: Option<Vec<u8>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -129,7 +189,7 @@ pub(super) enum ComponentProvenance {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct ObservedRunnerMaterial {
-    pub(super) roles: BTreeSet<ObservedMaterialRole>,
+    pub(super) roles: BTreeSet<ObservedMaterial>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -379,11 +439,12 @@ impl InvocationTarget {
 }
 
 #[derive(Debug, Clone)]
-pub(super) struct RuntimePlan {
+pub(crate) struct RuntimePlan {
     pub(super) runner: RunnerPlan,
     pub(super) graphics: GraphicsPlan,
     pub(super) prefix: PrefixLocation,
     pub(super) webview2_required: bool,
+    pub(super) prefix_binding: super::identity::PrefixBinding,
 }
 
 impl RuntimePlan {
