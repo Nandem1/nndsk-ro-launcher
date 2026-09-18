@@ -375,6 +375,15 @@ fn role_label(role: super::model::ObservedMaterialRole) -> String {
 }
 
 #[cfg(test)]
+pub(crate) fn test_desired_prefix_fingerprint(
+    resolved: &ResolvedRunner,
+    probe: &RunnerProbe,
+    wine_7_16: bool,
+) -> Result<PrefixFingerprint, String> {
+    desired_prefix_fingerprint(resolved, probe, wine_7_16)
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 

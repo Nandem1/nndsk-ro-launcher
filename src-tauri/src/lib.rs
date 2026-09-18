@@ -16,6 +16,9 @@ use commands::{
     },
     deps::check_dependencies,
     launcher::{launch_game, list_game_clients, stop_all_games, stop_game},
+    observations::{
+        delete_runtime_observations, export_runtime_observations, list_runtime_observations,
+    },
     prefix::{reset_prefix, setup_prefix},
     runners::list_runners,
     server_tools::{install_dgvoodoo, launch_server_tool, scan_server_tools, uninstall_dgvoodoo},
@@ -99,6 +102,9 @@ pub fn run() {
             stop_spammer,
             update_spammer_config,
             get_spammer_status,
+            list_runtime_observations,
+            export_runtime_observations,
+            delete_runtime_observations,
         ])
         .build(tauri::generate_context!())
         .expect("error al iniciar la aplicación")

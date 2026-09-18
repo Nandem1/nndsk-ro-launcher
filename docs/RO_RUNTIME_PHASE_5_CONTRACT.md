@@ -48,7 +48,7 @@ manifests ni settings.
 ## 6. Pendiente (fuera de Fase 5)
 
 - `compute_runtime_fingerprint` completo y `plan_id` discriminante.
-- Observaciones locales persistidas (Fase 7).
+- Observaciones locales persistidas — ver [`RO_RUNTIME_PHASE_7_CONTRACT.md`](RO_RUNTIME_PHASE_7_CONTRACT.md).
 - Smokes live Sakura/Honey con `gepard.dll` real en máquina de desarrollo.
 
 ## 7. Prohibido (Fase 5)

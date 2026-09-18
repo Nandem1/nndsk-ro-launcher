@@ -71,7 +71,8 @@ No wildcard por familia de runner, server id ni nombre de servidor.
 ## 5. Curated vs local
 
 Sólo `EvidenceProvenance::CuratedShipped` alimenta el resolver productivo. `LocalObservation` y
-futuras observaciones locales producen `Unknown` hasta revisión manual (Fase 7).
+futuras observaciones locales producen `Unknown` hasta revisión manual. El store Fase 7
+(`observations/`) no alimenta el resolver productivo ni `shipped_compatibility_records`.
 
 ## 6. Rollback
 

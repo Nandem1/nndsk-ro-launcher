@@ -213,15 +213,30 @@ impl SpawnedRunner {
     }
 
     pub fn try_exit_code(&mut self) -> Option<i32> {
+        self.try_exit_status()
+            .map(|exit| exit.exit_code.unwrap_or(-1))
+    }
+
+    pub fn try_exit_status(&mut self) -> Option<ProcessExit> {
         match self {
-            Self::Direct(child) => child
-                .try_wait()
-                .ok()
-                .flatten()
-                .map(|status| status.code().unwrap_or(-1)),
-            Self::Supervised(process) => {
-                process.try_exit().map(|exit| exit.exit_code.unwrap_or(-1))
-            }
+            Self::Direct(child) => child.try_wait().ok().flatten().map(|status| {
+                #[cfg(unix)]
+                {
+                    use std::os::unix::process::ExitStatusExt;
+                    ProcessExit {
+                        exit_code: status.code(),
+                        signal: status.signal(),
+                    }
+                }
+                #[cfg(not(unix))]
+                {
+                    ProcessExit {
+                        exit_code: status.code(),
+                        signal: None,
+                    }
+                }
+            }),
+            Self::Supervised(process) => process.try_exit(),
         }
     }
 

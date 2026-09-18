@@ -6,6 +6,7 @@ pub mod autobuff;
 pub mod autopot;
 pub mod deps;
 pub mod launcher;
+pub mod observations;
 pub mod prefix;
 pub mod runners;
 pub mod server_tools;

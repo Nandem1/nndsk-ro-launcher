@@ -34,7 +34,7 @@ Independiente de `RO_LAUNCHER_RUNTIME_SHADOW`, `RO_LAUNCHER_PREFIX_V3`, `RO_LAUN
 
 ## 4. Pendiente (fuera de Fase 4)
 
-- `compute_runtime_fingerprint` completo y `plan_id` que discrimine overlay (placeholder actual).
+- `plan_id` discriminante vía `RuntimeFingerprint` v1 (Fase 7); smokes live siguen pendientes.
 - Smokes live Sakura/Honey, AppImage instalada, multi-client juego.
 - `expected_plan_id` IPC, UI de profiles (compatibility catalog: Fase 5 / [`RO_RUNTIME_PHASE_5_CONTRACT.md`](RO_RUNTIME_PHASE_5_CONTRACT.md)).
 

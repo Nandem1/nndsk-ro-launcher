@@ -194,7 +194,7 @@ pub(super) struct ObservedRunnerMaterial {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct RunnerIdentity {
+pub(crate) struct RunnerIdentity {
     pub(super) kind: RunnerKind,
     pub(super) provenance: ComponentProvenance,
     pub(super) observed_material: ObservedRunnerMaterial,
@@ -247,7 +247,7 @@ pub(super) enum SyncSupport {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum SyncPlan {
+pub(crate) enum SyncPlan {
     WineServer,
     Esync,
     Fsync,
@@ -255,7 +255,7 @@ pub(super) enum SyncPlan {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct RunnerCapabilities {
+pub(crate) struct RunnerCapabilities {
     pub(super) reported_version: CapabilityEvidence<String>,
     pub(super) wow64_layout: CapabilityEvidence<Wow64Layout>,
     pub(super) supported_prefix_architectures: CapabilityEvidence<BTreeSet<PrefixArchitecture>>,
@@ -271,7 +271,7 @@ pub(crate) struct RunnerPlan {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub(super) struct ComponentId(String);
+pub(crate) struct ComponentId(String);
 
 impl ComponentId {
     pub(super) fn new(value: impl Into<String>) -> Result<Self, &'static str> {
@@ -283,7 +283,7 @@ impl ComponentId {
         }
     }
 
-    pub(super) fn as_str(&self) -> &str {
+    pub(crate) fn as_str(&self) -> &str {
         &self.0
     }
 }
@@ -327,7 +327,7 @@ impl DxvkProvider {
         }
     }
 
-    pub(super) fn component_id(&self) -> &str {
+    pub(crate) fn component_id(&self) -> &str {
         match &self.kind {
             DxvkProviderKind::RunnerOwned { component } => component.as_str(),
             DxvkProviderKind::ManagedPrefix { artifact_id } => artifact_id.as_str(),
@@ -362,12 +362,24 @@ impl RunnerPlan {
     pub(crate) fn resolved(&self) -> &ResolvedRunner {
         &self.resolved
     }
+
+    pub(crate) fn identity(&self) -> &RunnerIdentity {
+        &self.identity
+    }
+
+    pub(crate) fn capabilities(&self) -> &RunnerCapabilities {
+        &self.capabilities
+    }
+
+    pub(crate) fn sync_plan(&self) -> SyncPlan {
+        self.sync
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct DgVoodooOverlayPlan {
+pub(crate) struct DgVoodooOverlayPlan {
     pub(super) provenance: ComponentProvenance,
-    pub(super) component_id: ComponentId,
+    pub(crate) component_id: ComponentId,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -397,7 +409,7 @@ impl GraphicsPlan {
         }
     }
 
-    pub(super) fn profile(&self) -> GraphicsProfile {
+    pub(crate) fn profile(&self) -> GraphicsProfile {
         match self.kind {
             GraphicsPlanKind::Dxvk => GraphicsProfile::Dxvk,
             GraphicsPlanKind::DgVoodooDxvk { .. } => GraphicsProfile::DgVoodooDxvk,
@@ -408,7 +420,7 @@ impl GraphicsPlan {
         &self.dxvk
     }
 
-    pub(super) fn overlay(&self) -> Option<&DgVoodooOverlayPlan> {
+    pub(crate) fn overlay(&self) -> Option<&DgVoodooOverlayPlan> {
         match &self.kind {
             GraphicsPlanKind::Dxvk => None,
             GraphicsPlanKind::DgVoodooDxvk { overlay } => Some(overlay),
@@ -488,6 +500,10 @@ impl RuntimePlan {
 
     pub(crate) fn webview2_required(&self) -> bool {
         self.webview2_required
+    }
+
+    pub(crate) fn prefix_binding(&self) -> &super::identity::PrefixBinding {
+        &self.prefix_binding
     }
 }
 

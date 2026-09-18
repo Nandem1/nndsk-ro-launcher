@@ -1,4 +1,7 @@
+import { useEffect, useState } from 'react'
+import { save } from '@tauri-apps/plugin-dialog'
 import { audioStatusLabel } from '../../shared/audio'
+import { api } from '../../shared/api'
 import { resolveRunner } from '../../shared/resolveRunner'
 import { Panel } from '../../shared/ui/Panel'
 import { StatusDot, type DotStatus } from '../../shared/ui/StatusDot'
@@ -6,6 +9,7 @@ import { useSelectedServer } from '../servers/useSelectedServer'
 import {
   advancedHasIssue,
   compatibilityLine,
+  observationsLabel,
   dxvkHintFromDeps,
   resolveAudioDotStatus,
   resolveDotStatus,
@@ -38,12 +42,42 @@ function StatusLine({
 }
 
 export function AdvancedSettings() {
+  const [observationCount, setObservationCount] = useState(0)
   const advancedStatus = useCurrentAdvancedStatus()
   const runners = useSettingsStore((state) => state.runners)
   const selectedRunner = useSettingsStore((state) => state.selectedRunner)
   const server = useSelectedServer()
 
+  useEffect(() => {
+    void api.listRuntimeObservations().then((rows) => {
+      setObservationCount(rows.length)
+    })
+  }, [advancedStatus])
+
   if (!advancedStatus) return null
+
+  const refreshObservations = () => {
+    void api.listRuntimeObservations().then((rows) => {
+      setObservationCount(rows.length)
+    })
+  }
+
+  const exportObservations = async () => {
+    const dest = await save({
+      defaultPath: 'ro-launcher-observations.json',
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+    })
+    if (!dest) return
+    await api.exportRuntimeObservations(dest)
+    refreshObservations()
+  }
+
+  const deleteObservations = async () => {
+    if (!window.confirm('¿Borrar todas las observaciones locales de runtime?'))
+      return
+    await api.deleteRuntimeObservations()
+    refreshObservations()
+  }
 
   const effectiveRunner = server
     ? resolveRunner(server, selectedRunner)
@@ -131,6 +165,12 @@ export function AdvancedSettings() {
       hint: advancedStatus.inputGroupWarning,
     },
     {
+      key: 'observations',
+      dot: 'ok' as const,
+      label: observationsLabel(observationCount),
+      hint: 'Registros locales de ejecución (sin subir a red)',
+    },
+    {
       key: 'uinput',
       dot: resolveDotStatus(
         advancedStatus.uinputInputOk,
@@ -161,6 +201,22 @@ export function AdvancedSettings() {
             hint={line.hint}
           />
         ))}
+        <div className="flex gap-2 pt-1 pl-4">
+          <button
+            type="button"
+            className="text-[10px] text-zinc-400 hover:text-zinc-200"
+            onClick={() => void exportObservations()}
+          >
+            Exportar observaciones
+          </button>
+          <button
+            type="button"
+            className="text-[10px] text-zinc-400 hover:text-zinc-200"
+            onClick={() => void deleteObservations()}
+          >
+            Borrar
+          </button>
+        </div>
       </div>
     </Panel>
   )

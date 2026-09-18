@@ -19,6 +19,7 @@ import type {
   ServerToolsStatus,
   SpammerConfig,
   SpammerStatusEvent,
+  RuntimeObservationSummary,
   StorageNotice,
   ToolKind,
   UninstallDgVoodooResult,
@@ -81,6 +82,16 @@ export const api = {
   },
 
   takeStorageNotices: () => invoke<StorageNotice[]>('take_storage_notices'),
+
+  listRuntimeObservations: () =>
+    invoke<RuntimeObservationSummary[]>('list_runtime_observations'),
+
+  exportRuntimeObservations: (destPath: string) =>
+    invoke<{ exportedCount: number }>('export_runtime_observations', {
+      destPath,
+    }),
+
+  deleteRuntimeObservations: () => invoke<void>('delete_runtime_observations'),
 
   listRunners: () => invoke<RunnerInfo[]>('list_runners'),
 

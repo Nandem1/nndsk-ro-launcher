@@ -6,7 +6,7 @@ distribuida por el launcher.
 
 | Campo                   | Valor                                                                                                                                                                                   |
 | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Estado                  | Fases 0–5 en código; Fase 6A cerrada (ADR-005 `no-go`: Gepard `illegal file ddraw.dll`); Fase 6B no se abre; siguiente Fase 7; `GraphicsPlan` operacional con `RO_LAUNCHER_RUNTIME_GRAPHICS` (default ON, `=0` rollback legacy); smokes live/AppImage no cerrados en este documento |
+| Estado                  | Fases 0–5 y 7 en código; Fase 6A cerrada (ADR-005 `no-go`); Fase 6B no se abre; siguiente Fase 8; `GraphicsPlan` operacional; observaciones locales con `RO_LAUNCHER_RUNTIME_OBSERVE` (default ON, `=0` rollback); smokes live/AppImage no cerrados en este documento |
 | Última revisión         | 2026-09-18                                                                                                                                                                              |
 | Alcance                 | Resolución de runner, gráficos, dependencias, identidad de prefix, artefactos administrados, compatibilidad y diagnóstico                                                               |
 | Objetivo                | Introducir seams tipados e incrementales que preserven el comportamiento validado y permitan agregar un backend gráfico sin modificar launcher, setup, tools y diagnóstico por separado |
@@ -1494,13 +1494,13 @@ Integración con session lifecycle y process identity; storage separado de confi
 
 **Entregables.**
 
-- [ ] Record con client/build, server pseudonymous/local id, runner, graphics, receipts, GPU/driver,
+- [x] Record con client/build, server pseudonymous/local id, runner, graphics, receipts, GPU/driver,
       plan id, timestamps y outcome.
-- [ ] Outcomes separados: startup, clean exit, crash confirmado, timeout, visual check pendiente y
+- [x] Outcomes separados: startup, clean exit, crash confirmado, timeout, visual check pendiente y
       user stop.
-- [ ] Redaction tests para args, tokens, paths sensibles, memory y environments.
-- [ ] Retention/export/delete explícitos.
-- [ ] Correlación con `(pid,start_time)` y ro-sessiond sin alterar su protocolo de memoria.
+- [x] Redaction tests para args, tokens, paths sensibles, memory y environments.
+- [x] Retention/export/delete explícitos.
+- [x] Correlación con `(pid,start_time)` y ro-sessiond sin alterar su protocolo de memoria.
 
 **No entra.** Upload automático, score, sampling de memoria del juego, benchmark harness ni promoción
 automática a `Validated`.

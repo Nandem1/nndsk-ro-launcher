@@ -6,13 +6,17 @@ mod compatibility;
 mod encode;
 mod environment;
 mod fingerprint;
+mod host_gpu;
 mod identity;
 mod inspection;
 mod managed_identity;
 mod material;
 mod model;
+mod observation;
+mod observation_store;
 mod probe;
 mod resolver;
+mod runtime_fingerprint;
 mod session_anchor;
 mod shadow;
 
@@ -37,9 +41,34 @@ pub(crate) use identity::{
 pub(crate) use inspection::inspect_subject;
 pub(crate) use model::InvocationTarget;
 pub(crate) use model::{ArtifactArchitecture, RuntimePlan, RuntimeProfile};
+pub(crate) use observation::{
+    classify_run_outcome, runtime_observe_enabled, OutcomeInput, PlanAvailability,
+};
+pub(crate) use observation_store::{
+    delete_observations, enqueue_persist_finished, enqueue_persist_started, export_observations,
+    list_observations, new_observation_id, ObservationFinishedPayload, ObservationStartedPayload,
+};
 pub(crate) use probe::{paths_match, probe_runner, RunnerProbe};
 pub(crate) use resolver::DgVoodooState;
-pub(crate) use session_anchor::{session_anchor_from_context, SessionAnchorV2};
+pub(crate) use session_anchor::{
+    runtime_anchor_for_operation, session_anchor_unavailable, ExecutionFacts, SessionAnchorV2,
+};
+
+#[cfg(test)]
+pub(crate) use session_anchor::session_anchor_from_context;
+
+pub(crate) fn operational_session_anchor(
+    ctx: &crate::utils::WineContext,
+    plan: Option<&model::RuntimePlan>,
+    webview2_required: bool,
+) -> SessionAnchorV2 {
+    match plan {
+        Some(plan) => {
+            runtime_anchor_for_operation(plan, &ctx.identity, ExecutionFacts { webview2_required })
+        }
+        None => session_anchor_unavailable(),
+    }
+}
 pub(crate) use shadow::{
     observe_legacy_runtime, runtime_shadow_enabled, DgVoodooObservation, LegacyRuntimeInput,
     ShadowOperation,

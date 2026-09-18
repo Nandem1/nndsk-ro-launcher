@@ -7,6 +7,9 @@ use crate::state::GameProcessHandle;
 use crate::tools::runner_sessions::RunnerOperation;
 use crate::tools::runner_sessions::RunnerSessionRegistry;
 use crate::tools::runners::{ensure_managed_dxvk, managed_dxvk_ready, managed_dxvk_root};
+use crate::tools::runtime::{
+    operational_session_anchor, resolve_operational_plan, DgVoodooState, OperationalRuntimeInput,
+};
 use crate::utils::audio;
 use crate::utils::gecko::install_gecko_for_runner;
 use crate::utils::{
@@ -72,7 +75,15 @@ pub async fn setup_runtime_prefix(
                     .read_dir()
                     .is_ok_and(|mut entries| entries.next().is_none())));
 
-    let anchor = crate::tools::runtime::session_anchor_from_context(ctx);
+    let operational_plan = resolve_operational_plan(OperationalRuntimeInput {
+        server_runner: None,
+        default_runner: None,
+        context: ctx,
+        dgvoodoo: DgVoodooState::verified(false),
+        webview2_required: requirements.webview2,
+    })
+    .ok();
+    let anchor = operational_session_anchor(ctx, operational_plan.as_ref(), requirements.webview2);
     let mut op = RunnerOperation::begin(Some(app), sessions, game, ctx, &anchor).await?;
     let _operation = OperationGuard::acquire("prefix", root)?;
 
@@ -117,7 +128,15 @@ pub async fn reset_runtime_prefix(
 ) -> Result<(), String> {
     emit_progress(app, "Preparando reconstrucción del entorno...", 40)?;
 
-    let anchor = crate::tools::runtime::session_anchor_from_context(ctx);
+    let operational_plan = resolve_operational_plan(OperationalRuntimeInput {
+        server_runner: None,
+        default_runner: None,
+        context: ctx,
+        dgvoodoo: DgVoodooState::verified(false),
+        webview2_required: requirements.webview2,
+    })
+    .ok();
+    let anchor = operational_session_anchor(ctx, operational_plan.as_ref(), requirements.webview2);
     let mut op = RunnerOperation::begin(Some(app), sessions, game, ctx, &anchor).await?;
     let _operation = OperationGuard::acquire("prefix", Path::new(&ctx.prefix))?;
 

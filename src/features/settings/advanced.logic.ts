@@ -6,6 +6,10 @@ import type {
 } from '../../shared/types'
 import type { DotStatus } from '../../shared/ui/StatusDot'
 
+export function observationsLabel(count: number): string {
+  return `Observaciones · ${count}`
+}
+
 export function resolveDotStatus(
   ok: boolean,
   warning?: string | null,

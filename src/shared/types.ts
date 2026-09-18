@@ -44,6 +44,17 @@ export interface AppSettings {
   richPresenceEnabled: boolean
 }
 
+export interface RuntimeObservationSummary {
+  observationId: string
+  recordState: string
+  startedAt: string
+  finishedAt?: string | null
+  serverToken: string
+  planId: string
+  outcomeKind?: string | null
+  visualCheck: string
+}
+
 export interface StorageNotice {
   source: 'servers' | 'settings'
   kind: 'migrated' | 'recovered'

@@ -3,6 +3,7 @@ import {
   advancedHasIssue,
   compatibilityLine,
   dxvkHintFromDeps,
+  observationsLabel,
   resolveAudioDotStatus,
   resolveDotStatus,
 } from './advanced.logic'
@@ -34,6 +35,13 @@ const healthyStatus: AdvancedDepsStatus = {
   canReset: true,
   checks: [],
 }
+
+describe('observationsLabel', () => {
+  it('formatea el conteo de observaciones locales', () => {
+    expect(observationsLabel(0)).toContain('0')
+    expect(observationsLabel(3)).toContain('3')
+  })
+})
 
 describe('dxvkHintFromDeps', () => {
   const baseDeps = (): DependencyStatus => ({

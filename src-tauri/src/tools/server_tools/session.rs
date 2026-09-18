@@ -12,9 +12,9 @@ use crate::tools::prefix::{DxvkProvision, MANAGED_DXVK_COMPONENT};
 use crate::tools::runner_sessions::{RunnerOperation, RunnerSessionRegistry, SpawnedRunner};
 use crate::tools::runners::ensure_managed_runtime;
 use crate::tools::runtime::{
-    apply_graphics_environment_to_invocation, observe_legacy_runtime, resolve_operational_plan,
-    runtime_graphics_plan_enabled, runtime_shadow_enabled, DgVoodooObservation, DgVoodooState,
-    InvocationPlan, InvocationTarget, LegacyRuntimeInput, OperationalRuntimeInput, ShadowOperation,
+    apply_graphics_environment_to_invocation, observe_legacy_runtime,
+    runtime_graphics_plan_enabled, runtime_shadow_enabled, DgVoodooObservation, InvocationPlan,
+    InvocationTarget, LegacyRuntimeInput, ShadowOperation,
 };
 use crate::utils::{
     drain_and_log, emit_log_opt, required_game_dir, resolve_server_wine_context_with_runner,
@@ -152,7 +152,22 @@ pub async fn launch_tool(
     let _initial_exe = tool_executable_path(&initial_status, tool)?;
 
     let ctx = resolve_server_wine_context_with_runner(Some(server), runner).await?;
-    let anchor = crate::tools::runtime::session_anchor_from_context(&ctx);
+    let dgvoodoo_configured = initial_status.dgvoodoo.configured;
+    let webview2_required = initial_status.diagnostics.webview2_required;
+    let resolved_operational_plan = crate::tools::runtime::resolve_operational_plan(
+        crate::tools::runtime::OperationalRuntimeInput {
+            server_runner: server.runner.as_deref(),
+            default_runner: default_runner.as_deref(),
+            context: &ctx,
+            dgvoodoo: crate::tools::runtime::DgVoodooState::verified(dgvoodoo_configured),
+            webview2_required,
+        },
+    );
+    let anchor = crate::tools::runtime::operational_session_anchor(
+        &ctx,
+        resolved_operational_plan.as_ref().ok(),
+        webview2_required,
+    );
     let op = RunnerOperation::begin(Some(app), sessions, game, &ctx, &anchor).await?;
     let prefix_operation = OperationGuard::acquire("prefix", Path::new(&ctx.prefix))?;
     let prefix_health = validate_runtime_prefix(&ctx)?;
@@ -174,8 +189,6 @@ pub async fn launch_tool(
 
     let status = scan_status(app, server)?;
     let exe_path = tool_executable_path(&status, tool)?;
-    let dgvoodoo_configured = status.dgvoodoo.configured;
-    let webview2_required = status.diagnostics.webview2_required;
     let wine_7_16 = ctx.resolved.is_wine_7_16();
     let manifest_has_managed_dxvk = prefix_health.manifest.as_ref().is_some_and(|manifest| {
         manifest
@@ -209,14 +222,7 @@ pub async fn launch_tool(
 
     let graphics_target = tool_invocation_target(tool);
     let operational_plan = if runtime_graphics_plan_enabled() {
-        let plan = resolve_operational_plan(OperationalRuntimeInput {
-            server_runner: server.runner.as_deref(),
-            default_runner: default_runner.as_deref(),
-            context: &ctx,
-            dgvoodoo: DgVoodooState::verified(dgvoodoo_configured),
-            webview2_required,
-        })
-        .map_err(|error| error.code().to_string())?;
+        let plan = resolved_operational_plan.map_err(|error| error.code().to_string())?;
         if plan.graphics().dxvk_provider().is_managed_prefix() && !manifest_has_managed_dxvk {
             return Err(
                 "El entorno Wine 7.16 no registra DXVK 2.6.2; rearma este entorno antes de abrir herramientas"

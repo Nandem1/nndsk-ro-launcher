@@ -26,9 +26,13 @@ use crate::tools::runner_sessions::{
 };
 use crate::tools::runners::ensure_managed_runtime;
 use crate::tools::runtime::{
-    apply_graphics_environment_to_invocation, observe_legacy_runtime, resolve_operational_plan,
-    runtime_graphics_plan_enabled, runtime_shadow_enabled, DgVoodooObservation, DgVoodooState,
-    InvocationPlan, InvocationTarget, LegacyRuntimeInput, OperationalRuntimeInput, ShadowOperation,
+    apply_graphics_environment_to_invocation, classify_run_outcome, enqueue_persist_finished,
+    enqueue_persist_started, new_observation_id, observe_legacy_runtime,
+    operational_session_anchor, resolve_operational_plan_with_profile,
+    runtime_graphics_plan_enabled, runtime_observe_enabled, runtime_shadow_enabled,
+    DgVoodooObservation, DgVoodooState, InvocationPlan, InvocationTarget, LegacyRuntimeInput,
+    ObservationFinishedPayload, ObservationStartedPayload, OperationalRuntimeInput, OutcomeInput,
+    PlanAvailability, ShadowOperation,
 };
 use crate::tools::server_tools;
 use crate::tools::spammer::SpammerHandle;
@@ -134,16 +138,6 @@ pub async fn launch_game(
         format!("[Launch] uinput preparado antes del runner: {devices}"),
     );
 
-    let anchor = crate::tools::runtime::session_anchor_from_context(&ctx);
-    let op = RunnerOperation::begin(Some(&app), sessions, &game, &ctx, &anchor).await?;
-    let game_dir = required_game_dir(&server.executable_path)?;
-    let prefix_operation =
-        OperationGuard::acquire_shared("prefix", std::path::Path::new(&ctx.prefix))?;
-    let dgvoodoo_operation =
-        OperationGuard::acquire_shared("dgvoodoo", std::path::Path::new(&game_dir))?;
-    install_gecko_for_runner(&app, &op).await?;
-    audio::ensure_audio_driver(Some(&app), &op).await?;
-
     let tools_status = server_tools::scan_status(&app, &server).ok();
     let dgvoodoo_configured = tools_status
         .as_ref()
@@ -151,6 +145,36 @@ pub async fn launch_game(
     let webview2_required = tools_status
         .as_ref()
         .is_some_and(|status| status.diagnostics.webview2_required);
+    let game_dir = required_game_dir(&server.executable_path)?;
+    let operational_input = OperationalRuntimeInput {
+        server_runner: server.runner.as_deref(),
+        default_runner: default_runner.as_deref(),
+        context: &ctx,
+        dgvoodoo: DgVoodooState::verified(dgvoodoo_configured),
+        webview2_required,
+    };
+    let operational_profile_plan = if runtime_graphics_plan_enabled() || runtime_observe_enabled() {
+        resolve_operational_plan_with_profile(operational_input).ok()
+    } else {
+        None
+    };
+    let anchor = operational_session_anchor(
+        &ctx,
+        operational_profile_plan.as_ref().map(|(_, plan)| plan),
+        webview2_required,
+    );
+    let observation_id = if runtime_observe_enabled() {
+        Some(new_observation_id())
+    } else {
+        None
+    };
+    let op = RunnerOperation::begin(Some(&app), sessions, &game, &ctx, &anchor).await?;
+    let prefix_operation =
+        OperationGuard::acquire_shared("prefix", std::path::Path::new(&ctx.prefix))?;
+    let dgvoodoo_operation =
+        OperationGuard::acquire_shared("dgvoodoo", std::path::Path::new(&game_dir))?;
+    install_gecko_for_runner(&app, &op).await?;
+    audio::ensure_audio_driver(Some(&app), &op).await?;
     let wine_7_16 = ctx.resolved.is_wine_7_16();
     let manifest_has_managed_dxvk = prefix_health.manifest.as_ref().is_some_and(|manifest| {
         manifest
@@ -189,14 +213,10 @@ pub async fn launch_game(
         InvocationTarget::Game
     };
     let operational_plan = if runtime_graphics_plan_enabled() {
-        let plan = resolve_operational_plan(OperationalRuntimeInput {
-            server_runner: server.runner.as_deref(),
-            default_runner: default_runner.as_deref(),
-            context: &ctx,
-            dgvoodoo: DgVoodooState::verified(dgvoodoo_configured),
-            webview2_required,
-        })
-        .map_err(|error| error.code().to_string())?;
+        let plan = operational_profile_plan
+            .as_ref()
+            .map(|(_, plan)| plan)
+            .ok_or_else(|| "runtime-plan-resolution-failed".to_string())?;
         if plan.graphics().dxvk_provider().is_managed_prefix() && !manifest_has_managed_dxvk {
             return Err(
                 "El entorno Wine 7.16 no registra DXVK 2.6.2; rearma este entorno antes de jugar"
@@ -389,6 +409,7 @@ pub async fn launch_game(
             return Err(error);
         }
     };
+    let supervisor_identity = op.lease().map(|lease| lease.supervisor_identity());
     drop(op);
 
     if supervised_session {
@@ -422,6 +443,41 @@ pub async fn launch_game(
 
     let mut launch_snapshot = snapshot;
     launch_snapshot.profile_memory = profile_memory;
+    if let (Some(observation_id), Some((profile, plan))) =
+        (observation_id.as_ref(), operational_profile_plan.as_ref())
+    {
+        enqueue_persist_started(ObservationStartedPayload {
+            observation_id: observation_id.clone(),
+            client_id: client_id.clone(),
+            server_local_id: server.id.clone(),
+            game_executable_name: std::path::Path::new(&server.executable_path)
+                .file_name()
+                .map(|name| name.to_string_lossy().to_string())
+                .unwrap_or_else(|| "game.exe".to_string()),
+            invocation_target: if is_patcher {
+                "launch-patcher".to_string()
+            } else {
+                "game".to_string()
+            },
+            plan_id: anchor.plan_id.clone(),
+            runtime_fingerprint: anchor.runtime_fingerprint.clone(),
+            prefix_fingerprint_hex: ctx.identity.desired_fingerprint.digest.hex_digest(),
+            prefix_token: prefix_log_token(std::path::Path::new(&ctx.prefix)),
+            profile: profile.clone(),
+            plan: plan.clone(),
+            overlay_verified: dgvoodoo_configured,
+            game_dir: Some(game_dir.clone()),
+            game_identity: identity,
+            controller_identity: Some(controller_identity),
+            supervisor_identity,
+            supervised: supervised_session,
+            plan_availability: if operational_profile_plan.is_some() {
+                PlanAvailability::Resolved
+            } else {
+                PlanAvailability::Unresolved
+            },
+        });
+    }
     spawn_exit_task(
         app,
         game,
@@ -443,6 +499,8 @@ pub async fn launch_game(
         memory.clone(),
         memory_ancestor,
         hp_base,
+        observation_id,
+        controller_identity,
     );
 
     Ok(launch_snapshot)
@@ -482,6 +540,8 @@ fn spawn_exit_task(
     memory: MemorySessionRegistry,
     memory_ancestor: MemoryAncestor,
     hp_base: u32,
+    observation_id: Option<String>,
+    initial_controller_identity: ProcessIdentity,
 ) {
     let presence_client_id = snapshot.client_id.clone();
     let app_for_exit = app.clone();
@@ -492,6 +552,8 @@ fn spawn_exit_task(
         let mut seen = baseline;
         seen.insert(active_identity);
         let controller_pid = controller.controller_pid().unwrap_or(0);
+        let mut handoff_count = 0u32;
+        let started_game_identity = identity;
         loop {
             while verify_process_identity(&active_identity) {
                 sleep(Duration::from_millis(500)).await;
@@ -567,12 +629,32 @@ fn spawn_exit_task(
             }
             seen.insert(replacement);
             active_identity = replacement;
+            handoff_count += 1;
         }
 
+        let spontaneous = controller.try_exit_status();
+        let stop_requested = game.stop_requested(reservation);
         let code = {
             let _ = controller.terminate().await;
             controller.wait().await.unwrap_or(-1)
         };
+        if let Some(observation_id) = observation_id {
+            enqueue_persist_finished(ObservationFinishedPayload {
+                observation_id,
+                outcome: classify_run_outcome(OutcomeInput {
+                    reached_running: true,
+                    stop_requested,
+                    startup_timeout: false,
+                    startup_failure: None,
+                    controller_exit_before_terminate: spontaneous,
+                    controller_exit_after_terminate: code,
+                }),
+                game_identity: active_identity,
+                controller_identity: Some(initial_controller_identity),
+                identity_stale: active_identity != started_game_identity && handoff_count == 0,
+                handoff_count,
+            });
+        }
         if let Some(task) = output_task {
             let _ = task.await;
         }

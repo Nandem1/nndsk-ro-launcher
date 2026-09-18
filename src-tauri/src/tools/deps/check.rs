@@ -8,12 +8,12 @@ use crate::tools::prefix::{DxvkProvision, MANAGED_DXVK_COMPONENT};
 use crate::tools::runners::{managed_dxvk_ready, managed_proton_path, managed_runtime_ready};
 use crate::tools::runtime::{
     assess_compatibility, build_runtime_plan_summary, compatibility_ipc, gepard_runtime_check,
-    inspect_subject, legacy_gepard_runner_check, observe_legacy_runtime, paths_match,
-    recommendation_to_gepard_profile, resolve_operational_plan_with_profile,
-    resolve_prefix_binding_for_managed_descriptor, runtime_compat_enabled,
-    runtime_graphics_plan_enabled, runtime_shadow_enabled, session_anchor_from_context,
-    AssessedRuntime, DgVoodooObservation, DgVoodooState, LegacyRuntimeInput,
-    OperationalRuntimeInput, RuntimePlan, RuntimeProfile, ShadowOperation,
+    inspect_subject, legacy_gepard_runner_check, observe_legacy_runtime,
+    operational_session_anchor, paths_match, recommendation_to_gepard_profile,
+    resolve_operational_plan_with_profile, resolve_prefix_binding_for_managed_descriptor,
+    runtime_compat_enabled, runtime_graphics_plan_enabled, runtime_shadow_enabled, AssessedRuntime,
+    DgVoodooObservation, DgVoodooState, LegacyRuntimeInput, OperationalRuntimeInput, RuntimePlan,
+    RuntimeProfile, ShadowOperation,
 };
 use crate::tools::server_tools;
 use crate::utils::audio;
@@ -112,7 +112,7 @@ pub async fn check_dependencies(
         let (profile, plan) = operational_profile_plan
             .as_ref()
             .ok_or_else(|| "runtime-plan-resolution-failed".to_string())?;
-        let anchor = session_anchor_from_context(&ctx);
+        let anchor = operational_session_anchor(&ctx, Some(plan), webview2_required);
         let summary =
             build_runtime_plan_summary(anchor.plan_id, profile, plan, dgvoodoo_configured);
         (

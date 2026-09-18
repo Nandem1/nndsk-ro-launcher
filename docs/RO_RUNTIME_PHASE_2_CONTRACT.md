@@ -68,7 +68,7 @@ Fixture JSON: [`contract-fixtures/runtime-prefix-manifest-v3.json`](../contract-
 
 ## 6. Pendiente explícito (misma release lógica, siguiente iteración)
 
-- **`compute_runtime_fingerprint`** con `RuntimePlan` + facts de dgVoodoo/WebView2 (hoy placeholder en anchor de sesión).
+- **`compute_runtime_fingerprint` v1** cerrado en Fase 7 (`runtime_fingerprint.rs`); goldens Wine/dgVoodoo adicionales pendientes.
 - Goldens adicionales de **RuntimeFingerprint** (Proton+DXVK, Wine 7.16, overlay dgVoodoo).
 - Tests dedicados: collision path v3 (cubierto en `identity.rs` / `prefix.rs`); pendientes `plan_id` bajo lease, flag `=0` write-new, matriz ADR-002 §3 ampliada.
 - Smoke **`npm run tauri:dev`**: prefix aislado nuevo v3, alias v2 fixture, flag `=0` (plan §12).
