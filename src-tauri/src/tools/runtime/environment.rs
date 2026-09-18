@@ -443,6 +443,46 @@ mod tests {
     }
 
     #[test]
+    fn dgvoodoo_and_d7vk_spike_cannot_share_ddraw() {
+        let mut overrides = DllOverrideSet::default();
+        overrides
+            .claim(
+                "ddraw",
+                DllLoadOrder::NativeThenBuiltin,
+                owner(OwnershipDomain::GameDirOverlay, "game-dir/dgvoodoo"),
+            )
+            .unwrap();
+        overrides
+            .claim(
+                "d3dimm",
+                DllLoadOrder::NativeThenBuiltin,
+                owner(OwnershipDomain::GameDirOverlay, "game-dir/dgvoodoo"),
+            )
+            .unwrap();
+        let conflict = overrides
+            .claim(
+                "ddraw.dll",
+                DllLoadOrder::NativeThenBuiltin,
+                owner(OwnershipDomain::GameDirOverlay, "game-dir/d7vk-spike"),
+            )
+            .unwrap_err();
+        assert_eq!(conflict.dll, "ddraw.dll");
+    }
+
+    #[test]
+    fn same_d7vk_owner_claim_is_idempotent() {
+        let mut overrides = DllOverrideSet::default();
+        let spike = owner(OwnershipDomain::GameDirOverlay, "game-dir/d7vk-spike");
+        overrides
+            .claim("ddraw", DllLoadOrder::NativeThenBuiltin, spike.clone())
+            .unwrap();
+        overrides
+            .claim("DDRAW", DllLoadOrder::NativeThenBuiltin, spike)
+            .unwrap();
+        assert_eq!(overrides.render_wine(), "ddraw=n,b");
+    }
+
+    #[test]
     fn wine_dll_overrides_can_only_come_from_the_structured_set() {
         let mut delta = EnvironmentDelta::default();
         assert!(delta

@@ -16,6 +16,9 @@ mod resolver;
 mod session_anchor;
 mod shadow;
 
+#[cfg(test)]
+mod d7vk_spike;
+
 pub(crate) use apply::{
     apply_graphics_environment_to_invocation, build_runtime_plan_summary, resolve_operational_plan,
     resolve_operational_plan_with_profile, runtime_graphics_plan_enabled, InvocationPlan,

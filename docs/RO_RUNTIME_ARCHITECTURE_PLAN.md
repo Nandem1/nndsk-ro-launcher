@@ -6,7 +6,7 @@ distribuida por el launcher.
 
 | Campo                   | Valor                                                                                                                                                                                   |
 | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Estado                  | Fases 0–4 en código; `GraphicsPlan` operacional con `RO_LAUNCHER_RUNTIME_GRAPHICS` (default ON, `=0` rollback legacy); shadow y smokes live/AppImage no cerrados en este documento |
+| Estado                  | Fases 0–5 en código; Fase 6A spike D7VK (ADR-005 `blocked-insufficient-evidence`); `GraphicsPlan` operacional con `RO_LAUNCHER_RUNTIME_GRAPHICS` (default ON, `=0` rollback legacy); smokes live/AppImage no cerrados en este documento |
 | Última revisión         | 2026-09-18                                                                                                                                                                              |
 | Alcance                 | Resolución de runner, gráficos, dependencias, identidad de prefix, artefactos administrados, compatibilidad y diagnóstico                                                               |
 | Objetivo                | Introducir seams tipados e incrementales que preserven el comportamiento validado y permitan agregar un backend gráfico sin modificar launcher, setup, tools y diagnóstico por separado |
@@ -1413,13 +1413,13 @@ el launcher productivo salvo instrumentation ya prevista.
 
 **Entregables.**
 
-- [ ] Release, source URL, license, digest, tamaños y arquitecturas registrados.
+- [x] Release, source URL, license, digest, tamaños y arquitecturas registrados.
 - [ ] A/B aislado contra dgVoodoo+DXVK con mismos cliente, runner y host.
 - [ ] Resultados separados para Wine 7.16 old-WoW64 y Proton/UMU que sean técnicamente aplicables.
 - [ ] Prueba de rutas DDraw/D3D7, GDI mixta y D3D9 directo si el cliente las usa.
-- [ ] Prototipo de install/restore con interruption injection.
-- [ ] Decisión side-by-side versus prefix-owned y contribución a `PrefixFingerprint`.
-- [ ] ADR-005 go/no-go con limitaciones explícitas.
+- [x] Prototipo de install/restore con interruption injection.
+- [ ] Decisión side-by-side versus prefix-owned y contribución a `PrefixFingerprint` (owner definitivo pendiente de live).
+- [x] ADR-005 go/no-go con limitaciones explícitas (`blocked-insufficient-evidence`).
 
 **No entra.** Toggle UI, catálogo curated `Validated`, descarga automática productiva, cambios por
 server, optimización o anuncio de superioridad.
