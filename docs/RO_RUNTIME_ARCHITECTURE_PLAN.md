@@ -6,12 +6,12 @@ distribuida por el launcher.
 
 | Campo                   | Valor                                                                                                                                                                                   |
 | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Estado                  | Fases 0–5 en código; Fase 6A spike D7VK (ADR-005 `blocked-insufficient-evidence`); `GraphicsPlan` operacional con `RO_LAUNCHER_RUNTIME_GRAPHICS` (default ON, `=0` rollback legacy); smokes live/AppImage no cerrados en este documento |
+| Estado                  | Fases 0–5 en código; Fase 6A cerrada (ADR-005 `no-go`: Gepard `illegal file ddraw.dll`); Fase 6B no se abre; siguiente Fase 7; `GraphicsPlan` operacional con `RO_LAUNCHER_RUNTIME_GRAPHICS` (default ON, `=0` rollback legacy); smokes live/AppImage no cerrados en este documento |
 | Última revisión         | 2026-09-18                                                                                                                                                                              |
 | Alcance                 | Resolución de runner, gráficos, dependencias, identidad de prefix, artefactos administrados, compatibilidad y diagnóstico                                                               |
 | Objetivo                | Introducir seams tipados e incrementales que preserven el comportamiento validado y permitan agregar un backend gráfico sin modificar launcher, setup, tools y diagnóstico por separado |
 | Decisión bloqueante     | Cerrada por `docs/adr/ADR-001-runtime-graphics-domain.md` y `docs/adr/ADR-002-runtime-prefix-identity.md`                                                                               |
-| Primer consumidor nuevo | D7VK, sólo después de consolidar el seam actual y completar un spike de despliegue                                                                                                      |
+| Primer consumidor nuevo | D7VK rechazado (`no-go`); el seam queda listo para otro backend si hay evidencia. Siguiente fase: observabilidad (7)                                                                    |
 | Fuera de esta tarea     | Implementar Fases 2–9, descargar D7VK o modificar runtimes, prefixes, clientes o anti-cheat                                                                                             |
 
 ## 1. Cómo leer este documento
@@ -1414,12 +1414,12 @@ el launcher productivo salvo instrumentation ya prevista.
 **Entregables.**
 
 - [x] Release, source URL, license, digest, tamaños y arquitecturas registrados.
-- [ ] A/B aislado contra dgVoodoo+DXVK con mismos cliente, runner y host.
-- [ ] Resultados separados para Wine 7.16 old-WoW64 y Proton/UMU que sean técnicamente aplicables.
-- [ ] Prueba de rutas DDraw/D3D7, GDI mixta y D3D9 directo si el cliente las usa.
-- [x] Prototipo de install/restore con interruption injection.
-- [ ] Decisión side-by-side versus prefix-owned y contribución a `PrefixFingerprint` (owner definitivo pendiente de live).
-- [x] ADR-005 go/no-go con limitaciones explícitas (`blocked-insufficient-evidence`).
+- [x] A/B aislado contra dgVoodoo+DXVK: abortado por Gepard `illegal file ddraw.dll` tras `LOADING D7VK`; sin comparación visual.
+- [x] Resultados Wine 7.16 old-WoW64: D7VK carga y Gepard lo rechaza. Proton/UMU no ejecutado (mismo overlay de game dir).
+- [x] Rutas DDraw/GDI/D3D9: PE de Sakura confirma las tres; render no alcanzado (Gepard).
+- [x] Prototipo de install/restore con interruption injection; restore live de dgVoodoo verificado.
+- [x] Decisión de owner: side-by-side es `no-go`; prefix-owned no se persigue (seguiría siendo otro `ddraw` en proceso).
+- [x] ADR-005 `no-go` con limitaciones explícitas (anti-cheat; no se disfraza el payload).
 
 **No entra.** Toggle UI, catálogo curated `Validated`, descarga automática productiva, cambios por
 server, optimización o anuncio de superioridad.
@@ -1436,7 +1436,7 @@ uso de una DLL del runner en vez de D7VK, GDI roto, stale DLL tras uninstall, y 
 dev y AppImage. Confirmar el pipeline con logs y archivos efectivos.
 
 **Criterio de salida.** ADR-005 responde cada pregunta de §12.3 y decide go, scope reducido o no-go
-con evidencia reproducible. Un no-go es salida válida.
+con evidencia reproducible. Un no-go es salida válida. **Cumplido 2026-09-18** con `no-go`.
 
 **Dependencias.** Fases 3, 4 y 5.
 
@@ -1685,7 +1685,7 @@ Para cualquier fase que cambie provisioning, env o process ownership:
 | ADR-002 | Runtime/prefix fingerprints e identidad/migración legacy                      | Fase 0, antes de manifest v3       | canonical encoding, campos prefix-affecting, path y alias v2                |
 | ADR-003 | Catálogo de artefactos y receipts                                             | inicio de fase 3                   | descriptors, trust/source policy, transaction y schema evolution            |
 | ADR-004 | Compatibility catalog basado en evidencia                                     | inicio de fase 5                   | exact matching, outcome taxonomy, curated vs local, unknown semantics       |
-| ADR-005 | Deployment y support envelope de D7VK                                         | fin de fase 6A                     | release exacto, layout/owner, DirectDraw delegation, constraints y go/no-go |
+| ADR-005 | Deployment y support envelope de D7VK                                         | fin de fase 6A (**cerrado `no-go`**) | release exacto, layout/owner, DirectDraw delegation, constraints y go/no-go |
 | ADR-006 | Protocolo de benchmark reproducible                                           | antes de fase 8                    | workload, metrics, invalidation, privacy y comparability                    |
 
 No se necesita un ADR para cada struct ni para `nndsk-wine-ro` ahora. Este último merece ADRs sólo

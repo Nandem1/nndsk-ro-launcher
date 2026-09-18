@@ -2,9 +2,9 @@
 
 | Campo | Valor |
 | --- | --- |
-| Estado | Spike implementado; veredicto ADR-005 `blocked-insufficient-evidence` |
+| Estado | Cerrada; veredicto ADR-005 `no-go` |
 | Fecha | 2026-09-18 |
-| Alcance | Pin D7VK v2.2, harness install/restore, ADR-005 |
+| Alcance | Pin D7VK v2.2, harness install/restore, ADR-005, live Sakura/Wine 7.16 |
 | Lectura obligatoria | `AGENTS.md`, ADR-005, plan §Fase 6A, Fases 0–5 contracts |
 | Autoridad operacional | **Ninguna** — spawn/setup/deps siguen Fase 4; catálogo sigue 3 artefactos |
 
@@ -33,11 +33,11 @@ Test opcional con red: `pinned_release_zip_matches_fixture` (`#[ignore]`).
 
 | Resultado | Significado |
 | --------- | ----------- |
-| `blocked-insufficient-evidence` | Harness OK; matriz live `not-run` — **estado actual** |
-| `no-go` | Pin/layout/harness fallan |
-| `go` / `go-reduced-scope` | Requiere matriz live en ambos anchors — **no alcanzado** |
+| `blocked-insufficient-evidence` | Harness OK; matriz live `not-run` — estado intermedio, ya no aplica |
+| `no-go` | Gepard `illegal file ddraw.dll` tras carga D7VK en Sakura/Wine 7.16 — **estado actual** |
+| `go` / `go-reduced-scope` | Requiere live sin rechazo de anti-cheat — **no alcanzado** |
 
-Fase **6B prohibida** hasta `go` o `go-reduced-scope`.
+Fase **6B prohibida**. Reabrir 6A/6B sólo con allowlist de Gepard o cliente RO sin esa política.
 
 ## 5. Rollback
 
@@ -45,9 +45,8 @@ Revertir el commit de Fase 6A elimina harness y documentación. No muta datos de
 
 ## 6. Pendiente (fuera de 6A)
 
-- Matriz live Sakura/Honey (o cliente RO controlado) con `scripts/d7vk-spike-live.sh`.
-- Decisión owner side-by-side vs prefix-owned con evidencia de carga Wine.
-- Fase 6B vertical slice si ADR-005 pasa a `go`.
+- Fase 7 observabilidad sobre el stack permitido (dgVoodoo+DXVK).
+- Fase 6B sigue prohibida bajo `no-go`.
 
 ## 7. Prohibido (Fase 6A)
 
