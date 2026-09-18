@@ -7,8 +7,11 @@ use crate::models::server::ServerConfig;
 use crate::tools::prefix::{DxvkProvision, MANAGED_DXVK_COMPONENT};
 use crate::tools::runners::{managed_dxvk_ready, managed_proton_path, managed_runtime_ready};
 use crate::tools::runtime::{
-    observe_legacy_runtime, paths_match, resolve_prefix_binding_for_managed_descriptor,
-    runtime_shadow_enabled, DgVoodooObservation, LegacyRuntimeInput, ShadowOperation,
+    build_runtime_plan_summary, observe_legacy_runtime, paths_match,
+    resolve_operational_plan_with_profile, resolve_prefix_binding_for_managed_descriptor,
+    runtime_graphics_plan_enabled, runtime_shadow_enabled, session_anchor_from_context,
+    DgVoodooObservation, DgVoodooState, LegacyRuntimeInput, OperationalRuntimeInput,
+    ShadowOperation,
 };
 use crate::tools::server_tools;
 use crate::utils::audio;
@@ -85,7 +88,31 @@ pub async fn check_dependencies(
 
     let mut blockers = runtime_prefix_blockers(&ctx, &health);
     let webview2_required = server.as_ref().is_some_and(server_tools::requires_webview2);
-    let dxvk_provision = DxvkProvision::for_runner(&ctx.resolved);
+    let dgvoodoo_configured = server.as_ref().is_some_and(|server| {
+        server_tools::scan_dgvoodoo_status(app, server)
+            .map(|status| status.configured)
+            .unwrap_or(false)
+    });
+    let (dxvk_provision, runtime_plan) = if runtime_graphics_plan_enabled() {
+        let input = OperationalRuntimeInput {
+            server_runner: server.as_ref().and_then(|server| server.runner.as_deref()),
+            default_runner: runner.as_deref(),
+            context: &ctx,
+            dgvoodoo: DgVoodooState::verified(dgvoodoo_configured),
+            webview2_required,
+        };
+        let (profile, plan) = resolve_operational_plan_with_profile(input)
+            .map_err(|error| error.code().to_string())?;
+        let anchor = session_anchor_from_context(&ctx);
+        let summary =
+            build_runtime_plan_summary(anchor.plan_id, &profile, &plan, dgvoodoo_configured);
+        (
+            plan.graphics().dxvk_provider().provision_kind(),
+            Some(summary),
+        )
+    } else {
+        (DxvkProvision::for_runner(&ctx.resolved), None)
+    };
     let recommendation = server
         .as_ref()
         .and_then(server_tools::recommended_gepard_build);
@@ -387,6 +414,7 @@ pub async fn check_dependencies(
             && runner_vkd3d_ok
             && ensure_managed_reset_allowed(&ctx.location).is_ok(),
         checks,
+        runtime_plan,
     })
 }
 
@@ -519,6 +547,7 @@ fn managed_runtime_pending(
                 remediation: None,
             },
         ],
+        runtime_plan: None,
     })
 }
 

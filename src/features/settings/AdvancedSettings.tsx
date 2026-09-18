@@ -5,6 +5,7 @@ import { StatusDot, type DotStatus } from '../../shared/ui/StatusDot'
 import { useSelectedServer } from '../servers/useSelectedServer'
 import {
   advancedHasIssue,
+  dxvkHintFromDeps,
   resolveAudioDotStatus,
   resolveDotStatus,
 } from './advanced.logic'
@@ -99,7 +100,7 @@ export function AdvancedSettings() {
       key: 'dxvk',
       dot: resolveDotStatus(advancedStatus.dxvkOk, advancedStatus.dxvkWarning),
       label: advancedStatus.dxvk ? 'DXVK · instalado' : 'DXVK · pendiente',
-      hint: advancedStatus.dxvkWarning,
+      hint: dxvkHintFromDeps(advancedStatus) ?? advancedStatus.dxvkWarning,
     },
     {
       key: 'input-group',

@@ -31,6 +31,10 @@ pub fn apply_prefix_env_command(cmd: &mut Command, prefix_path: &str) {
     apply_prefix_env(cmd, prefix_path);
 }
 
+#[deprecated(
+    since = "0.0.0",
+    note = "Usar GraphicsPlan::environment_for + apply_graphics_environment; retiro previsto 2026-12-18"
+)]
 pub fn apply_game_env<E: ProcessEnv>(
     env: &mut E,
     use_dgvoodoo: bool,
@@ -71,12 +75,17 @@ pub fn dxvk_state_root(prefix_path: &str) -> PathBuf {
 }
 
 /// OpenSetup y el patcher deben enumerar la misma GPU y backend que usará el juego.
+#[deprecated(
+    since = "0.0.0",
+    note = "Usar GraphicsPlan::environment_for + apply_graphics_environment; retiro previsto 2026-12-18"
+)]
 pub fn apply_tool_env<E: ProcessEnv>(
     env: &mut E,
     use_dgvoodoo: bool,
     use_managed_dxvk: bool,
     prefix_path: &str,
 ) {
+    #[allow(deprecated)]
     apply_game_env(env, use_dgvoodoo, use_managed_dxvk, prefix_path);
 }
 
@@ -206,6 +215,8 @@ fn filter_appimage_paths(value: &OsStr, app_dir: &Path) -> Option<OsString> {
 
 #[cfg(test)]
 mod tests {
+    #![allow(deprecated)]
+
     use super::*;
     use std::collections::HashMap;
 

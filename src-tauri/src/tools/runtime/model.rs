@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
+use crate::tools::prefix::DxvkProvision;
 use crate::utils::{PrefixLocation, ResolvedRunner, RunnerKind};
 
 pub(crate) const PREFIX_MATERIAL_RECIPE_REVISION: u64 = 1;
@@ -49,20 +50,20 @@ pub(super) enum RunnerRequest {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum RunnerSelectionSource {
+pub(crate) enum RunnerSelectionSource {
     ServerOverride,
     GlobalSetting,
     ProductDefault,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum GraphicsProfile {
+pub(crate) enum GraphicsProfile {
     Dxvk,
     DgVoodooDxvk,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct RuntimeProfile {
+pub(crate) struct RuntimeProfile {
     runner: RunnerRequest,
     selection_source: RunnerSelectionSource,
     graphics: GraphicsProfile,
@@ -85,11 +86,11 @@ impl RuntimeProfile {
         &self.runner
     }
 
-    pub(super) fn selection_source(&self) -> RunnerSelectionSource {
+    pub(crate) fn selection_source(&self) -> RunnerSelectionSource {
         self.selection_source
     }
 
-    pub(super) fn graphics(&self) -> GraphicsProfile {
+    pub(crate) fn graphics(&self) -> GraphicsProfile {
         self.graphics
     }
 }
@@ -262,7 +263,7 @@ pub(super) struct RunnerCapabilities {
 }
 
 #[derive(Debug, Clone)]
-pub(super) struct RunnerPlan {
+pub(crate) struct RunnerPlan {
     pub(super) resolved: ResolvedRunner,
     pub(super) identity: RunnerIdentity,
     pub(super) capabilities: RunnerCapabilities,
@@ -295,7 +296,7 @@ enum DxvkProviderKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct DxvkProvider {
+pub(crate) struct DxvkProvider {
     kind: DxvkProviderKind,
 }
 
@@ -337,8 +338,16 @@ impl DxvkProvider {
         }
     }
 
-    pub(super) fn is_managed_prefix(&self) -> bool {
+    pub(crate) fn is_managed_prefix(&self) -> bool {
         matches!(self.kind, DxvkProviderKind::ManagedPrefix { .. })
+    }
+
+    pub(crate) fn provision_kind(&self) -> DxvkProvision {
+        match self.kind {
+            DxvkProviderKind::RunnerOwned { .. } => DxvkProvision::Runner,
+            DxvkProviderKind::ManagedPrefix { .. } => DxvkProvision::Managed,
+            DxvkProviderKind::WinetricksPrefix { .. } => DxvkProvision::Winetricks,
+        }
     }
 }
 
@@ -355,7 +364,7 @@ enum GraphicsPlanKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct GraphicsPlan {
+pub(crate) struct GraphicsPlan {
     kind: GraphicsPlanKind,
     dxvk: DxvkProvider,
 }
@@ -382,7 +391,7 @@ impl GraphicsPlan {
         }
     }
 
-    pub(super) fn dxvk_provider(&self) -> &DxvkProvider {
+    pub(crate) fn dxvk_provider(&self) -> &DxvkProvider {
         &self.dxvk
     }
 
@@ -395,7 +404,7 @@ impl GraphicsPlan {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub(super) enum InvocationTarget {
+pub(crate) enum InvocationTarget {
     Game,
     LaunchPatcher,
     MaintenancePatcher,
@@ -450,6 +459,22 @@ pub(crate) struct RuntimePlan {
 impl RuntimePlan {
     pub(super) fn base_recipe(&self) -> &'static [BaseRecipeStep] {
         &BaseRecipeStep::LEGACY
+    }
+
+    pub(crate) fn runner(&self) -> &RunnerPlan {
+        &self.runner
+    }
+
+    pub(crate) fn graphics(&self) -> &GraphicsPlan {
+        &self.graphics
+    }
+
+    pub(crate) fn prefix(&self) -> &PrefixLocation {
+        &self.prefix
+    }
+
+    pub(crate) fn webview2_required(&self) -> bool {
+        self.webview2_required
     }
 }
 

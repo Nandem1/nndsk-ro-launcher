@@ -6,8 +6,8 @@ distribuida por el launcher.
 
 | Campo                   | Valor                                                                                                                                                                                   |
 | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Estado                  | Fases 0 y 1 implementadas; resolver nuevo en shadow mode; autoridad legacy preservada; aceptación con clientes reales pendiente                                                        |
-| Última revisión         | 2026-09-17                                                                                                                                                                              |
+| Estado                  | Fases 0–4 en código; `GraphicsPlan` operacional con `RO_LAUNCHER_RUNTIME_GRAPHICS` (default ON, `=0` rollback legacy); shadow y smokes live/AppImage no cerrados en este documento |
+| Última revisión         | 2026-09-18                                                                                                                                                                              |
 | Alcance                 | Resolución de runner, gráficos, dependencias, identidad de prefix, artefactos administrados, compatibilidad y diagnóstico                                                               |
 | Objetivo                | Introducir seams tipados e incrementales que preserven el comportamiento validado y permitan agregar un backend gráfico sin modificar launcher, setup, tools y diagnóstico por separado |
 | Decisión bloqueante     | Cerrada por `docs/adr/ADR-001-runtime-graphics-domain.md` y `docs/adr/ADR-002-runtime-prefix-identity.md`                                                                               |
@@ -623,8 +623,8 @@ struct RuntimePlan {
 **Creador inicial:** `RuntimeResolver`, como función determinista sobre configuración, facts
 legacy mínimos, capabilities y estado verificado de dgVoodoo.
 
-**Consumidores iniciales:** sólo el comparador shadow. Los consumers operacionales se migran en
-Fase 4.
+**Consumidores iniciales:** comparador shadow (Fase 1) y, con Fase 4, launcher/tools/deps cuando
+`RO_LAUNCHER_RUNTIME_GRAPHICS` no es `0`.
 
 **Invariantes:** sus subplanes no se contradicen; no contiene compatibility, inspección completa,
 readiness mutable, procesos ni locks. Fase 2 añade identidad sin ampliar el aggregate con esos
@@ -1324,14 +1324,14 @@ reduce a ejecutar un environment delta o queda como shim temporal.
 
 **Entregables.**
 
-- [ ] Adapter `DxvkPlan::{RunnerBundled, Managed, WinetricksLegacy}` con paridad actual.
-- [ ] Adapter `DgVoodooDxvk` que compone overlay game-dir y DXVK sin mezclar manifests.
-- [ ] `InvocationTarget` explícito para game, launch patcher, maintenance patcher, OpenSetup y
+- [x] `DxvkProvider::{RunnerOwned, ManagedPrefix, WinetricksPrefix}` con paridad actual (sin renombrar a `DxvkPlan`).
+- [x] Perfil `DgVoodooDxvk` que compone overlay game-dir y DXVK sin mezclar manifests.
+- [x] `InvocationTarget` explícito para game, launch patcher, maintenance patcher, OpenSetup y
       control panel.
-- [ ] Conflict detector de `WINEDLLOVERRIDES` y variables incompatibles.
-- [ ] Dependency/status UI derivados del mismo `RuntimePlanSummary`.
-- [ ] Eliminación de branches gráficos de `launcher/session` salvo invocar el adapter.
-- [ ] Shim de config legacy con deprecation medible y fecha de retiro.
+- [x] Conflict detector de `WINEDLLOVERRIDES` y variables incompatibles en spawn.
+- [x] Dependency/status UI derivados del mismo `RuntimePlanSummary` (campo aditivo).
+- [x] Rama operacional en `launcher/session` y `server_tools/session` vía `apply_graphics_environment`.
+- [x] Shim `apply_game_env` / `apply_tool_env` con `#[deprecated]` y retiro previsto 2026-12-18.
 
 **No entra.** D7VK, nuevos versions de DXVK, cambiar dónde vive dgVoodoo, AutoTune ni rediseñar la
 UI completa.

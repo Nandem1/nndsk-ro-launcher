@@ -1,0 +1,17 @@
+{
+  "protonDxvk": {
+    "planId": "855bf92f11437f37d149d93f865ac9dff6354980f5f546a774ca88d95d03f791",
+    "selectionSource": "productDefault",
+    "graphicsProfile": "dxvk",
+    "dxvkProvider": "runnerOwned",
+    "dxvkComponentId": "runner/dxvk",
+    "overlayVerified": false
+  },
+  "wine716DgVoodoo": {
+    "selectionSource": "serverOverride",
+    "graphicsProfile": "dgVoodooDxvk",
+    "dxvkProvider": "managedPrefix",
+    "dxvkComponentId": "dxvk-2.6.2",
+    "overlayVerified": true
+  }
+}

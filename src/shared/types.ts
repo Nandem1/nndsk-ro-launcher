@@ -196,6 +196,16 @@ export interface DependencyStatus {
   canSetup: boolean
   canReset: boolean
   checks: RuntimeCheck[]
+  runtimePlan?: RuntimePlanSummary | null
+}
+
+export interface RuntimePlanSummary {
+  planId: string
+  selectionSource: string
+  graphicsProfile: string
+  dxvkProvider: string
+  dxvkComponentId: string
+  overlayVerified: boolean
 }
 
 export type RuntimeCheckSeverity = 'ok' | 'warning' | 'error' | 'pending'
@@ -246,6 +256,7 @@ export type AdvancedDepsStatus = Pick<
   | 'canSetup'
   | 'canReset'
   | 'checks'
+  | 'runtimePlan'
 >
 
 export interface ClientProfile {

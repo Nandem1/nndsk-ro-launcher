@@ -18,6 +18,17 @@ pub enum RuntimeCheckSeverity {
     Pending,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimePlanSummary {
+    pub plan_id: String,
+    pub selection_source: &'static str,
+    pub graphics_profile: &'static str,
+    pub dxvk_provider: &'static str,
+    pub dxvk_component_id: String,
+    pub overlay_verified: bool,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DependencyStatus {
@@ -47,4 +58,6 @@ pub struct DependencyStatus {
     pub can_setup: bool,
     pub can_reset: bool,
     pub checks: Vec<RuntimeCheck>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runtime_plan: Option<RuntimePlanSummary>,
 }

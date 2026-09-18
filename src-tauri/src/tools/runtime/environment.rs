@@ -123,7 +123,7 @@ impl DllOverrideSet {
         &self.claims
     }
 
-    pub(super) fn render_wine(&self) -> String {
+    pub(crate) fn render_wine(&self) -> String {
         self.claims
             .values()
             .map(|claim| {
@@ -136,8 +136,8 @@ impl DllOverrideSet {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct OverrideConflict {
-    pub(super) dll: String,
+pub(crate) struct OverrideConflict {
+    pub(crate) dll: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -237,21 +237,31 @@ pub(super) fn merge_environment_deltas<'a>(
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct EnvironmentConflict {
-    pub(super) key: String,
+pub(crate) struct EnvironmentConflict {
+    pub(crate) key: String,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(super) struct GraphicsEnvironment {
+pub(crate) struct GraphicsEnvironment {
     pub(super) dll_overrides: DllOverrideSet,
     pub(super) variables: EnvironmentDelta,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum GraphicsEnvironmentError {
+pub(crate) enum GraphicsEnvironmentError {
     InvalidDllName,
     OverrideConflict(OverrideConflict),
     EnvironmentConflict(EnvironmentConflict),
+}
+
+impl GraphicsEnvironmentError {
+    pub(crate) fn conflict_key(&self) -> Option<&str> {
+        match self {
+            Self::EnvironmentConflict(conflict) => Some(conflict.key.as_str()),
+            Self::OverrideConflict(conflict) => Some(conflict.dll.as_str()),
+            Self::InvalidDllName => None,
+        }
+    }
 }
 
 impl From<OverrideConflict> for GraphicsEnvironmentError {
@@ -275,7 +285,7 @@ impl GraphicsEnvironment {
 }
 
 impl GraphicsPlan {
-    pub(super) fn environment_for(
+    pub(crate) fn environment_for(
         &self,
         target: InvocationTarget,
         prefix: &PrefixLocation,

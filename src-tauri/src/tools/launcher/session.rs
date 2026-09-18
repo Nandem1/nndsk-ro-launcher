@@ -26,8 +26,9 @@ use crate::tools::runner_sessions::{
 };
 use crate::tools::runners::ensure_managed_runtime;
 use crate::tools::runtime::{
-    observe_legacy_runtime, runtime_shadow_enabled, DgVoodooObservation, LegacyRuntimeInput,
-    ShadowOperation,
+    apply_graphics_environment_to_invocation, observe_legacy_runtime, resolve_operational_plan,
+    runtime_graphics_plan_enabled, runtime_shadow_enabled, DgVoodooObservation, DgVoodooState,
+    InvocationPlan, InvocationTarget, LegacyRuntimeInput, OperationalRuntimeInput, ShadowOperation,
 };
 use crate::tools::server_tools;
 use crate::tools::spammer::SpammerHandle;
@@ -35,10 +36,26 @@ use crate::utils::audio;
 use crate::utils::gecko::install_gecko_for_runner;
 use crate::utils::process::drain_game_streams_redacted;
 use crate::utils::{
-    apply_game_env, emit_tool_log_opt, required_game_dir, resolve_server_wine_context_with_runner,
+    emit_tool_log_opt, required_game_dir, resolve_server_wine_context_with_runner,
     validate_runtime_prefix, work_dir_from_exe, ExitEvent, OperationGuard, EVENT_GAME_CLIENT,
     EVENT_GAME_EXIT,
 };
+
+fn graphics_environment_error_message(
+    error: crate::tools::runtime::GraphicsEnvironmentError,
+) -> String {
+    match error {
+        crate::tools::runtime::GraphicsEnvironmentError::InvalidDllName => {
+            "invalid-dll-name".to_string()
+        }
+        crate::tools::runtime::GraphicsEnvironmentError::OverrideConflict(conflict) => {
+            format!("override-conflict:{}", conflict.dll)
+        }
+        crate::tools::runtime::GraphicsEnvironmentError::EnvironmentConflict(conflict) => {
+            format!("environment-conflict:{}", conflict.key)
+        }
+    }
+}
 
 const DIRECT_LAUNCH_TIMEOUT: Duration = Duration::from_secs(30);
 const PATCHER_LAUNCH_TIMEOUT: Duration = Duration::from_secs(5 * 60);
@@ -128,17 +145,19 @@ pub async fn launch_game(
     audio::ensure_audio_driver(Some(&app), &op).await?;
 
     let tools_status = server_tools::scan_status(&app, &server).ok();
-    let use_dgvoodoo = tools_status
+    let dgvoodoo_configured = tools_status
         .as_ref()
         .is_some_and(|status| status.dgvoodoo.configured);
+    let webview2_required = tools_status
+        .as_ref()
+        .is_some_and(|status| status.diagnostics.webview2_required);
     let wine_7_16 = ctx.resolved.is_wine_7_16();
-    let use_managed_dxvk = wine_7_16
-        && prefix_health.manifest.as_ref().is_some_and(|manifest| {
-            manifest
-                .components()
-                .iter()
-                .any(|component| component == MANAGED_DXVK_COMPONENT)
-        });
+    let manifest_has_managed_dxvk = prefix_health.manifest.as_ref().is_some_and(|manifest| {
+        manifest
+            .components()
+            .iter()
+            .any(|component| component == MANAGED_DXVK_COMPONENT)
+    });
     if runtime_shadow_enabled() {
         let dxvk = if ctx.resolved.is_proton() {
             DxvkProvision::Runner
@@ -159,26 +178,56 @@ pub async fn launch_game(
                     .as_ref()
                     .map(|status| DgVoodooObservation::verified(status.dgvoodoo.configured))
                     .unwrap_or(DgVoodooObservation::Unavailable),
-                webview2_required: tools_status
-                    .as_ref()
-                    .is_some_and(|status| status.diagnostics.webview2_required),
+                webview2_required,
                 recommendation: None,
             },
         );
     }
-    if wine_7_16 && !use_managed_dxvk {
-        return Err(
-            "El entorno Wine 7.16 no registra DXVK 2.6.2; rearma este entorno antes de jugar"
-                .to_string(),
-        );
-    }
-    if use_managed_dxvk {
-        let prefix_token = prefix_log_token(std::path::Path::new(&ctx.prefix));
-        emit_tool_log_opt(
-            Some(&app),
-            format!("[Graphics] Wine 7.16 old WoW64 + DXVK 2.6.2 | prefix={prefix_token}"),
-        );
-    }
+    let graphics_target = if is_patcher {
+        InvocationTarget::LaunchPatcher
+    } else {
+        InvocationTarget::Game
+    };
+    let operational_plan = if runtime_graphics_plan_enabled() {
+        let plan = resolve_operational_plan(OperationalRuntimeInput {
+            server_runner: server.runner.as_deref(),
+            default_runner: default_runner.as_deref(),
+            context: &ctx,
+            dgvoodoo: DgVoodooState::verified(dgvoodoo_configured),
+            webview2_required,
+        })
+        .map_err(|error| error.code().to_string())?;
+        if plan.graphics().dxvk_provider().is_managed_prefix() && !manifest_has_managed_dxvk {
+            return Err(
+                "El entorno Wine 7.16 no registra DXVK 2.6.2; rearma este entorno antes de jugar"
+                    .to_string(),
+            );
+        }
+        if plan.graphics().dxvk_provider().is_managed_prefix() {
+            let prefix_token = prefix_log_token(std::path::Path::new(&ctx.prefix));
+            emit_tool_log_opt(
+                Some(&app),
+                format!("[Graphics] Wine 7.16 old WoW64 + DXVK 2.6.2 | prefix={prefix_token}"),
+            );
+        }
+        Some(plan)
+    } else {
+        let use_managed_dxvk = wine_7_16 && manifest_has_managed_dxvk;
+        if wine_7_16 && !use_managed_dxvk {
+            return Err(
+                "El entorno Wine 7.16 no registra DXVK 2.6.2; rearma este entorno antes de jugar"
+                    .to_string(),
+            );
+        }
+        if use_managed_dxvk {
+            let prefix_token = prefix_log_token(std::path::Path::new(&ctx.prefix));
+            emit_tool_log_opt(
+                Some(&app),
+                format!("[Graphics] Wine 7.16 old WoW64 + DXVK 2.6.2 | prefix={prefix_token}"),
+            );
+        }
+        None
+    };
     if wine_7_16 {
         emit_tool_log_opt(
             Some(&app),
@@ -202,7 +251,28 @@ pub async fn launch_game(
     let mut invocation =
         ctx.resolved
             .game_invocation(&ctx.prefix, &launch_exe, rendered_args.iter(), &work_dir)?;
-    apply_game_env(&mut invocation, use_dgvoodoo, use_managed_dxvk, &ctx.prefix);
+    if let Some(plan) = &operational_plan {
+        let graphics = InvocationPlan {
+            target: graphics_target,
+            plan,
+        }
+        .environment()
+        .map_err(graphics_environment_error_message)?;
+        apply_graphics_environment_to_invocation(&mut invocation, &graphics)
+            .map_err(graphics_environment_error_message)?;
+    } else {
+        let use_dgvoodoo = dgvoodoo_configured;
+        let use_managed_dxvk = wine_7_16 && manifest_has_managed_dxvk;
+        {
+            #[allow(deprecated)]
+            crate::utils::apply_game_env(
+                &mut invocation,
+                use_dgvoodoo,
+                use_managed_dxvk,
+                &ctx.prefix,
+            );
+        }
+    }
 
     let mut spawned = op.spawn(invocation, &redaction_values).await?;
     let controller_pid = spawned

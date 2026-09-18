@@ -7,7 +7,9 @@ use tauri::AppHandle;
 
 use crate::tools::prefix::DxvkProvision;
 use crate::tools::server_tools::GepardRunnerProfile;
-use crate::utils::{apply_game_env, emit_tool_log_opt, ProcessEnv, WineContext, WineSyncMode};
+#[allow(deprecated)]
+use crate::utils::apply_game_env;
+use crate::utils::{emit_tool_log_opt, ProcessEnv, WineContext, WineSyncMode};
 
 use super::environment::{
     ComponentOwner, DllLoadOrder, EnvironmentChange, GraphicsEnvironment, OwnershipDomain,
@@ -18,7 +20,6 @@ use super::model::{
     BaseRecipeStep, ComponentProvenance, GraphicsProfile, InvocationTarget, RunnerRequest,
     RunnerSelectionSource, RuntimePlan, RuntimeProfile, SyncPlan,
 };
-use super::probe::probe_runner;
 use super::resolver::{
     profile_from_legacy, resolve_runtime, DgVoodooState, LegacyProfileInput, RuntimeResolutionInput,
 };
@@ -139,7 +140,7 @@ pub(crate) fn observe_legacy_runtime(
         resolved: &input.context.resolved,
         prefix: prefix.clone(),
         prefix_binding: shadow_prefix_binding(prefix),
-        probe: probe_runner(&input.context.resolved),
+        probe: input.context.probe.clone(),
         dgvoodoo,
         webview2_required: input.webview2_required,
     }) {
@@ -348,7 +349,10 @@ fn capture_legacy_environment(
     prefix: &str,
 ) -> Result<NormalizedEnvironment, &'static str> {
     let mut capture = LegacyEnvironmentCapture::default();
-    apply_game_env(&mut capture, use_dgvoodoo, use_managed_dxvk, prefix);
+    #[allow(deprecated)]
+    {
+        apply_game_env(&mut capture, use_dgvoodoo, use_managed_dxvk, prefix);
+    }
     let overrides = capture.changes.remove("WINEDLLOVERRIDES");
     let dll_claims = match overrides {
         None => BTreeMap::new(),
@@ -602,6 +606,7 @@ fn has_managed_dxvk_claims(environment: &NormalizedEnvironment) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use super::super::probe::probe_runner;
     use super::*;
     use crate::tools::runners::managed_proton_path;
     use crate::utils::ResolvedRunner;

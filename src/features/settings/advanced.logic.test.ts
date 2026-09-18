@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
   advancedHasIssue,
+  dxvkHintFromDeps,
   resolveAudioDotStatus,
   resolveDotStatus,
 } from './advanced.logic'
+import type { DependencyStatus } from '../../shared/types'
 import type { AdvancedDepsStatus } from '../../shared/types'
 
 const healthyStatus: AdvancedDepsStatus = {
@@ -31,6 +33,70 @@ const healthyStatus: AdvancedDepsStatus = {
   canReset: true,
   checks: [],
 }
+
+describe('dxvkHintFromDeps', () => {
+  const baseDeps = (): DependencyStatus => ({
+    wine: true,
+    winetricks: true,
+    dxvk: true,
+    prefixConfigured: true,
+    audioOk: true,
+    audioDriver: 'pulse',
+    audioStack: 'pipewire',
+    audioWarning: null,
+    inputGroupOk: true,
+    inputGroupWarning: null,
+    uinputInputOk: true,
+    uinputInputWarning: null,
+    prefixOk: true,
+    prefixWarning: null,
+    dxvkOk: true,
+    dxvkWarning: null,
+    runnerKind: 'proton',
+    runnerOk: true,
+    runnerWarning: null,
+    prefixPath: '/tmp/prefix',
+    prefixScope: 'isolated',
+    prefixManaged: true,
+    readyToLaunch: true,
+    canSetup: true,
+    canReset: true,
+    checks: [],
+  })
+
+  it('prioriza el aviso sobre el plan', () => {
+    expect(
+      dxvkHintFromDeps({
+        ...baseDeps(),
+        dxvkWarning: 'pendiente',
+        runtimePlan: {
+          planId: 'abc',
+          selectionSource: 'productDefault',
+          graphicsProfile: 'dxvk',
+          dxvkProvider: 'runnerOwned',
+          dxvkComponentId: 'runner/dxvk',
+          overlayVerified: false,
+        },
+      }),
+    ).toBe('pendiente')
+  })
+
+  it('usa el plan cuando no hay aviso', () => {
+    expect(
+      dxvkHintFromDeps({
+        ...baseDeps(),
+        runtimePlan: {
+          planId: 'abc',
+          selectionSource: 'productDefault',
+          graphicsProfile: 'dxvk',
+          dxvkProvider: 'managedPrefix',
+          dxvkComponentId: 'dxvk-2.6.2',
+          overlayVerified: false,
+        },
+      }),
+    ).toBe('managedPrefix · dxvk-2.6.2')
+  })
+})
 
 describe('resolveDotStatus', () => {
   it('verde cuando ok sin aviso', () => {

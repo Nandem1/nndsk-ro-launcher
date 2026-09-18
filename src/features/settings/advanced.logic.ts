@@ -20,6 +20,19 @@ export function resolveAudioDotStatus(
   return 'ok'
 }
 
+export function dxvkHintFromDeps(
+  deps: Pick<DependencyStatus, 'dxvkWarning' | 'runtimePlan'>,
+): string | null {
+  if (deps.dxvkWarning) {
+    return deps.dxvkWarning
+  }
+  const plan = deps.runtimePlan
+  if (!plan) {
+    return null
+  }
+  return `${plan.dxvkProvider} · ${plan.dxvkComponentId}`
+}
+
 export function advancedStatusFromDeps(
   deps: DependencyStatus,
 ): AdvancedDepsStatus {
@@ -44,6 +57,7 @@ export function advancedStatusFromDeps(
     canSetup: deps.canSetup,
     canReset: deps.canReset,
     checks: deps.checks,
+    runtimePlan: deps.runtimePlan,
   }
 }
 

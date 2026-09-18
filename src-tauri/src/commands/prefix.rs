@@ -7,8 +7,9 @@ use crate::state::GameState;
 use crate::tools::prefix;
 use crate::tools::runners::ensure_managed_runtime;
 use crate::tools::runtime::{
-    observe_legacy_runtime, runtime_shadow_enabled, DgVoodooObservation, LegacyRuntimeInput,
-    ShadowOperation,
+    observe_legacy_runtime, resolve_operational_plan, runtime_graphics_plan_enabled,
+    runtime_shadow_enabled, DgVoodooObservation, DgVoodooState, LegacyRuntimeInput,
+    OperationalRuntimeInput, ShadowOperation,
 };
 use crate::tools::server_tools;
 use crate::utils::{
@@ -27,7 +28,7 @@ pub async fn setup_prefix(
 ) -> Result<(), String> {
     ensure_managed_runtime(&app).await?;
     let ctx = resolve_context(server.as_ref(), runner.clone()).await?;
-    let requirements = runtime_requirements(server.as_ref(), &ctx);
+    let requirements = runtime_requirements(server.as_ref(), &ctx, runner.as_deref())?;
     observe_prefix_shadow(
         &app,
         ShadowOperation::PrefixSetup,
@@ -127,7 +128,7 @@ pub async fn reset_prefix(
 ) -> Result<(), String> {
     ensure_managed_runtime(&app).await?;
     let ctx = resolve_context(server.as_ref(), runner.clone()).await?;
-    let requirements = runtime_requirements(server.as_ref(), &ctx);
+    let requirements = runtime_requirements(server.as_ref(), &ctx, runner.as_deref())?;
     observe_prefix_shadow(
         &app,
         ShadowOperation::PrefixReset,
@@ -177,12 +178,23 @@ fn observe_prefix_shadow(
 fn runtime_requirements(
     server: Option<&ServerConfig>,
     ctx: &WineContext,
-) -> prefix::RuntimeRequirements {
+    default_runner: Option<&str>,
+) -> Result<prefix::RuntimeRequirements, String> {
     let webview2 = server.is_some_and(server_tools::requires_webview2);
-    prefix::RuntimeRequirements {
-        webview2,
-        dxvk: prefix::DxvkProvision::for_runner(&ctx.resolved),
-    }
+    let dxvk = if runtime_graphics_plan_enabled() {
+        let plan = resolve_operational_plan(OperationalRuntimeInput {
+            server_runner: server.and_then(|server| server.runner.as_deref()),
+            default_runner,
+            context: ctx,
+            dgvoodoo: DgVoodooState::verified(false),
+            webview2_required: webview2,
+        })
+        .map_err(|error| error.code().to_string())?;
+        plan.graphics().dxvk_provider().provision_kind()
+    } else {
+        prefix::DxvkProvision::for_runner(&ctx.resolved)
+    };
+    Ok(prefix::RuntimeRequirements { webview2, dxvk })
 }
 
 fn validate_requirement_support(

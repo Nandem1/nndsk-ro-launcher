@@ -50,7 +50,7 @@ pub(super) struct LegacyProfileInput<'a> {
     pub(super) dgvoodoo: DgVoodooState,
 }
 
-pub(super) fn profile_from_legacy(
+pub(crate) fn profile_from_legacy(
     input: LegacyProfileInput<'_>,
 ) -> Result<RuntimeProfile, RuntimeResolutionError> {
     let selection_source = if nonempty(input.server_runner).is_some() {
@@ -94,7 +94,7 @@ pub(super) struct RuntimeResolutionInput<'a> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum RuntimeResolutionError {
+pub(crate) enum RuntimeResolutionError {
     InvalidKnownId,
     RunnerRequestMismatch,
     ProbeKindMismatch,
@@ -104,7 +104,7 @@ pub(super) enum RuntimeResolutionError {
 }
 
 impl RuntimeResolutionError {
-    pub(super) fn code(self) -> &'static str {
+    pub(crate) fn code(self) -> &'static str {
         match self {
             Self::InvalidKnownId => "invalid-known-id",
             Self::RunnerRequestMismatch => "runner-request-mismatch",
@@ -116,7 +116,7 @@ impl RuntimeResolutionError {
     }
 }
 
-pub(super) fn resolve_runtime(
+pub(crate) fn resolve_runtime(
     input: RuntimeResolutionInput<'_>,
 ) -> Result<RuntimePlan, RuntimeResolutionError> {
     validate_runner_request(input.profile.runner(), input.resolved, &input.probe)?;
@@ -325,6 +325,30 @@ mod tests {
             webview2_required: false,
         })
         .unwrap()
+    }
+
+    #[test]
+    fn dxvk_provision_kind_matches_legacy_for_runner_policy() {
+        use crate::tools::prefix::DxvkProvision;
+
+        let proton = ResolvedRunner::test_proton(
+            managed_proton_path().join("proton"),
+            managed_proton_path(),
+            managed_proton_path().join("umu-run"),
+        );
+        let probe = probe_runner(&proton);
+        let runner_plan = RunnerPlan {
+            resolved: proton.clone(),
+            identity: probe.identity,
+            capabilities: probe.capabilities,
+            sync: probe.sync,
+        };
+        assert_eq!(
+            resolve_dxvk_provider(&runner_plan)
+                .expect("provider")
+                .provision_kind(),
+            DxvkProvision::Runner
+        );
     }
 
     #[test]

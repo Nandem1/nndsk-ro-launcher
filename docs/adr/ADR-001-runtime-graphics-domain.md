@@ -4,7 +4,7 @@
 | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
 | Estado                | Aceptado                                                                                                                                        |
 | Fecha                 | 2026-09-16                                                                                                                                      |
-| Alcance               | Fases 0, 1 y boundary de activación de Fase 4                                                                                                   |
+| Alcance               | Fases 0–4; environment estructurado activo bajo `RO_LAUNCHER_RUNTIME_GRAPHICS` (default ON)                                                                 |
 | Decisión              | Modelo cerrado para las dos topologías gráficas actuales, resolución shadow sin autoridad operacional y composición estructurada de environment |
 | Autoridad relacionada | `AGENTS.md`, `docs/RO_RUNTIME_ARCHITECTURE_PLAN.md`                                                                                             |
 | ADR relacionado       | `ADR-002-runtime-prefix-identity.md`                                                                                                            |
@@ -617,7 +617,9 @@ Costes:
 
 - se necesita un adapter de facts legacy y un comparador temporal;
 - la verificación exacta de runners externos seguirá produciendo `Unknown` en casos legítimos;
-- activar el environment estructurado queda deliberadamente pospuesto hasta Fase 4.
+- activar el environment estructurado quedó acotado a Fase 4: con `RO_LAUNCHER_RUNTIME_GRAPHICS=0`
+  el launcher sigue el builder booleano legacy; con el flag en default u otro valor distinto de `0`,
+  spawn y deps derivan `GraphicsEnvironment` desde `RuntimePlan` (`docs/RO_RUNTIME_PHASE_4_CONTRACT.md`).
 
 ## 15. Criterio de cumplimiento
 
