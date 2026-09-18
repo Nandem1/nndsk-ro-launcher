@@ -13,7 +13,7 @@
 1. **`src-tauri/src/tools/runtime/runtime_fingerprint.rs`** — encoding `RuntimeFingerprintInput` v1 y `compute_runtime_fingerprint_from_input`.
 2. **`session_anchor.rs`** — `runtime_anchor_for_operation`, `session_anchor_unavailable`, `operational_session_anchor`.
 3. **`observation.rs` / `observation_store.rs` / `host_gpu.rs`** — schema v1, store append, retention, export/delete IPC.
-4. **Launch** — reorden scan/plan/anchor; `try_exit_status`; persistencia best-effort tras `mark_running` y en `spawn_exit_task`.
+4. **Launch** — reorden scan/plan/anchor; `try_exit_status`; persistencia tras `mark_running`, en `spawn_exit_task` y en fallo de arranque sin `mark_running`.
 5. **Commands** — `list_runtime_observations`, `export_runtime_observations`, `delete_runtime_observations`.
 6. **Frontend** — línea y acciones en `AdvancedSettings.tsx`.
 
@@ -30,8 +30,11 @@ Independiente de `RO_LAUNCHER_RUNTIME_GRAPHICS`, `RO_LAUNCHER_RUNTIME_COMPAT`, `
 
 ## 3. Goldens
 
-- [`contract-fixtures/runtime-fingerprint-v1.json`](../contract-fixtures/runtime-fingerprint-v1.json)
-- [`contract-fixtures/runtime-plan-summary.json`](../contract-fixtures/runtime-plan-summary.json) — `planId` actualizado al digest Proton managed v1
+- [`contract-fixtures/runtime-fingerprint-v1.json`](../contract-fixtures/runtime-fingerprint-v1.json) — Proton managed, Wine 7.16 DXVK y Wine 7.16 dgVoodoo; incluye `canonicalFieldIds`.
+- [`contract-fixtures/runtime-observation-v1.json`](../contract-fixtures/runtime-observation-v1.json) — ejemplo finished redacted.
+- [`contract-fixtures/runtime-plan-summary.json`](../contract-fixtures/runtime-plan-summary.json) — `planId` Proton y Wine 7.16 dgVoodoo actualizados al digest v1.
+
+Verificación independiente: Test A (`runtime_fingerprint_input_from_plan`) y Test B (árbol `CanonicalValue` escrito a mano) deben producir el mismo `digestSha256Hex`.
 
 ## 4. Store
 
@@ -40,6 +43,7 @@ Independiente de `RO_LAUNCHER_RUNTIME_GRAPHICS`, `RO_LAUNCHER_RUNTIME_COMPAT`, `
 - Lock: `OBSERVATIONS_LOCK` (`Mutex<()>`), nunca en ruta crítica de launch (spawn_blocking fire-and-forget)
 - Retención: 200 registros / 90 días
 - Export: destino fuera de `app_data_dir`; omite `server_local_id` y `client_id` (token 16 hex)
+- Launch: `Started` tras `mark_running`; `Finished` en `spawn_exit_task`. Si el proceso de juego no aparece, un solo `spawn_blocking` escribe `Started`+`Finished` (`StartupTimeout` / `StartupFailed` / `UserStop`) sin `mark_running`.
 
 ## 5. Rollback
 
@@ -48,8 +52,8 @@ Independiente de `RO_LAUNCHER_RUNTIME_GRAPHICS`, `RO_LAUNCHER_RUNTIME_COMPAT`, `
 ## 6. Pendiente (fuera de Fase 7)
 
 - Smokes live Sakura/Honey y AppImage instalada.
-- Goldens adicionales Wine 7.16 / dgVoodoo en `runtime-fingerprint-v1.json`.
-- `npm run tauri:dev` smoke documentado en gates de esta entrega si no se ejecutó en CI local.
+
+`npm run tauri:dev` arrancó en esta pasada: sidecars, Vite en `:5173` y `cargo run` de `ro-launcher` sin panic. No sustituye la matriz live Sakura/Honey.
 
 ## 7. Prohibido (Fase 7)
 

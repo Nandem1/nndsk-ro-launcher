@@ -27,12 +27,13 @@ use crate::tools::runner_sessions::{
 use crate::tools::runners::ensure_managed_runtime;
 use crate::tools::runtime::{
     apply_graphics_environment_to_invocation, classify_run_outcome, enqueue_persist_finished,
-    enqueue_persist_started, new_observation_id, observe_legacy_runtime,
+    enqueue_persist_started, enqueue_persist_unreached, new_observation_id, observe_legacy_runtime,
     operational_session_anchor, resolve_operational_plan_with_profile,
     runtime_graphics_plan_enabled, runtime_observe_enabled, runtime_shadow_enabled,
     DgVoodooObservation, DgVoodooState, InvocationPlan, InvocationTarget, LegacyRuntimeInput,
     ObservationFinishedPayload, ObservationStartedPayload, OperationalRuntimeInput, OutcomeInput,
-    PlanAvailability, ShadowOperation,
+    PlanAvailability, RunOutcome, RuntimePlan, RuntimeProfile, ShadowOperation,
+    StartupFailureClass,
 };
 use crate::tools::server_tools;
 use crate::tools::spammer::SpammerHandle;
@@ -300,6 +301,28 @@ pub async fn launch_game(
         .ok_or_else(|| "El runner no informó su PID".to_string())?;
     let Some(controller_identity) = capture_process_identity(controller_pid) else {
         let _ = spawned.terminate().await;
+        enqueue_unreached_observation(
+            observation_id.clone(),
+            operational_profile_plan.as_ref(),
+            &server,
+            &client_id,
+            is_patcher,
+            &anchor,
+            &ctx,
+            dgvoodoo_configured,
+            &game_dir,
+            None,
+            op.lease().map(|lease| lease.supervisor_identity()),
+            supervised_session,
+            classify_run_outcome(OutcomeInput {
+                reached_running: false,
+                stop_requested: false,
+                startup_timeout: false,
+                startup_failure: Some(StartupFailureClass::ControllerIdentityMissing),
+                controller_exit_before_terminate: None,
+                controller_exit_after_terminate: -1,
+            }),
+        );
         return Err("El proceso controlador terminó antes de poder identificarlo".to_string());
     };
     if let Err(error) = game.mark_controller(reservation, controller_identity) {
@@ -351,6 +374,34 @@ pub async fn launch_game(
             if let Some(task) = output_task {
                 let _ = task.await;
             }
+            let stop_requested = error.contains("cancelado por el usuario");
+            let startup_timeout = error.contains("dentro de");
+            enqueue_unreached_observation(
+                observation_id.clone(),
+                operational_profile_plan.as_ref(),
+                &server,
+                &client_id,
+                is_patcher,
+                &anchor,
+                &ctx,
+                dgvoodoo_configured,
+                &game_dir,
+                Some(controller_identity),
+                op.lease().map(|lease| lease.supervisor_identity()),
+                supervised_session,
+                classify_run_outcome(OutcomeInput {
+                    reached_running: false,
+                    stop_requested,
+                    startup_timeout,
+                    startup_failure: if stop_requested || startup_timeout {
+                        None
+                    } else {
+                        Some(StartupFailureClass::GameProcessWaitFailed)
+                    },
+                    controller_exit_before_terminate: None,
+                    controller_exit_after_terminate: -1,
+                }),
+            );
             return Err(error);
         }
     };
@@ -467,7 +518,7 @@ pub async fn launch_game(
             plan: plan.clone(),
             overlay_verified: dgvoodoo_configured,
             game_dir: Some(game_dir.clone()),
-            game_identity: identity,
+            game_identity: Some(identity),
             controller_identity: Some(controller_identity),
             supervisor_identity,
             supervised: supervised_session,
@@ -504,6 +555,64 @@ pub async fn launch_game(
     );
 
     Ok(launch_snapshot)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn enqueue_unreached_observation(
+    observation_id: Option<String>,
+    plan_pair: Option<&(RuntimeProfile, RuntimePlan)>,
+    server: &ServerConfig,
+    client_id: &str,
+    is_patcher: bool,
+    anchor: &crate::tools::runtime::SessionAnchorV2,
+    ctx: &crate::utils::WineContext,
+    dgvoodoo_configured: bool,
+    game_dir: &str,
+    controller_identity: Option<ProcessIdentity>,
+    supervisor_identity: Option<ProcessIdentity>,
+    supervised: bool,
+    outcome: RunOutcome,
+) {
+    let (Some(observation_id), Some((profile, plan))) = (observation_id, plan_pair) else {
+        return;
+    };
+    enqueue_persist_unreached(
+        ObservationStartedPayload {
+            observation_id: observation_id.clone(),
+            client_id: client_id.to_string(),
+            server_local_id: server.id.clone(),
+            game_executable_name: std::path::Path::new(&server.executable_path)
+                .file_name()
+                .map(|name| name.to_string_lossy().to_string())
+                .unwrap_or_else(|| "game.exe".to_string()),
+            invocation_target: if is_patcher {
+                "launch-patcher".to_string()
+            } else {
+                "game".to_string()
+            },
+            plan_id: anchor.plan_id.clone(),
+            runtime_fingerprint: anchor.runtime_fingerprint.clone(),
+            prefix_fingerprint_hex: ctx.identity.desired_fingerprint.digest.hex_digest(),
+            prefix_token: prefix_log_token(std::path::Path::new(&ctx.prefix)),
+            profile: profile.clone(),
+            plan: plan.clone(),
+            overlay_verified: dgvoodoo_configured,
+            game_dir: Some(game_dir.to_string()),
+            game_identity: None,
+            controller_identity,
+            supervisor_identity,
+            supervised,
+            plan_availability: PlanAvailability::Resolved,
+        },
+        ObservationFinishedPayload {
+            observation_id,
+            outcome,
+            game_identity: None,
+            controller_identity,
+            identity_stale: false,
+            handoff_count: 0,
+        },
+    );
 }
 
 enum ControllerHandle<'a> {
@@ -649,7 +758,7 @@ fn spawn_exit_task(
                     controller_exit_before_terminate: spontaneous,
                     controller_exit_after_terminate: code,
                 }),
-                game_identity: active_identity,
+                game_identity: Some(active_identity),
                 controller_identity: Some(initial_controller_identity),
                 identity_stale: active_identity != started_game_identity && handoff_count == 0,
                 handoff_count,

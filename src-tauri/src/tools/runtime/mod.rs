@@ -42,11 +42,13 @@ pub(crate) use inspection::inspect_subject;
 pub(crate) use model::InvocationTarget;
 pub(crate) use model::{ArtifactArchitecture, RuntimePlan, RuntimeProfile};
 pub(crate) use observation::{
-    classify_run_outcome, runtime_observe_enabled, OutcomeInput, PlanAvailability,
+    classify_run_outcome, runtime_observe_enabled, OutcomeInput, PlanAvailability, RunOutcome,
+    StartupFailureClass,
 };
 pub(crate) use observation_store::{
-    delete_observations, enqueue_persist_finished, enqueue_persist_started, export_observations,
-    list_observations, new_observation_id, ObservationFinishedPayload, ObservationStartedPayload,
+    delete_observations, enqueue_persist_finished, enqueue_persist_started,
+    enqueue_persist_unreached, export_observations, list_observations, new_observation_id,
+    ObservationFinishedPayload, ObservationStartedPayload,
 };
 pub(crate) use probe::{paths_match, probe_runner, RunnerProbe};
 pub(crate) use resolver::DgVoodooState;

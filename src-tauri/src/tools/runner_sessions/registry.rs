@@ -967,6 +967,20 @@ mod integration {
         )
     }
 
+    fn golden_plan_anchor(case: &str) -> crate::tools::runtime::SessionAnchorV2 {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../contract-fixtures/runtime-fingerprint-v1.json");
+        let json: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(path).expect("fixture")).unwrap();
+        let hex = json[case]["digestSha256Hex"]
+            .as_str()
+            .expect("digest")
+            .to_string();
+        let mut anchor = crate::tools::runtime::session_anchor_unavailable();
+        anchor.plan_id = hex;
+        anchor
+    }
+
     fn other_runner(primary: &crate::utils::ResolvedRunner) -> crate::utils::ResolvedRunner {
         let runner_dir = std::env::temp_dir().join(format!(
             "ro-fake-wine64-{}-{}",
@@ -1188,6 +1202,32 @@ mod integration {
         registry.shutdown_all().await;
         assert!(!registry.has_session(&key_a));
         assert!(!registry.has_session(&key_b));
+    }
+
+    #[tokio::test]
+    #[cfg(target_os = "linux")]
+    async fn begin_operation_rejects_plan_id_mismatch_on_active_lease() {
+        let sessiond = workspace_debug_sessiond().expect("build ro-sessiond first");
+        let prefix = test_prefix();
+        let registry = RunnerSessionRegistry::with_sidecar_for_test(sessiond);
+        let ctx = test_wine_context(&prefix);
+        let first = golden_plan_anchor("wine716ManagedDxvk");
+        let second = golden_plan_anchor("wine716DgVoodooDxvk");
+        assert_ne!(first.plan_id, second.plan_id);
+        let lease = registry
+            .begin_operation_opt(None, &ctx, &GameProcessHandle::new(), &first)
+            .await
+            .expect("begin");
+        let mismatch = registry
+            .begin_operation_opt(None, &ctx, &GameProcessHandle::new(), &second)
+            .await;
+        let err = match mismatch {
+            Ok(_) => panic!("plan mismatch should fail"),
+            Err(error) => error,
+        };
+        assert!(err.message.contains("runtime plan"));
+        drop(lease);
+        registry.shutdown_all().await;
     }
 
     #[tokio::test]

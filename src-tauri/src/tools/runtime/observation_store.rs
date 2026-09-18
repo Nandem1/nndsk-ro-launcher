@@ -90,7 +90,7 @@ pub(crate) struct ObservationStartedPayload {
     pub plan: RuntimePlan,
     pub overlay_verified: bool,
     pub game_dir: Option<String>,
-    pub game_identity: ProcessIdentity,
+    pub game_identity: Option<ProcessIdentity>,
     pub controller_identity: Option<ProcessIdentity>,
     pub supervisor_identity: Option<ProcessIdentity>,
     pub supervised: bool,
@@ -101,7 +101,7 @@ pub(crate) struct ObservationStartedPayload {
 pub(crate) struct ObservationFinishedPayload {
     pub observation_id: String,
     pub outcome: RunOutcome,
-    pub game_identity: ProcessIdentity,
+    pub game_identity: Option<ProcessIdentity>,
     pub controller_identity: Option<ProcessIdentity>,
     pub identity_stale: bool,
     pub handoff_count: u32,
@@ -124,6 +124,21 @@ pub(crate) fn enqueue_persist_finished(payload: ObservationFinishedPayload) {
     let paths = ObservationPaths::production();
     tokio::task::spawn_blocking(move || {
         let _ = persist_finished(&paths, payload);
+    });
+}
+
+pub(crate) fn enqueue_persist_unreached(
+    started: ObservationStartedPayload,
+    finished: ObservationFinishedPayload,
+) {
+    if !runtime_observe_enabled() {
+        return;
+    }
+    let paths = ObservationPaths::production();
+    tokio::task::spawn_blocking(move || {
+        if persist_started(&paths, started).is_ok() {
+            let _ = persist_finished(&paths, finished);
+        }
     });
 }
 
@@ -159,8 +174,8 @@ fn persist_finished(
     record.record_state = RecordState::Finished;
     record.finished_at = Some(Utc::now().to_rfc3339());
     record.outcome = Some(payload.outcome);
-    record.process.game = Some(to_identity_ipc(payload.game_identity));
-    record.process.final_game = Some(to_identity_ipc(payload.game_identity));
+    record.process.game = payload.game_identity.map(to_identity_ipc);
+    record.process.final_game = payload.game_identity.map(to_identity_ipc);
     record.process.controller = payload.controller_identity.map(to_identity_ipc);
     record.process.identity_stale = payload.identity_stale;
     record.process.handoff_count = payload.handoff_count;
@@ -213,7 +228,7 @@ fn build_started_record(
         subject,
         host_gpu: super::host_gpu::probe_host_gpu(),
         process: ObservationProcessIpc {
-            game: Some(to_identity_ipc(payload.game_identity)),
+            game: payload.game_identity.map(to_identity_ipc),
             controller: payload.controller_identity.map(to_identity_ipc),
             final_game: None,
             identity_stale: false,

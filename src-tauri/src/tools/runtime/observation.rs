@@ -19,13 +19,31 @@ pub(crate) fn runtime_observe_enabled_from(value: Option<&str>) -> bool {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", tag = "kind")]
 pub(crate) enum RunOutcome {
-    StartupFailed { class: StartupFailureClass },
+    #[serde(rename_all = "camelCase")]
+    StartupFailed {
+        class: StartupFailureClass,
+    },
     StartupTimeout,
-    UserStop { controller_exit_code: i32 },
-    CleanExit { controller_exit_code: i32 },
-    CrashConfirmed { evidence: CrashEvidence },
-    AbnormalControllerExit { controller_exit_code: i32 },
-    ProcessEnded { controller_exit_code: i32 },
+    #[serde(rename_all = "camelCase")]
+    UserStop {
+        controller_exit_code: i32,
+    },
+    #[serde(rename_all = "camelCase")]
+    CleanExit {
+        controller_exit_code: i32,
+    },
+    #[serde(rename_all = "camelCase")]
+    CrashConfirmed {
+        evidence: CrashEvidence,
+    },
+    #[serde(rename_all = "camelCase")]
+    AbnormalControllerExit {
+        controller_exit_code: i32,
+    },
+    #[serde(rename_all = "camelCase")]
+    ProcessEnded {
+        controller_exit_code: i32,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -39,7 +57,9 @@ pub(crate) enum StartupFailureClass {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", tag = "kind")]
 pub(crate) enum CrashEvidence {
+    #[serde(rename_all = "camelCase")]
     ControllerSignal { signal: i32 },
+    #[serde(rename_all = "camelCase")]
     NtStatus { code: u32 },
 }
 
@@ -130,7 +150,11 @@ pub(crate) struct FingerprintEnvelopeIpc {
 pub(crate) enum ObservationSubjectIpc {
     Absent,
     Unreadable,
-    Gepard { sha256: String, file_name: String },
+    #[serde(rename_all = "camelCase")]
+    Gepard {
+        sha256: String,
+        file_name: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -358,5 +382,16 @@ mod tests {
         poisoned.prefix_token = format!("{home}/prefixes/foo");
         let redacted = redact_observation_for_disk(&poisoned);
         assert!(!redacted.prefix_token.contains(home));
+    }
+
+    #[test]
+    fn runtime_observation_fixture_roundtrip() {
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../contract-fixtures/runtime-observation-v1.json");
+        let raw = std::fs::read_to_string(path).expect("fixture");
+        let expected: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        let parsed: RuntimeObservationV1 = serde_json::from_value(expected.clone()).unwrap();
+        let actual = serde_json::to_value(&parsed).unwrap();
+        assert_eq!(actual, expected);
     }
 }
