@@ -250,6 +250,20 @@ impl ResolvedRunner {
         }
     }
 
+    pub(crate) fn wineserver_path(&self) -> Option<&Path> {
+        match &self.strategy {
+            RunnerStrategy::Wine { wineserver_bin, .. } => Some(wineserver_bin),
+            RunnerStrategy::Proton { .. } => None,
+        }
+    }
+
+    pub(crate) fn proton_umu_path(&self) -> Option<&Path> {
+        match &self.strategy {
+            RunnerStrategy::Proton { umu_bin, .. } => Some(umu_bin),
+            RunnerStrategy::Wine { .. } => None,
+        }
+    }
+
     pub fn supports_winetricks_verb(&self, verb: &str) -> bool {
         self.winetricks_script()
             .and_then(|script| std::fs::read_to_string(script).ok())
@@ -591,13 +605,39 @@ impl ResolvedRunner {
     }
 }
 
-fn is_wine_7_16_version(version: &str) -> bool {
+pub(crate) fn is_wine_7_16_version(version: &str) -> bool {
     version.strip_prefix("wine-").is_some_and(|version| {
         version == "7.16"
             || version.starts_with("7.16 ")
             || version.starts_with("7.16.")
             || version.starts_with("7.16-")
     })
+}
+
+#[cfg(test)]
+impl ResolvedRunner {
+    pub(crate) fn test_wine(wine_bin: PathBuf, wineserver_bin: PathBuf) -> Self {
+        Self {
+            strategy: RunnerStrategy::Wine {
+                wine_bin,
+                wineserver_bin,
+            },
+        }
+    }
+
+    pub(crate) fn test_proton(
+        proton_script: PathBuf,
+        proton_dir: PathBuf,
+        umu_bin: PathBuf,
+    ) -> Self {
+        Self {
+            strategy: RunnerStrategy::Proton {
+                proton_script,
+                proton_dir,
+                umu_bin,
+            },
+        }
+    }
 }
 
 fn sync_mode_from_tkg_config(config: Option<&str>) -> WineSyncMode {
@@ -752,9 +792,7 @@ pub async fn resolve_server_wine_context_with_runner(
     server: Option<&ServerConfig>,
     default_runner: Option<String>,
 ) -> Result<WineContext, String> {
-    let selected_runner = server
-        .and_then(|server| server.runner.clone())
-        .or(default_runner);
+    let selected_runner = select_effective_runner(server, default_runner);
     let resolved = resolve_effective_runner(selected_runner).await?;
     let runner_path = std::fs::canonicalize(resolved.runner_path())
         .unwrap_or_else(|_| resolved.runner_path().to_path_buf());
@@ -765,6 +803,17 @@ pub async fn resolve_server_wine_context_with_runner(
         location,
         resolved,
     })
+}
+
+fn select_effective_runner(
+    server: Option<&ServerConfig>,
+    default_runner: Option<String>,
+) -> Option<String> {
+    server
+        .and_then(|server| server.runner.as_ref())
+        .filter(|runner| !runner.trim().is_empty())
+        .cloned()
+        .or(default_runner)
 }
 
 pub async fn resolve_effective_runner(
@@ -929,6 +978,33 @@ mod tests {
             )),
             WineSyncMode::Fsync
         );
+    }
+
+    #[test]
+    fn server_override_precedes_global_and_empty_override_does_not() {
+        let mut server: ServerConfig = serde_json::from_value(serde_json::json!({
+            "id": "server",
+            "name": "Server",
+            "executablePath": "/games/ro/Ragexe.exe"
+        }))
+        .unwrap();
+        assert_eq!(
+            select_effective_runner(Some(&server), Some("/global/proton".to_string())),
+            Some("/global/proton".to_string())
+        );
+
+        server.runner = Some("/server/wine".to_string());
+        assert_eq!(
+            select_effective_runner(Some(&server), Some("/global/proton".to_string())),
+            Some("/server/wine".to_string())
+        );
+
+        server.runner = Some("  ".to_string());
+        assert_eq!(
+            select_effective_runner(Some(&server), Some("/global/proton".to_string())),
+            Some("/global/proton".to_string())
+        );
+        assert_eq!(select_effective_runner(Some(&server), None), None);
     }
 
     fn test_wine_runner() -> ResolvedRunner {

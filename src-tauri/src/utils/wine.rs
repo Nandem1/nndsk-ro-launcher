@@ -299,4 +299,32 @@ mod tests {
         assert_eq!(command_env(&command, "DXVK_ASYNC"), None);
         assert_eq!(command_env(&command, "PROTON_USE_WOW64"), None);
     }
+
+    #[test]
+    fn legacy_target_matrix_keeps_maintenance_patcher_without_dgvoodoo() {
+        let overlay_and_dxvk = OsString::from(
+            "d3dimm=n,b;ddraw=n,b;d3d8=n,b;d3d9=n,b;d3d10core=n,b;d3d11=n,b;dxgi=n,b",
+        );
+        let dxvk_only = OsString::from("d3d8=n,b;d3d9=n,b;d3d10core=n,b;d3d11=n,b;dxgi=n,b");
+        for (target, use_dgvoodoo, expected) in [
+            ("game", true, overlay_and_dxvk.clone()),
+            ("launch-patcher", true, overlay_and_dxvk.clone()),
+            ("maintenance-patcher", false, dxvk_only.clone()),
+            ("open-setup", true, overlay_and_dxvk.clone()),
+            ("graphics-control-panel", true, overlay_and_dxvk.clone()),
+        ] {
+            let mut command = Command::new("/usr/bin/true");
+            apply_game_env(&mut command, use_dgvoodoo, true, "/tmp/prefix");
+            assert_eq!(
+                command_env(&command, "WINEDLLOVERRIDES"),
+                Some(Some(expected)),
+                "target {target}"
+            );
+            assert_eq!(
+                command_env(&command, "WINE_LARGE_ADDRESS_AWARE"),
+                Some(Some("1".into())),
+                "target {target}"
+            );
+        }
+    }
 }

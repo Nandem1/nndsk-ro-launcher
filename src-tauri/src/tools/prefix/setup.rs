@@ -665,6 +665,7 @@ fn shutdown_is_complete(status_success: bool, active_processes: usize) -> bool {
 mod tests {
     use super::*;
     use std::fs;
+    use std::os::unix::fs::PermissionsExt;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn test_dir(label: &str) -> std::path::PathBuf {
@@ -678,6 +679,15 @@ mod tests {
         ))
     }
 
+    fn wine_runner(root: &Path, version: &str) -> ResolvedRunner {
+        let wine = root.join("bin/wine");
+        let wineserver = root.join("bin/wineserver");
+        fs::create_dir_all(wine.parent().unwrap()).unwrap();
+        fs::write(&wine, format!("#!/bin/sh\nprintf '%s\\n' '{version}'\n")).unwrap();
+        fs::set_permissions(&wine, fs::Permissions::from_mode(0o755)).unwrap();
+        ResolvedRunner::test_wine(wine, wineserver)
+    }
+
     #[test]
     fn prefix_state_requires_at_least_one_entry() {
         let path = test_dir("state");
@@ -688,6 +698,26 @@ mod tests {
         assert!(prefix_has_state(path.to_str().unwrap()));
 
         fs::remove_dir_all(path).unwrap();
+    }
+
+    #[test]
+    fn legacy_dxvk_provision_is_characterized_for_each_runner_family() {
+        let root = test_dir("dxvk-policy");
+        let wine_716 = wine_runner(&root.join("wine-716"), "wine-7.16");
+        let current_wine = wine_runner(&root.join("wine-current"), "wine-10.0");
+        let proton = ResolvedRunner::test_proton(
+            root.join("proton/proton"),
+            root.join("proton"),
+            root.join("umu-run"),
+        );
+
+        assert_eq!(DxvkProvision::for_runner(&proton), DxvkProvision::Runner);
+        assert_eq!(DxvkProvision::for_runner(&wine_716), DxvkProvision::Managed);
+        assert_eq!(
+            DxvkProvision::for_runner(&current_wine),
+            DxvkProvision::Winetricks
+        );
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

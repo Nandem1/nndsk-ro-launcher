@@ -4,13 +4,17 @@ use tauri::AppHandle;
 
 use crate::models::server::ServerConfig;
 use crate::models::server_tools::{
-    InstallDgVoodooResult, ServerToolsStatus, UninstallDgVoodooResult,
+    DgVoodooStatus, InstallDgVoodooResult, ServerToolsStatus, UninstallDgVoodooResult,
 };
 use crate::models::tool_kind::ToolKind;
 use crate::state::GameProcessHandle;
-use crate::tools::prefix::MANAGED_DXVK_COMPONENT;
+use crate::tools::prefix::{DxvkProvision, MANAGED_DXVK_COMPONENT};
 use crate::tools::runner_sessions::{RunnerOperation, RunnerSessionRegistry, SpawnedRunner};
 use crate::tools::runners::ensure_managed_runtime;
+use crate::tools::runtime::{
+    observe_legacy_runtime, runtime_shadow_enabled, DgVoodooObservation, LegacyRuntimeInput,
+    ShadowOperation,
+};
 use crate::utils::{
     apply_tool_env, drain_and_log, emit_log_opt, required_game_dir,
     resolve_server_wine_context_with_runner, validate_runtime_prefix, OperationGuard,
@@ -22,20 +26,35 @@ pub fn scan_status(app: &AppHandle, server: &ServerConfig) -> Result<ServerTools
     let game_dir = required_game_dir(&server.executable_path)?;
     let can_auto_install = dgvoodoo::template_dir(app).is_ok();
     let mut status = scan::scan_game_dir(&game_dir, server, can_auto_install)?;
-    let mut validation_issues = dgvoodoo::entry_collision_issues(Path::new(&game_dir));
-    if status.dgvoodoo.d3dimm_dll.found && status.dgvoodoo.ddraw_dll.found {
-        if let Err(issues) = dgvoodoo::verify_wrapper_files(app, Path::new(&game_dir)) {
+    verify_dgvoodoo_status(app, Path::new(&game_dir), &mut status.dgvoodoo);
+    Ok(status)
+}
+
+pub(crate) fn scan_dgvoodoo_status(
+    app: &AppHandle,
+    server: &ServerConfig,
+) -> Result<DgVoodooStatus, String> {
+    let game_dir = required_game_dir(&server.executable_path)?;
+    let can_auto_install = dgvoodoo::template_dir(app).is_ok();
+    let mut status = scan::detect_dgvoodoo(Path::new(&game_dir), can_auto_install);
+    verify_dgvoodoo_status(app, Path::new(&game_dir), &mut status);
+    Ok(status)
+}
+
+fn verify_dgvoodoo_status(app: &AppHandle, game_dir: &Path, status: &mut DgVoodooStatus) {
+    let mut validation_issues = dgvoodoo::entry_collision_issues(game_dir);
+    if status.d3dimm_dll.found && status.ddraw_dll.found {
+        if let Err(issues) = dgvoodoo::verify_wrapper_files(app, game_dir) {
             validation_issues.extend(issues);
         }
     }
     validation_issues.sort();
     validation_issues.dedup();
     if !validation_issues.is_empty() {
-        status.dgvoodoo.configured = false;
-        status.dgvoodoo.needs_install = true;
-        status.dgvoodoo.issues.extend(validation_issues);
+        status.configured = false;
+        status.needs_install = true;
+        status.issues.extend(validation_issues);
     }
-    Ok(status)
 }
 
 pub async fn install_dgvoodoo(
@@ -66,6 +85,7 @@ pub async fn launch_tool(
     tool: ToolKind,
     runner: Option<String>,
 ) -> Result<(), String> {
+    let default_runner = runner.clone();
     ensure_managed_runtime(app).await?;
     let status = scan_status(app, server)?;
     let use_dgvoodoo = tool.should_apply_dgvoodoo_overrides(status.dgvoodoo.configured);
@@ -97,6 +117,28 @@ pub async fn launch_tool(
                 .iter()
                 .any(|component| component == MANAGED_DXVK_COMPONENT)
         });
+    if runtime_shadow_enabled() {
+        let dxvk = if ctx.resolved.is_proton() {
+            DxvkProvision::Runner
+        } else if wine_7_16 {
+            DxvkProvision::Managed
+        } else {
+            DxvkProvision::Winetricks
+        };
+        observe_legacy_runtime(
+            Some(app),
+            ShadowOperation::ServerTool,
+            LegacyRuntimeInput {
+                server_runner: server.runner.as_deref(),
+                default_runner: default_runner.as_deref(),
+                context: &ctx,
+                dxvk,
+                dgvoodoo: DgVoodooObservation::verified(status.dgvoodoo.configured),
+                webview2_required: status.diagnostics.webview2_required,
+                recommendation: None,
+            },
+        );
+    }
     if wine_7_16 && !use_managed_dxvk {
         return Err(
             "El entorno Wine 7.16 no registra DXVK 2.6.2; rearma este entorno antes de abrir herramientas"

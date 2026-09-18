@@ -18,13 +18,17 @@ use crate::tools::input::InputGateway;
 use crate::tools::memory_sessions::{
     launcher_memory_ancestor, MemoryAncestor, MemorySessionRegistry,
 };
-use crate::tools::prefix::MANAGED_DXVK_COMPONENT;
+use crate::tools::prefix::{DxvkProvision, MANAGED_DXVK_COMPONENT};
 use crate::tools::presence::{overrides_from_autopot, PresenceHandle};
 use crate::tools::runner_sessions::{
     path_log_token, prefix_log_token, ClientRuntimeGuard, RunnerOperation, RunnerSessionRegistry,
     SessionOwnership, SpawnedRunner,
 };
 use crate::tools::runners::ensure_managed_runtime;
+use crate::tools::runtime::{
+    observe_legacy_runtime, runtime_shadow_enabled, DgVoodooObservation, LegacyRuntimeInput,
+    ShadowOperation,
+};
 use crate::tools::server_tools;
 use crate::tools::spammer::SpammerHandle;
 use crate::utils::audio;
@@ -72,6 +76,7 @@ pub async fn launch_game(
         sessions,
         memory,
     } = tools;
+    let default_runner = runner.clone();
     ensure_managed_runtime(&app).await?;
     let ctx = resolve_server_wine_context_with_runner(Some(&server), runner).await?;
     let prefix_health = validate_runtime_prefix(&ctx)?;
@@ -133,6 +138,33 @@ pub async fn launch_game(
                 .iter()
                 .any(|component| component == MANAGED_DXVK_COMPONENT)
         });
+    if runtime_shadow_enabled() {
+        let dxvk = if ctx.resolved.is_proton() {
+            DxvkProvision::Runner
+        } else if wine_7_16 {
+            DxvkProvision::Managed
+        } else {
+            DxvkProvision::Winetricks
+        };
+        observe_legacy_runtime(
+            Some(&app),
+            ShadowOperation::Launch,
+            LegacyRuntimeInput {
+                server_runner: server.runner.as_deref(),
+                default_runner: default_runner.as_deref(),
+                context: &ctx,
+                dxvk,
+                dgvoodoo: tools_status
+                    .as_ref()
+                    .map(|status| DgVoodooObservation::verified(status.dgvoodoo.configured))
+                    .unwrap_or(DgVoodooObservation::Unavailable),
+                webview2_required: tools_status
+                    .as_ref()
+                    .is_some_and(|status| status.diagnostics.webview2_required),
+                recommendation: None,
+            },
+        );
+    }
     if wine_7_16 && !use_managed_dxvk {
         return Err(
             "El entorno Wine 7.16 no registra DXVK 2.6.2; rearma este entorno antes de jugar"

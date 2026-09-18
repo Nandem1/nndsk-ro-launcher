@@ -1,9 +1,15 @@
 use std::path::Path;
 
+use tauri::AppHandle;
+
 use crate::models::dependency::{DependencyStatus, RuntimeCheck, RuntimeCheckSeverity};
 use crate::models::server::ServerConfig;
 use crate::tools::prefix::{DxvkProvision, MANAGED_DXVK_COMPONENT};
 use crate::tools::runners::{managed_dxvk_ready, managed_proton_path, managed_runtime_ready};
+use crate::tools::runtime::{
+    observe_legacy_runtime, runtime_shadow_enabled, DgVoodooObservation, LegacyRuntimeInput,
+    ShadowOperation,
+};
 use crate::tools::server_tools;
 use crate::utils::audio;
 use crate::utils::{
@@ -16,13 +22,14 @@ use crate::utils::{
 use ro_tools_linux::{detect_input_permissions, detect_uinput_permissions};
 
 pub async fn check_dependencies(
+    app: &AppHandle,
     server: Option<ServerConfig>,
     runner: Option<String>,
 ) -> Result<DependencyStatus, String> {
     if !managed_runtime_ready() {
         return managed_runtime_pending(server.as_ref(), runner.as_deref());
     }
-    let ctx = resolve_context(server.as_ref(), runner).await?;
+    let ctx = resolve_context(server.as_ref(), runner.clone()).await?;
     let health = inspect_prefix(&ctx.prefix);
     let externally_managed = ctx.location.scope == PrefixScope::Custom;
     let prefix_configured = if externally_managed {
@@ -76,6 +83,31 @@ pub async fn check_dependencies(
     let mut blockers = runtime_prefix_blockers(&ctx, &health);
     let webview2_required = server.as_ref().is_some_and(server_tools::requires_webview2);
     let dxvk_provision = DxvkProvision::for_runner(&ctx.resolved);
+    let recommendation = server
+        .as_ref()
+        .and_then(server_tools::recommended_gepard_build);
+    if runtime_shadow_enabled() {
+        let dgvoodoo = match server.as_ref() {
+            Some(server) => match server_tools::scan_dgvoodoo_status(app, server) {
+                Ok(status) => DgVoodooObservation::verified(status.configured),
+                Err(_) => DgVoodooObservation::Unavailable,
+            },
+            None => DgVoodooObservation::verified(false),
+        };
+        observe_legacy_runtime(
+            Some(app),
+            ShadowOperation::DependencyCheck,
+            LegacyRuntimeInput {
+                server_runner: server.as_ref().and_then(|server| server.runner.as_deref()),
+                default_runner: runner.as_deref(),
+                context: &ctx,
+                dxvk: dxvk_provision,
+                dgvoodoo,
+                webview2_required,
+                recommendation: recommendation.map(|build| build.runner),
+            },
+        );
+    }
     let manifest_has_component = |component: &str| {
         health.manifest.as_ref().is_some_and(|manifest| {
             manifest
@@ -202,10 +234,7 @@ pub async fn check_dependencies(
         remediation: (!runner_vkd3d_ok)
             .then(|| "Cambia o reinstala la distribución Proton".to_string()),
     }];
-    if let Some(build) = server
-        .as_ref()
-        .and_then(server_tools::recommended_gepard_build)
-    {
+    if let Some(build) = recommendation {
         let compatible = match build.runner {
             server_tools::GepardRunnerProfile::ModernProton => ctx.resolved.is_proton(),
             server_tools::GepardRunnerProfile::Wine716Legacy => ctx.resolved.is_wine_7_16(),

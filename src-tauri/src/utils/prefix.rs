@@ -29,7 +29,7 @@ impl PrefixScope {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PrefixLocation {
     pub path: String,
     pub scope: PrefixScope,
@@ -443,7 +443,24 @@ fn canonical_or_original(path: &str) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde::Deserialize;
     use std::sync::atomic::{AtomicU64, Ordering};
+
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct PrefixManifestFixtures {
+        valid: PrefixManifest,
+        future_schema: PrefixManifest,
+        runner_mismatch: PrefixManifest,
+        corrupt: String,
+    }
+
+    fn manifest_fixtures() -> PrefixManifestFixtures {
+        serde_json::from_str(include_str!(
+            "../../../contract-fixtures/runtime-prefix-manifests.json"
+        ))
+        .unwrap()
+    }
 
     static SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -566,6 +583,53 @@ mod tests {
             server_id: Some("server-b".to_string()),
         };
         assert!(!manifest_matches_location(&manifest, &location));
+    }
+
+    #[test]
+    fn prefix_manifest_fixtures_cover_valid_corrupt_future_and_runner_mismatch() {
+        let fixtures = manifest_fixtures();
+        let root = test_prefix("manifest-fixtures");
+        create_structure(&root);
+
+        std::fs::write(
+            root.join(PREFIX_MARKER),
+            serde_json::to_vec(&fixtures.valid).unwrap(),
+        )
+        .unwrap();
+        let valid = inspect_prefix(root.to_str().unwrap());
+        assert!(valid.configured);
+        assert!(valid.issues.is_empty());
+        assert!(manifest_matches_runner(
+            valid.manifest.as_ref().unwrap(),
+            "wine",
+            "/opt/portable-wine/bin/wine"
+        ));
+
+        std::fs::write(root.join(PREFIX_MARKER), fixtures.corrupt).unwrap();
+        let corrupt = inspect_prefix(root.to_str().unwrap());
+        assert!(corrupt.manifest.is_none());
+        assert!(corrupt
+            .issues
+            .iter()
+            .any(|issue| issue.contains("manifiesto del entorno está dañado")));
+
+        std::fs::write(
+            root.join(PREFIX_MARKER),
+            serde_json::to_vec(&fixtures.future_schema).unwrap(),
+        )
+        .unwrap();
+        let future = inspect_prefix(root.to_str().unwrap());
+        assert!(future
+            .issues
+            .iter()
+            .any(|issue| issue.contains("schema incompatible")));
+
+        assert!(!manifest_matches_runner(
+            &fixtures.runner_mismatch,
+            "wine",
+            "/opt/portable-wine/bin/wine"
+        ));
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

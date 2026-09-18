@@ -432,11 +432,14 @@ fn artifact_ready(artifact: &Artifact) -> bool {
         .ok()
         .and_then(|content| serde_json::from_slice::<RuntimeMarker>(&content).ok());
     marker.is_some_and(|marker| {
-        marker.schema_version == RUNTIME_SCHEMA
-            && marker.artifact_id == artifact.id
-            && marker.digest == expected_digest(artifact.digest)
-            && artifact_payload_ready(artifact, &root)
+        runtime_marker_matches(artifact, &marker) && artifact_payload_ready(artifact, &root)
     })
+}
+
+fn runtime_marker_matches(artifact: &Artifact, marker: &RuntimeMarker) -> bool {
+    marker.schema_version == RUNTIME_SCHEMA
+        && marker.artifact_id == artifact.id
+        && marker.digest == expected_digest(artifact.digest)
 }
 
 fn artifact_payload_ready(artifact: &Artifact, root: &Path) -> bool {
@@ -537,6 +540,14 @@ fn unique_suffix() -> u128 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde::Deserialize;
+
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct RuntimeMarkerFixtures {
+        schema1: RuntimeMarker,
+        future_schema: RuntimeMarker,
+    }
 
     #[test]
     fn pinned_proton_is_newer_than_the_broken_dxvk_snapshot() {
@@ -549,6 +560,20 @@ mod tests {
         assert_eq!(UMU_SHA256.len(), 64);
         assert_eq!(DXVK_SHA256.len(), 64);
         assert_eq!(DXVK_ARTIFACT.id, "dxvk-2.6.2");
+    }
+
+    #[test]
+    fn runtime_marker_schema_one_fixture_matches_only_the_pinned_artifact() {
+        let fixtures: RuntimeMarkerFixtures = serde_json::from_str(include_str!(
+            "../../../../contract-fixtures/runtime-markers.json"
+        ))
+        .unwrap();
+        assert!(runtime_marker_matches(&PROTON_ARTIFACT, &fixtures.schema1));
+        assert!(!runtime_marker_matches(
+            &PROTON_ARTIFACT,
+            &fixtures.future_schema
+        ));
+        assert!(!runtime_marker_matches(&UMU_ARTIFACT, &fixtures.schema1));
     }
 
     #[test]

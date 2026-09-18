@@ -6,6 +6,10 @@ use crate::models::server::ServerConfig;
 use crate::state::GameState;
 use crate::tools::prefix;
 use crate::tools::runners::ensure_managed_runtime;
+use crate::tools::runtime::{
+    observe_legacy_runtime, runtime_shadow_enabled, DgVoodooObservation, LegacyRuntimeInput,
+    ShadowOperation,
+};
 use crate::tools::server_tools;
 use crate::utils::{
     ensure_custom_setup_allowed, ensure_managed_path_safe, ensure_managed_reset_allowed,
@@ -22,8 +26,16 @@ pub async fn setup_prefix(
     runner: Option<String>,
 ) -> Result<(), String> {
     ensure_managed_runtime(&app).await?;
-    let ctx = resolve_context(server.as_ref(), runner).await?;
+    let ctx = resolve_context(server.as_ref(), runner.clone()).await?;
     let requirements = runtime_requirements(server.as_ref(), &ctx);
+    observe_prefix_shadow(
+        &app,
+        ShadowOperation::PrefixSetup,
+        server.as_ref(),
+        runner.as_deref(),
+        &ctx,
+        requirements,
+    );
     validate_requirement_support(&ctx, requirements)?;
     ensure_managed_path_safe(&ctx.location)?;
     ensure_custom_setup_allowed(&ctx.location)?;
@@ -102,11 +114,52 @@ pub async fn reset_prefix(
     runner: Option<String>,
 ) -> Result<(), String> {
     ensure_managed_runtime(&app).await?;
-    let ctx = resolve_context(server.as_ref(), runner).await?;
+    let ctx = resolve_context(server.as_ref(), runner.clone()).await?;
     let requirements = runtime_requirements(server.as_ref(), &ctx);
+    observe_prefix_shadow(
+        &app,
+        ShadowOperation::PrefixReset,
+        server.as_ref(),
+        runner.as_deref(),
+        &ctx,
+        requirements,
+    );
     validate_requirement_support(&ctx, requirements)?;
     ensure_managed_reset_allowed(&ctx.location)?;
     prefix::reset_runtime_prefix(&app, &state.game, &state.sessions, &ctx, requirements).await
+}
+
+fn observe_prefix_shadow(
+    app: &AppHandle,
+    operation: ShadowOperation,
+    server: Option<&ServerConfig>,
+    default_runner: Option<&str>,
+    ctx: &WineContext,
+    requirements: prefix::RuntimeRequirements,
+) {
+    if !runtime_shadow_enabled() {
+        return;
+    }
+    let dgvoodoo = match server {
+        Some(server) => match server_tools::scan_dgvoodoo_status(app, server) {
+            Ok(status) => DgVoodooObservation::verified(status.configured),
+            Err(_) => DgVoodooObservation::Unavailable,
+        },
+        None => DgVoodooObservation::verified(false),
+    };
+    observe_legacy_runtime(
+        Some(app),
+        operation,
+        LegacyRuntimeInput {
+            server_runner: server.and_then(|server| server.runner.as_deref()),
+            default_runner,
+            context: ctx,
+            dxvk: requirements.dxvk,
+            dgvoodoo,
+            webview2_required: requirements.webview2,
+            recommendation: None,
+        },
+    );
 }
 
 fn runtime_requirements(
