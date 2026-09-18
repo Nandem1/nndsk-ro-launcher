@@ -5,6 +5,7 @@ import { StatusDot, type DotStatus } from '../../shared/ui/StatusDot'
 import { useSelectedServer } from '../servers/useSelectedServer'
 import {
   advancedHasIssue,
+  compatibilityLine,
   dxvkHintFromDeps,
   resolveAudioDotStatus,
   resolveDotStatus,
@@ -65,6 +66,10 @@ export function AdvancedSettings() {
     advancedStatus.audioStack,
   )}${!advancedStatus.audioOk ? ' (no disponible)' : ''}`
 
+  const compatibilityStatusLine = advancedStatus.compatibility
+    ? compatibilityLine(advancedStatus.compatibility)
+    : null
+
   const lines = [
     {
       key: 'runner',
@@ -77,6 +82,16 @@ export function AdvancedSettings() {
         advancedStatus.runnerWarning ??
         `${runnerSource}${effectiveRunner ? ` · ${effectiveRunner}` : ''}`,
     },
+    ...(compatibilityStatusLine
+      ? [
+          {
+            key: 'compatibility',
+            dot: compatibilityStatusLine.dot,
+            label: compatibilityStatusLine.label,
+            hint: compatibilityStatusLine.hint,
+          },
+        ]
+      : []),
     {
       key: 'audio',
       dot: audioDot,

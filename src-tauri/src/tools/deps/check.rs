@@ -7,11 +7,13 @@ use crate::models::server::ServerConfig;
 use crate::tools::prefix::{DxvkProvision, MANAGED_DXVK_COMPONENT};
 use crate::tools::runners::{managed_dxvk_ready, managed_proton_path, managed_runtime_ready};
 use crate::tools::runtime::{
-    build_runtime_plan_summary, observe_legacy_runtime, paths_match,
-    resolve_operational_plan_with_profile, resolve_prefix_binding_for_managed_descriptor,
+    assess_compatibility, build_runtime_plan_summary, compatibility_ipc, gepard_runtime_check,
+    inspect_subject, legacy_gepard_runner_check, observe_legacy_runtime, paths_match,
+    recommendation_to_gepard_profile, resolve_operational_plan_with_profile,
+    resolve_prefix_binding_for_managed_descriptor, runtime_compat_enabled,
     runtime_graphics_plan_enabled, runtime_shadow_enabled, session_anchor_from_context,
-    DgVoodooObservation, DgVoodooState, LegacyRuntimeInput, OperationalRuntimeInput,
-    ShadowOperation,
+    AssessedRuntime, DgVoodooObservation, DgVoodooState, LegacyRuntimeInput,
+    OperationalRuntimeInput, RuntimePlan, RuntimeProfile, ShadowOperation,
 };
 use crate::tools::server_tools;
 use crate::utils::audio;
@@ -93,19 +95,26 @@ pub async fn check_dependencies(
             .map(|status| status.configured)
             .unwrap_or(false)
     });
-    let (dxvk_provision, runtime_plan) = if runtime_graphics_plan_enabled() {
-        let input = OperationalRuntimeInput {
-            server_runner: server.as_ref().and_then(|server| server.runner.as_deref()),
-            default_runner: runner.as_deref(),
-            context: &ctx,
-            dgvoodoo: DgVoodooState::verified(dgvoodoo_configured),
-            webview2_required,
-        };
-        let (profile, plan) = resolve_operational_plan_with_profile(input)
-            .map_err(|error| error.code().to_string())?;
+    let operational_input = OperationalRuntimeInput {
+        server_runner: server.as_ref().and_then(|server| server.runner.as_deref()),
+        default_runner: runner.as_deref(),
+        context: &ctx,
+        dgvoodoo: DgVoodooState::verified(dgvoodoo_configured),
+        webview2_required,
+    };
+    let mut operational_profile_plan: Option<(RuntimeProfile, RuntimePlan)> = None;
+    if runtime_graphics_plan_enabled() || runtime_compat_enabled() {
+        if let Ok(pair) = resolve_operational_plan_with_profile(operational_input) {
+            operational_profile_plan = Some(pair);
+        }
+    }
+    let (dxvk_provision, mut runtime_plan) = if runtime_graphics_plan_enabled() {
+        let (profile, plan) = operational_profile_plan
+            .as_ref()
+            .ok_or_else(|| "runtime-plan-resolution-failed".to_string())?;
         let anchor = session_anchor_from_context(&ctx);
         let summary =
-            build_runtime_plan_summary(anchor.plan_id, &profile, &plan, dgvoodoo_configured);
+            build_runtime_plan_summary(anchor.plan_id, profile, plan, dgvoodoo_configured);
         (
             plan.graphics().dxvk_provider().provision_kind(),
             Some(summary),
@@ -113,9 +122,38 @@ pub async fn check_dependencies(
     } else {
         (DxvkProvision::for_runner(&ctx.resolved), None)
     };
-    let recommendation = server
+    let game_dir = server
         .as_ref()
-        .and_then(server_tools::recommended_gepard_build);
+        .and_then(|server| Path::new(&server.executable_path).parent());
+    let compatibility_subject = inspect_subject(game_dir);
+    let compatibility_snapshot = {
+        let assessed = operational_profile_plan
+            .as_ref()
+            .map(|(_, plan)| AssessedRuntime {
+                plan,
+                probe: &ctx.probe,
+            });
+        assess_compatibility(&compatibility_subject, assessed.as_ref())
+    };
+    let compatibility_status = if runtime_compat_enabled() {
+        Some(compatibility_ipc(&compatibility_snapshot))
+    } else {
+        None
+    };
+    if let Some(summary) = runtime_plan.as_mut() {
+        summary.compatibility = compatibility_status.clone();
+    }
+    let legacy_recommendation = if runtime_compat_enabled() {
+        compatibility_snapshot
+            .recommendation
+            .as_ref()
+            .map(recommendation_to_gepard_profile)
+    } else {
+        server
+            .as_ref()
+            .and_then(server_tools::recommended_gepard_build)
+            .map(|build| build.runner)
+    };
     if runtime_shadow_enabled() {
         let dgvoodoo = match server.as_ref() {
             Some(server) => match server_tools::scan_dgvoodoo_status(app, server) {
@@ -134,7 +172,7 @@ pub async fn check_dependencies(
                 dxvk: dxvk_provision,
                 dgvoodoo,
                 webview2_required,
-                recommendation: recommendation.map(|build| build.runner),
+                recommendation: legacy_recommendation,
             },
         );
     }
@@ -271,35 +309,15 @@ pub async fn check_dependencies(
         remediation: (!runner_vkd3d_ok)
             .then(|| "Cambia o reinstala la distribución Proton".to_string()),
     }];
-    if let Some(build) = recommendation {
-        let compatible = match build.runner {
-            server_tools::GepardRunnerProfile::ModernProton => ctx.resolved.is_proton(),
-            server_tools::GepardRunnerProfile::Wine716Legacy => ctx.resolved.is_wine_7_16(),
-        };
-        checks.push(RuntimeCheck {
-            id: "gepard-runner".to_string(),
-            severity: if compatible {
-                RuntimeCheckSeverity::Ok
-            } else {
-                RuntimeCheckSeverity::Warning
-            },
-            message: if compatible {
-                format!(
-                    "Gepard {} build {} · perfil validado {}",
-                    build.product_version,
-                    build.file_version,
-                    build.runner.stack_label()
-                )
-            } else {
-                format!(
-                    "Gepard {} build {} recomienda el perfil validado {}",
-                    build.product_version,
-                    build.file_version,
-                    build.runner.stack_label()
-                )
-            },
-            remediation: (!compatible).then(|| build.runner.remediation().to_string()),
-        });
+    if runtime_compat_enabled() {
+        if let Some(check) = gepard_runtime_check(&compatibility_snapshot) {
+            checks.push(check);
+        }
+    } else if let Some(build) = server
+        .as_ref()
+        .and_then(server_tools::recommended_gepard_build)
+    {
+        checks.push(legacy_gepard_runner_check(build, &ctx.resolved));
     }
     if !missing_verbs.is_empty() {
         checks.push(RuntimeCheck {
@@ -415,6 +433,7 @@ pub async fn check_dependencies(
             && ensure_managed_reset_allowed(&ctx.location).is_ok(),
         checks,
         runtime_plan,
+        compatibility: compatibility_status,
     })
 }
 
@@ -548,6 +567,14 @@ fn managed_runtime_pending(
             },
         ],
         runtime_plan: None,
+        compatibility: if runtime_compat_enabled() {
+            let game_dir = server.and_then(|server| Path::new(&server.executable_path).parent());
+            let subject = inspect_subject(game_dir);
+            let snapshot = assess_compatibility(&subject, None);
+            Some(compatibility_ipc(&snapshot))
+        } else {
+            None
+        },
     })
 }
 

@@ -36,7 +36,7 @@ Independiente de `RO_LAUNCHER_RUNTIME_SHADOW`, `RO_LAUNCHER_PREFIX_V3`, `RO_LAUN
 
 - `compute_runtime_fingerprint` completo y `plan_id` que discrimine overlay (placeholder actual).
 - Smokes live Sakura/Honey, AppImage instalada, multi-client juego.
-- `expected_plan_id` IPC, UI de profiles, compatibility catalog (Fase 5).
+- `expected_plan_id` IPC, UI de profiles (compatibility catalog: Fase 5 / [`RO_RUNTIME_PHASE_5_CONTRACT.md`](RO_RUNTIME_PHASE_5_CONTRACT.md)).
 
 ## 5. Rollback
 

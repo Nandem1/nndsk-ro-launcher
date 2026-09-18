@@ -73,6 +73,7 @@ pub(crate) fn build_runtime_plan_summary(
         dxvk_provider: dxvk_provider_label(provider),
         dxvk_component_id: provider.component_id().to_string(),
         overlay_verified,
+        compatibility: None,
     }
 }
 

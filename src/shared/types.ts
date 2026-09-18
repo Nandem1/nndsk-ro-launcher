@@ -197,6 +197,29 @@ export interface DependencyStatus {
   canReset: boolean
   checks: RuntimeCheck[]
   runtimePlan?: RuntimePlanSummary | null
+  compatibility?: CompatibilityStatus | null
+}
+
+export type CompatibilityAssessmentKind =
+  'validated' | 'experimental' | 'incompatible' | 'unknown'
+
+export interface CompatibilityAssessmentIpc {
+  kind: CompatibilityAssessmentKind
+  evidenceId?: string
+  reason?: string
+}
+
+export interface CompatibilityRecommendationIpc {
+  profile: string
+  evidenceId: string
+  reason: string
+}
+
+export interface CompatibilityStatus {
+  assessment: CompatibilityAssessmentIpc
+  recommendation?: CompatibilityRecommendationIpc | null
+  gepardFileVersion?: string | null
+  gepardSha256Prefix?: string | null
 }
 
 export interface RuntimePlanSummary {
@@ -206,6 +229,7 @@ export interface RuntimePlanSummary {
   dxvkProvider: string
   dxvkComponentId: string
   overlayVerified: boolean
+  compatibility?: CompatibilityStatus | null
 }
 
 export type RuntimeCheckSeverity = 'ok' | 'warning' | 'error' | 'pending'
@@ -257,6 +281,7 @@ export type AdvancedDepsStatus = Pick<
   | 'canReset'
   | 'checks'
   | 'runtimePlan'
+  | 'compatibility'
 >
 
 export interface ClientProfile {

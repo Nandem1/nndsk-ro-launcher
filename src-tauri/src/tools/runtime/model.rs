@@ -349,6 +349,19 @@ impl DxvkProvider {
             DxvkProviderKind::WinetricksPrefix { .. } => DxvkProvision::Winetricks,
         }
     }
+
+    pub(crate) fn managed_dxvk_artifact_id(&self) -> Option<&str> {
+        match &self.kind {
+            DxvkProviderKind::ManagedPrefix { artifact_id } => Some(artifact_id.as_str()),
+            _ => None,
+        }
+    }
+}
+
+impl RunnerPlan {
+    pub(crate) fn resolved(&self) -> &ResolvedRunner {
+        &self.resolved
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -1367,12 +1367,17 @@ shipped de observaciones locales.
 
 **Entregables.**
 
-- [ ] Schema versionado con sujeto, runtime fingerprint/profile, outcome, provenance y fecha.
-- [ ] Migración conservadora de Sakura: hash Gepard exacto, Wine 7.16 old-WoW64 y DXVK 2.6.2.
-- [ ] Migración conservadora de Honey: hash Gepard exacto y Proton-CachyOS 11 efectivo.
-- [ ] `Unknown` por ausencia, campos incompletos o artifact/layout diferente.
-- [ ] Recomendaciones separadas de restricciones; ninguna fuerza silenciosamente un runner.
-- [ ] Observaciones locales no promovidas automáticamente a catálogo curated.
+- [x] Schema versionado con sujeto, runtime spec, outcome, provenance y fecha.
+- [x] Migración conservadora de Sakura: hash Gepard exacto, Wine 7.16 old-WoW64 y DXVK 2.6.2.
+- [x] Migración conservadora de Honey: hash Gepard exacto y Proton-CachyOS 11 administrado.
+- [x] `Unknown` por ausencia, campos incompletos o artifact/layout diferente.
+- [x] Recomendaciones separadas de restricciones; ninguna fuerza silenciosamente un runner.
+- [x] Observaciones locales no promovidas automáticamente a catálogo curated.
+
+**Estado de implementación (2026-09-18).** ADR-004 y
+[`RO_RUNTIME_PHASE_5_CONTRACT.md`](RO_RUNTIME_PHASE_5_CONTRACT.md). Módulo `tools/runtime/compatibility.rs`,
+flag `RO_LAUNCHER_RUNTIME_COMPAT`, IPC `compatibility`, UI AdvancedSettings. Sin cambio en spawn,
+prefix manifests ni `ro-sessiond`. Smokes live con `gepard.dll` de anchors pendientes de registro manual.
 
 **No entra.** Crowdsourcing, backend remoto, compatibilidad por nombre de server, fuzzy matching de
 hash, modificación de anti-cheat, benchmarks ni AutoTune.

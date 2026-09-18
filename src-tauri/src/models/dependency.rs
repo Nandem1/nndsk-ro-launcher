@@ -9,13 +9,40 @@ pub struct RuntimeCheck {
     pub remediation: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum RuntimeCheckSeverity {
     Ok,
     Warning,
     Error,
     Pending,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase", tag = "kind")]
+pub enum CompatibilityAssessmentIpc {
+    Validated { evidence_id: String },
+    Experimental { evidence_id: String },
+    Incompatible { evidence_id: String, reason: String },
+    Unknown,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompatibilityRecommendationIpc {
+    pub profile: String,
+    pub evidence_id: String,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompatibilityStatus {
+    pub assessment: CompatibilityAssessmentIpc,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recommendation: Option<CompatibilityRecommendationIpc>,
+    pub gepard_file_version: Option<String>,
+    pub gepard_sha256_prefix: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -27,6 +54,8 @@ pub struct RuntimePlanSummary {
     pub dxvk_provider: &'static str,
     pub dxvk_component_id: String,
     pub overlay_verified: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub compatibility: Option<CompatibilityStatus>,
 }
 
 #[derive(Serialize)]
@@ -60,4 +89,6 @@ pub struct DependencyStatus {
     pub checks: Vec<RuntimeCheck>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub runtime_plan: Option<RuntimePlanSummary>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub compatibility: Option<CompatibilityStatus>,
 }

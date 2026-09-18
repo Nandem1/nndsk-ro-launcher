@@ -1,7 +1,8 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use crate::tools::runners::managed_proton_path;
+use crate::tools::runners::{managed_proton_path, MANAGED_RUNNER_ID};
+use crate::utils::is_wine_7_16_version;
 use crate::utils::{ResolvedRunner, RunnerKind};
 
 use super::managed_identity::{
@@ -53,6 +54,29 @@ pub(crate) fn probe_managed_proton_descriptor(payload: PayloadVerification) -> R
 pub(crate) fn probe_runner(resolved: &ResolvedRunner) -> RunnerProbe {
     let mut cache = FileDigestCache::default();
     probe_runner_with_cache(resolved, &mut cache)
+}
+
+pub(crate) fn probe_managed_proton_identity(probe: &RunnerProbe) -> bool {
+    matches!(
+        &probe.identity.provenance,
+        ComponentProvenance::ArtifactReceipt(receipt)
+            if receipt.identity.artifact_id.as_str() == MANAGED_RUNNER_ID
+    )
+}
+
+pub(crate) fn probe_wine_716_old_wow64_layout(probe: &RunnerProbe) -> bool {
+    let wine_7_16 = matches!(
+        &probe.capabilities.reported_version,
+        CapabilityEvidence::Known { value, .. } if is_wine_7_16_version(value)
+    );
+    let old_wow64 = matches!(
+        &probe.capabilities.wow64_layout,
+        CapabilityEvidence::Known {
+            value: Wow64Layout::OldWow64,
+            ..
+        }
+    );
+    wine_7_16 && old_wow64
 }
 
 fn probe_runner_with_cache(resolved: &ResolvedRunner, cache: &mut FileDigestCache) -> RunnerProbe {

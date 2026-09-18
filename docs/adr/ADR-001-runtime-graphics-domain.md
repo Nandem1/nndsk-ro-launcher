@@ -620,6 +620,8 @@ Costes:
 - activar el environment estructurado quedó acotado a Fase 4: con `RO_LAUNCHER_RUNTIME_GRAPHICS=0`
   el launcher sigue el builder booleano legacy; con el flag en default u otro valor distinto de `0`,
   spawn y deps derivan `GraphicsEnvironment` desde `RuntimePlan` (`docs/RO_RUNTIME_PHASE_4_CONTRACT.md`).
+- assessments de compatibilidad Gepard exactos y display asociado pasan a ADR-004 y Fase 5
+  (`docs/RO_RUNTIME_PHASE_5_CONTRACT.md`); Fase 1–4 no elevaban `Validated` sin evidencia de runtime.
 
 ## 15. Criterio de cumplimiento
 

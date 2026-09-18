@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "records": [
+    {
+      "evidenceId": "gepard-26.8.26.1-proton-cachyos-11",
+      "gepardSha256": "e2f624d2e3451e68e46783e86d75a8b6787567a96bd33357d74b184dfcec6c13",
+      "gepardProductVersion": "3.0",
+      "gepardFileVersion": "26.8.26.1",
+      "runtime": "managedProtonCachyos11",
+      "recommendationProfile": "managedProtonCachyos11",
+      "recordedAt": "2026-09-16",
+      "provenance": "curatedShipped"
+    },
+    {
+      "evidenceId": "gepard-26.9.3.1-wine-7.16-old-wow64-dxvk-2.6.2",
+      "gepardSha256": "db4653ddf6aea88a502f10e200a300a05e8e4d65e7cfe65eb5b2ff0779e2e4f5",
+      "gepardProductVersion": "3.0",
+      "gepardFileVersion": "26.9.3.1",
+      "runtime": "wine716OldWow64ManagedDxvk",
+      "recommendationProfile": "wine716OldWow64ManagedDxvk",
+      "recordedAt": "2026-09-16",
+      "provenance": "curatedShipped"
+    }
+  ]
+}

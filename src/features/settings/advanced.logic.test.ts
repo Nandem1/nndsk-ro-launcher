@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   advancedHasIssue,
+  compatibilityLine,
   dxvkHintFromDeps,
   resolveAudioDotStatus,
   resolveDotStatus,
@@ -123,6 +124,32 @@ describe('resolveAudioDotStatus', () => {
   })
 })
 
+describe('compatibilityLine', () => {
+  it('marca validated en verde', () => {
+    const line = compatibilityLine({
+      assessment: {
+        kind: 'validated',
+        evidenceId: 'gepard-26.8.26.1-proton-cachyos-11',
+      },
+      gepardFileVersion: '26.8.26.1',
+    })
+    expect(line.dot).toBe('ok')
+    expect(line.label).toContain('Validated')
+  })
+
+  it('marca unknown con recomendación', () => {
+    const line = compatibilityLine({
+      assessment: { kind: 'unknown' },
+      recommendation: {
+        profile: 'managedProtonCachyos11',
+        evidenceId: 'gepard-26.8.26.1-proton-cachyos-11',
+        reason: 'validatedGepardHash',
+      },
+    })
+    expect(line.dot).toBe('warning')
+  })
+})
+
 describe('advancedHasIssue', () => {
   it('sin problemas cuando todo verde', () => {
     expect(advancedHasIssue(healthyStatus)).toBe(false)
@@ -161,5 +188,21 @@ describe('advancedHasIssue', () => {
         inputGroupWarning: 'usermod',
       }),
     ).toBe(false)
+  })
+
+  it('marca compatibilidad unknown como problema', () => {
+    expect(
+      advancedHasIssue({
+        ...healthyStatus,
+        compatibility: {
+          assessment: { kind: 'unknown' },
+          recommendation: {
+            profile: 'managedProtonCachyos11',
+            evidenceId: 'gepard-26.8.26.1-proton-cachyos-11',
+            reason: 'validatedGepardHash',
+          },
+        },
+      }),
+    ).toBe(true)
   })
 })
