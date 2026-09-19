@@ -1,0 +1,62 @@
+{
+  "proton": {
+    "schemaVersion": 2,
+    "artifactId": "ro-proton-cachyos-11.0-20260702-slr",
+    "kind": "proton-cachyos",
+    "version": "11.0-20260702-slr",
+    "digest": "c8a050077b1d420e5b691dc487eaa998fe03b99b7e05e6ee3e16c8d4bd9f4c9ff5d9f80e5f6cd1a3f6bb5194bf1481fca9f91999f710d505b68ad97aa5592c7b",
+    "digestAlgorithm": "sha512",
+    "source": {
+      "type": "https",
+      "url": "https://github.com/CachyOS/proton-cachyos/releases/download/cachyos-11.0-20260702-slr/proton-cachyos-11.0-20260702-slr-x86_64.tar.xz"
+    },
+    "platform": "linux-x86_64",
+    "architectures": ["x86-64"],
+    "recipeRevision": 1
+  },
+  "umu": {
+    "schemaVersion": 2,
+    "artifactId": "umu-launcher-1.4.0",
+    "kind": "umu-launcher",
+    "version": "1.4.0",
+    "digest": "138ce4b8843608a257d4bee88191ca78a989778bcefd8abb3c1d1aaac3ac6fb8",
+    "digestAlgorithm": "sha256",
+    "source": {
+      "type": "https",
+      "url": "https://github.com/Open-Wine-Components/umu-launcher/releases/download/1.4.0/umu-launcher-1.4.0-zipapp.tar"
+    },
+    "platform": "linux-x86_64",
+    "architectures": ["x86-64"],
+    "recipeRevision": 1
+  },
+  "dxvk": {
+    "schemaVersion": 2,
+    "artifactId": "dxvk-2.6.2",
+    "kind": "dxvk",
+    "version": "2.6.2",
+    "digest": "17761876556afd55736cb895d184f5a1c55d43350f1b1e3b129f8d28706d7992",
+    "digestAlgorithm": "sha256",
+    "source": {
+      "type": "https",
+      "url": "https://github.com/doitsujin/dxvk/releases/download/v2.6.2/dxvk-2.6.2.tar.gz"
+    },
+    "platform": "linux-x86_64",
+    "architectures": ["x86", "x86-64"],
+    "recipeRevision": 1
+  },
+  "futureSchema": {
+    "schemaVersion": 999,
+    "artifactId": "ro-proton-cachyos-11.0-20260702-slr",
+    "kind": "proton-cachyos",
+    "version": "11.0-20260702-slr",
+    "digest": "c8a050077b1d420e5b691dc487eaa998fe03b99b7e05e6ee3e16c8d4bd9f4c9ff5d9f80e5f6cd1a3f6bb5194bf1481fca9f91999f710d505b68ad97aa5592c7b",
+    "digestAlgorithm": "sha512",
+    "source": {
+      "type": "https",
+      "url": "https://github.com/CachyOS/proton-cachyos/releases/download/cachyos-11.0-20260702-slr/proton-cachyos-11.0-20260702-slr-x86_64.tar.xz"
+    },
+    "platform": "linux-x86_64",
+    "architectures": ["x86-64"],
+    "recipeRevision": 1
+  }
+}

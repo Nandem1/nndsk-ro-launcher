@@ -7,6 +7,8 @@ use crate::state::GameProcessHandle;
 use crate::utils::{pipe_output, RunnerInvocation, WineContext};
 
 use super::diagnostics::emit_session_line;
+use crate::tools::runtime::SessionAnchorV2;
+
 use super::{
     session_supervisor_enabled, OperationLease, ProcessExit, RunnerSessionRegistry,
     SupervisedProcess,
@@ -27,11 +29,12 @@ impl RunnerOperation {
         sessions: &RunnerSessionRegistry,
         game: &GameProcessHandle,
         ctx: &WineContext,
+        anchor: &SessionAnchorV2,
     ) -> Result<Self, String> {
         let lease = if session_supervisor_enabled() {
             let result = match app {
-                Some(app) => sessions.begin_operation(app, ctx, game).await,
-                None => sessions.begin_operation_opt(None, ctx, game).await,
+                Some(app) => sessions.begin_operation(app, ctx, game, anchor).await,
+                None => sessions.begin_operation_opt(None, ctx, game, anchor).await,
             };
             Some(result.map_err(|error| error.message)?)
         } else {
@@ -210,15 +213,30 @@ impl SpawnedRunner {
     }
 
     pub fn try_exit_code(&mut self) -> Option<i32> {
+        self.try_exit_status()
+            .map(|exit| exit.exit_code.unwrap_or(-1))
+    }
+
+    pub fn try_exit_status(&mut self) -> Option<ProcessExit> {
         match self {
-            Self::Direct(child) => child
-                .try_wait()
-                .ok()
-                .flatten()
-                .map(|status| status.code().unwrap_or(-1)),
-            Self::Supervised(process) => {
-                process.try_exit().map(|exit| exit.exit_code.unwrap_or(-1))
-            }
+            Self::Direct(child) => child.try_wait().ok().flatten().map(|status| {
+                #[cfg(unix)]
+                {
+                    use std::os::unix::process::ExitStatusExt;
+                    ProcessExit {
+                        exit_code: status.code(),
+                        signal: status.signal(),
+                    }
+                }
+                #[cfg(not(unix))]
+                {
+                    ProcessExit {
+                        exit_code: status.code(),
+                        signal: None,
+                    }
+                }
+            }),
+            Self::Supervised(process) => process.try_exit(),
         }
     }
 

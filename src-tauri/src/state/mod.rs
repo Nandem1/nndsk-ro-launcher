@@ -11,6 +11,7 @@ use crate::tools::input::InputGateway;
 use crate::tools::memory_sessions::MemorySessionRegistry;
 use crate::tools::presence::PresenceHandle;
 use crate::tools::runner_sessions::RunnerSessionRegistry;
+use crate::tools::runners::managed_proton_path;
 use crate::tools::spammer::SpammerHandle;
 use crate::{
     models::{
@@ -20,7 +21,7 @@ use crate::{
     },
     utils::{
         load_json_recovering, load_settings_document, save_settings_document, servers_path,
-        JsonLoadStatus,
+        JsonLoadStatus, SettingsDocumentOrigin,
     },
 };
 
@@ -90,12 +91,19 @@ impl SettingsRepository {
             "La configuración general fue migrada al formato actual",
             "Se recuperó la configuración general desde el backup; el archivo dañado fue preservado",
         )?;
-        Ok(loaded.value)
+        Ok(apply_product_default(loaded.value, loaded.origin))
     }
 
     pub fn save(&self, settings: &AppSettings) -> Result<(), String> {
         save_settings_document(settings)
     }
+}
+
+fn apply_product_default(mut settings: AppSettings, origin: SettingsDocumentOrigin) -> AppSettings {
+    if origin == SettingsDocumentOrigin::Missing {
+        settings.default_runner = managed_proton_path().to_string_lossy().into_owned();
+    }
+    settings
 }
 
 #[derive(Default)]
@@ -266,5 +274,37 @@ mod tests {
             fs::read_to_string(backup_path(&path)).unwrap(),
             r#"{"defaultRunner":"/usr/bin/wine"}"#
         );
+    }
+
+    #[test]
+    fn product_default_applies_only_when_the_settings_document_is_missing() {
+        let managed = managed_proton_path().to_string_lossy().into_owned();
+        let fallback = AppSettings::default();
+        assert_eq!(
+            apply_product_default(fallback.clone(), SettingsDocumentOrigin::Missing).default_runner,
+            managed
+        );
+
+        for (origin, runner) in [
+            (SettingsDocumentOrigin::Persisted, "/usr/bin/wine"),
+            (
+                SettingsDocumentOrigin::Persisted,
+                "/opt/portable-wine/bin/wine",
+            ),
+            (
+                SettingsDocumentOrigin::Persisted,
+                "/opt/external-proton/proton",
+            ),
+            (SettingsDocumentOrigin::Recovered, "/backup/bin/wine"),
+        ] {
+            let settings = AppSettings {
+                default_runner: runner.to_string(),
+                rich_presence_enabled: false,
+            };
+            assert_eq!(
+                apply_product_default(settings, origin).default_runner,
+                runner
+            );
+        }
     }
 }

@@ -19,10 +19,10 @@ describe('resolveRunnerAfterLoad', () => {
     })
   })
 
-  it('migra una ruta que ya no está disponible al runtime administrado', () => {
+  it('conserva una ruta persistida aunque ya no esté disponible', () => {
     expect(resolveRunnerAfterLoad('/custom/proton', runners)).toEqual({
-      path: proton.path,
-      persist: true,
+      path: '/custom/proton',
+      persist: false,
     })
   })
 
@@ -49,5 +49,12 @@ describe('resolveRunnerAfterLoad', () => {
 
   it('devuelve null si no hay runners', () => {
     expect(resolveRunnerAfterLoad('', [])).toBeNull()
+  })
+
+  it('conserva el runner persistido incluso si discovery no devuelve opciones', () => {
+    expect(resolveRunnerAfterLoad('/usr/bin/wine', [])).toEqual({
+      path: '/usr/bin/wine',
+      persist: false,
+    })
   })
 })

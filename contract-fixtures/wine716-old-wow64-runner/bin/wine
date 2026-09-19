@@ -1,0 +1,2 @@
+#!/bin/sh
+echo 'wine-7.16'

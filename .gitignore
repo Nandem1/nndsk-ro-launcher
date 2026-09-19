@@ -15,3 +15,6 @@ src-tauri/binaries/
 # Variables de entorno
 .env
 .env.*
+
+# Cache local del spike D7VK (no commitear el zip)
+/d7vk-spike-cache/

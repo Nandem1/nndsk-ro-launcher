@@ -7,6 +7,11 @@ use sha2::{Digest, Sha256};
 use crate::models::server::ServerConfig;
 use crate::utils::find_file_case_insensitive;
 
+pub const GEPARD_HONEY_SHA256: &str =
+    "e2f624d2e3451e68e46783e86d75a8b6787567a96bd33357d74b184dfcec6c13";
+pub const GEPARD_SAKURA_SHA256: &str =
+    "db4653ddf6aea88a502f10e200a300a05e8e4d65e7cfe65eb5b2ff0779e2e4f5";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GepardRunnerProfile {
     ModernProton,
@@ -45,13 +50,13 @@ pub const VALIDATED_GEPARD_BUILDS: [ValidatedGepardBuild; 2] = [
     ValidatedGepardBuild {
         product_version: "3.0",
         file_version: "26.8.26.1",
-        sha256: "e2f624d2e3451e68e46783e86d75a8b6787567a96bd33357d74b184dfcec6c13",
+        sha256: GEPARD_HONEY_SHA256,
         runner: GepardRunnerProfile::ModernProton,
     },
     ValidatedGepardBuild {
         product_version: "3.0",
         file_version: "26.9.3.1",
-        sha256: "db4653ddf6aea88a502f10e200a300a05e8e4d65e7cfe65eb5b2ff0779e2e4f5",
+        sha256: GEPARD_SAKURA_SHA256,
         runner: GepardRunnerProfile::Wine716Legacy,
     },
 ];
@@ -72,7 +77,7 @@ pub fn inspect_gepard(game_dir: &Path) -> Option<GepardInspection> {
 fn validated_build(sha256: &str) -> Option<&'static ValidatedGepardBuild> {
     VALIDATED_GEPARD_BUILDS
         .iter()
-        .find(|build| sha256.eq_ignore_ascii_case(build.sha256))
+        .find(|build| build.sha256.eq_ignore_ascii_case(sha256))
 }
 
 pub fn recommended_gepard_build(server: &ServerConfig) -> Option<&'static ValidatedGepardBuild> {

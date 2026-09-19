@@ -6,12 +6,17 @@ use crate::models::server::ServerConfig;
 use crate::state::GameState;
 use crate::tools::prefix;
 use crate::tools::runners::ensure_managed_runtime;
+use crate::tools::runtime::{
+    observe_legacy_runtime, resolve_operational_plan, runtime_graphics_plan_enabled,
+    runtime_shadow_enabled, DgVoodooObservation, DgVoodooState, LegacyRuntimeInput,
+    OperationalRuntimeInput, ShadowOperation,
+};
 use crate::tools::server_tools;
 use crate::utils::{
     ensure_custom_setup_allowed, ensure_managed_path_safe, ensure_managed_reset_allowed,
-    inspect_prefix, manifest_matches_location, manifest_matches_runner,
-    proton_runner_vkd3d_companions_available, resolve_server_wine_context_with_runner,
-    resolve_wine_context, WineContext, PREFIX_SCHEMA_VERSION,
+    inspect_prefix, manifest_matches_stored_location, proton_runner_vkd3d_companions_available,
+    resolve_server_wine_context_with_runner, resolve_wine_context, stored_manifest_matches_runner,
+    WineContext, PREFIX_SCHEMA_V3, PREFIX_SCHEMA_VERSION,
 };
 
 #[tauri::command]
@@ -22,8 +27,16 @@ pub async fn setup_prefix(
     runner: Option<String>,
 ) -> Result<(), String> {
     ensure_managed_runtime(&app).await?;
-    let ctx = resolve_context(server.as_ref(), runner).await?;
-    let requirements = runtime_requirements(server.as_ref(), &ctx);
+    let ctx = resolve_context(server.as_ref(), runner.clone()).await?;
+    let requirements = runtime_requirements(server.as_ref(), &ctx, runner.as_deref())?;
+    observe_prefix_shadow(
+        &app,
+        ShadowOperation::PrefixSetup,
+        server.as_ref(),
+        runner.as_deref(),
+        &ctx,
+        requirements,
+    );
     validate_requirement_support(&ctx, requirements)?;
     ensure_managed_path_safe(&ctx.location)?;
     ensure_custom_setup_allowed(&ctx.location)?;
@@ -42,42 +55,54 @@ pub async fn setup_prefix(
     let runner_unknown = health
         .manifest
         .as_ref()
-        .is_some_and(|manifest| manifest.runner_kind == "unknown");
+        .is_some_and(|manifest| manifest.runner_kind() == "unknown");
     let mut rebuild_managed = ctx.location.managed && (health.legacy_marker || runner_unknown);
     if let Some(manifest) = &health.manifest {
-        if manifest.schema_version != PREFIX_SCHEMA_VERSION
-            || !manifest_matches_location(manifest, &ctx.location)
-        {
-            if ctx.location.managed {
-                rebuild_managed = true;
-            } else {
-                return Err(
-                    "El manifiesto del entorno no coincide con esta ruta o servidor; no se modificará"
-                        .to_string(),
-                );
-            }
+        let schema = manifest.schema_version();
+        if schema > PREFIX_SCHEMA_V3 {
+            return Err(
+                "El manifiesto usa un schema no soportado; no se adoptará ni rearmará".to_string(),
+            );
         }
-        let runner_path = ctx.resolved.runner_path().to_string_lossy();
-        if manifest.runner_kind != "unknown"
-            && !manifest_matches_runner(manifest, ctx.resolved.kind_label(), runner_path.as_ref())
-        {
-            if ctx.location.managed {
-                rebuild_managed = true;
-            } else {
-                return Err(
-                    "El entorno personalizado pertenece a otro runner y no se modificará"
-                        .to_string(),
-                );
+        if schema == PREFIX_SCHEMA_V3 {
+            // La identidad v3 se valida en el binding; no promover ni rearmar por mismatch aquí.
+        } else if schema == PREFIX_SCHEMA_VERSION {
+            if !manifest_matches_stored_location(manifest, &ctx.location) {
+                if ctx.location.managed {
+                    rebuild_managed = true;
+                } else {
+                    return Err(
+                        "El manifiesto del entorno no coincide con esta ruta o servidor; no se modificará"
+                            .to_string(),
+                    );
+                }
             }
-        }
-        let required_graphics = requirements.dxvk.manifest_component();
-        if ctx.location.managed
-            && !manifest
-                .components
-                .iter()
-                .any(|component| component == required_graphics)
-        {
-            rebuild_managed = true;
+            let runner_path = ctx.resolved.runner_path().to_string_lossy();
+            if manifest.runner_kind() != "unknown"
+                && !stored_manifest_matches_runner(
+                    manifest,
+                    ctx.resolved.kind_label(),
+                    runner_path.as_ref(),
+                )
+            {
+                if ctx.location.managed {
+                    rebuild_managed = true;
+                } else {
+                    return Err(
+                        "El entorno personalizado pertenece a otro runner y no se modificará"
+                            .to_string(),
+                    );
+                }
+            }
+            let required_graphics = requirements.dxvk.manifest_component();
+            if ctx.location.managed
+                && !manifest
+                    .components()
+                    .iter()
+                    .any(|component| component == required_graphics)
+            {
+                rebuild_managed = true;
+            }
         }
     }
     if rebuild_managed {
@@ -102,22 +127,74 @@ pub async fn reset_prefix(
     runner: Option<String>,
 ) -> Result<(), String> {
     ensure_managed_runtime(&app).await?;
-    let ctx = resolve_context(server.as_ref(), runner).await?;
-    let requirements = runtime_requirements(server.as_ref(), &ctx);
+    let ctx = resolve_context(server.as_ref(), runner.clone()).await?;
+    let requirements = runtime_requirements(server.as_ref(), &ctx, runner.as_deref())?;
+    observe_prefix_shadow(
+        &app,
+        ShadowOperation::PrefixReset,
+        server.as_ref(),
+        runner.as_deref(),
+        &ctx,
+        requirements,
+    );
     validate_requirement_support(&ctx, requirements)?;
     ensure_managed_reset_allowed(&ctx.location)?;
     prefix::reset_runtime_prefix(&app, &state.game, &state.sessions, &ctx, requirements).await
 }
 
+fn observe_prefix_shadow(
+    app: &AppHandle,
+    operation: ShadowOperation,
+    server: Option<&ServerConfig>,
+    default_runner: Option<&str>,
+    ctx: &WineContext,
+    requirements: prefix::RuntimeRequirements,
+) {
+    if !runtime_shadow_enabled() {
+        return;
+    }
+    let dgvoodoo = match server {
+        Some(server) => match server_tools::scan_dgvoodoo_status(app, server) {
+            Ok(status) => DgVoodooObservation::verified(status.configured),
+            Err(_) => DgVoodooObservation::Unavailable,
+        },
+        None => DgVoodooObservation::verified(false),
+    };
+    observe_legacy_runtime(
+        Some(app),
+        operation,
+        LegacyRuntimeInput {
+            server_runner: server.and_then(|server| server.runner.as_deref()),
+            default_runner,
+            context: ctx,
+            dxvk: requirements.dxvk,
+            dgvoodoo,
+            webview2_required: requirements.webview2,
+            recommendation: None,
+        },
+    );
+}
+
 fn runtime_requirements(
     server: Option<&ServerConfig>,
     ctx: &WineContext,
-) -> prefix::RuntimeRequirements {
+    default_runner: Option<&str>,
+) -> Result<prefix::RuntimeRequirements, String> {
     let webview2 = server.is_some_and(server_tools::requires_webview2);
-    prefix::RuntimeRequirements {
-        webview2,
-        dxvk: prefix::DxvkProvision::for_runner(&ctx.resolved),
-    }
+    let dxvk = if runtime_graphics_plan_enabled() {
+        let plan = resolve_operational_plan(OperationalRuntimeInput {
+            server_runner: server.and_then(|server| server.runner.as_deref()),
+            default_runner,
+            context: ctx,
+            dgvoodoo: DgVoodooState::verified(false),
+            webview2_required: webview2,
+        })
+        .map_err(|error| error.code().to_string())?;
+        plan.graphics().dxvk_provider().provision_kind()
+    } else {
+        prefix::DxvkProvision::for_runner(&ctx.resolved)
+    };
+    Ok(prefix::RuntimeRequirements { webview2, dxvk })
 }
 
 fn validate_requirement_support(

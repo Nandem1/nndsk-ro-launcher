@@ -1,0 +1,32 @@
+{
+  "canonicalFieldIds": [
+    "base-setup-recipe-revision",
+    "desired-prefix-fingerprint",
+    "dxvk",
+    "environment-builder-revision",
+    "graphics-profile",
+    "invocation-policy-revision",
+    "observed-prefix-architecture",
+    "overlay",
+    "overlay-config-digest",
+    "prefix-binding-status",
+    "repairable-dependency-identities",
+    "runner-identity",
+    "runner-kind",
+    "runtime-plan-recipe-revision",
+    "supported-prefix-architectures",
+    "sync-plan",
+    "umu-provenance",
+    "webview2-required",
+    "wow64-layout"
+  ],
+  "managedProtonDxvk": {
+    "digestSha256Hex": "48fcd517917073ff8ef088a4cd6c0370c92c66ae08c45b0a8f21d33ea0686d6e"
+  },
+  "wine716ManagedDxvk": {
+    "digestSha256Hex": "28f7edaad4eeeef7b2a546a4a76f95a7d92b5daac9843c20a5a8cfd15b6bd0db"
+  },
+  "wine716DgVoodooDxvk": {
+    "digestSha256Hex": "b9263bc23f3c7df997acd7fe2ffa6f162f315a67f1d28e39a943a9d72c3f7d8e"
+  }
+}

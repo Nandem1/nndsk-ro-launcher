@@ -12,12 +12,10 @@ export function resolveRunnerAfterLoad(
   current: string,
   runners: RunnerInfo[],
 ): RunnerResolution | null {
+  if (current) return { path: current, persist: false }
   if (runners.length === 0) return null
 
   const preferred =
     runners.find((runner) => runner.id === MANAGED_RUNTIME_ID) ?? runners[0]
-  if (current && runners.some((runner) => runner.path === current)) {
-    return { path: current, persist: false }
-  }
-  return { path: preferred.path, persist: current !== preferred.path }
+  return { path: preferred.path, persist: true }
 }

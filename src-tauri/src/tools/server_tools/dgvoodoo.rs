@@ -599,7 +599,15 @@ fn fnv1a(bytes: &[u8]) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde::Deserialize;
     use std::sync::atomic::{AtomicU64, Ordering};
+
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct DgVoodooManifestFixtures {
+        schema2: InstallManifest,
+        future_schema: InstallManifest,
+    }
 
     static TEST_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -666,6 +674,16 @@ mod tests {
             files: vec![record("DDraw.dll"), record("ddraw.DLL")],
         };
         assert!(validate_manifest(&duplicate).is_err());
+    }
+
+    #[test]
+    fn dgvoodoo_manifest_fixture_preserves_schema_two_contract() {
+        let fixtures: DgVoodooManifestFixtures = serde_json::from_str(include_str!(
+            "../../../../contract-fixtures/dgvoodoo-manifests.json"
+        ))
+        .unwrap();
+        assert!(validate_manifest(&fixtures.schema2).is_ok());
+        assert!(validate_manifest(&fixtures.future_schema).is_err());
     }
 
     #[test]
@@ -743,6 +761,34 @@ mod tests {
             })
             .unwrap();
         assert_eq!(std::fs::read(preserved).unwrap(), current);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn uninstall_refuses_a_modified_wrapper_without_partial_cleanup() {
+        let dir = test_dir("modified-wrapper");
+        std::fs::create_dir_all(&dir).unwrap();
+        let installed = b"launcher wrapper";
+        let modified = b"user replacement";
+        std::fs::write(dir.join("DDraw.dll"), modified).unwrap();
+        write_manifest(
+            &dir,
+            &InstallManifest {
+                schema_version: MANIFEST_SCHEMA,
+                files: vec![InstalledFile {
+                    name: "DDraw.dll".to_string(),
+                    size: installed.len() as u64,
+                    hash: hash_bytes(installed),
+                    backup: None,
+                }],
+            },
+        )
+        .unwrap();
+
+        let error = uninstall_files(&dir).unwrap_err();
+        assert!(error.contains("fue modificado"));
+        assert_eq!(std::fs::read(dir.join("DDraw.dll")).unwrap(), modified);
+        assert!(manifest_path(&dir).is_file());
         std::fs::remove_dir_all(dir).unwrap();
     }
 }

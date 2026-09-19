@@ -1,0 +1,27 @@
+{
+  "valid": {
+    "schemaVersion": 2,
+    "scope": "isolated",
+    "serverId": "fixture-server",
+    "runnerKind": "wine",
+    "runnerPath": "/opt/portable-wine/bin/wine",
+    "components": ["dxvk-2.6.2", "vcrun2019", "d3dx9", "corefonts"]
+  },
+  "futureSchema": {
+    "schemaVersion": 999,
+    "scope": "isolated",
+    "serverId": "fixture-server",
+    "runnerKind": "wine",
+    "runnerPath": "/opt/portable-wine/bin/wine",
+    "components": []
+  },
+  "runnerMismatch": {
+    "schemaVersion": 2,
+    "scope": "isolated",
+    "serverId": "fixture-server",
+    "runnerKind": "proton",
+    "runnerPath": "/opt/external-proton/proton",
+    "components": ["dxvk"]
+  },
+  "corrupt": "{\"schemaVersion\":2,\"scope\":"
+}

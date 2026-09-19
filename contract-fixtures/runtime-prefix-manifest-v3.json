@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 3,
+  "scope": "isolated",
+  "serverId": "fixture-server",
+  "runnerKind": "proton",
+  "runnerPath": "/opt/managed-proton/proton",
+  "components": ["vcrun2019", "d3dx9", "corefonts", "font-fallbacks", "dxvk"],
+  "prefixFingerprint": {
+    "schemaVersion": 1,
+    "algorithm": "sha256",
+    "digest": "a23f2a940a9cb8e5110b0e454ad68a35a22af760c005bcd0ebdf47ab44330270"
+  }
+}

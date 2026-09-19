@@ -1,0 +1,19 @@
+{
+  "artifactId": "d7vk-2.2",
+  "version": "2.2",
+  "sourceUrl": "https://github.com/WinterSnowfall/d7vk/releases/download/v2.2/d7vk-v2.2.zip",
+  "expectedSize": 3375635,
+  "sha256": "1a9ffe3639ceb5e2fb1ccb25ef388354b4476bb26bc7edf88a8dc59f2774df38",
+  "license": "zlib",
+  "licensePath": null,
+  "archiveRoot": "d7vk-v2.2",
+  "entries": [
+    "d7vk-v2.2/",
+    "d7vk-v2.2/x32/",
+    "d7vk-v2.2/x32/ddraw.dll"
+  ],
+  "x86RelativeSource": "d7vk-v2.2/x32/ddraw.dll",
+  "x64RelativeSource": null,
+  "x86PayloadSha256": "b6f2f4b64a72047742bd522a9ff0242446a42b9bb1a8e361b114e48f4c402f8a",
+  "x86PayloadSize": 8785934
+}

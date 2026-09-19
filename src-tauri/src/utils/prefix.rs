@@ -10,6 +10,7 @@ use super::paths::app_data_dir;
 pub const LEGACY_PREFIX_MARKER: &str = ".ro-launcher-configured";
 pub const PREFIX_MARKER: &str = ".ro-launcher-prefix.json";
 pub const PREFIX_SCHEMA_VERSION: u32 = 2;
+pub const PREFIX_SCHEMA_V3: u32 = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -29,7 +30,7 @@ impl PrefixScope {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PrefixLocation {
     pub path: String,
     pub scope: PrefixScope,
@@ -49,12 +50,97 @@ pub struct PrefixManifest {
     pub components: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrefixFingerprintEnvelope {
+    pub schema_version: u32,
+    pub algorithm: String,
+    pub digest: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrefixManifestV3 {
+    pub schema_version: u32,
+    pub scope: PrefixScope,
+    pub server_id: Option<String>,
+    pub runner_kind: String,
+    pub runner_path: String,
+    #[serde(default)]
+    pub components: Vec<String>,
+    pub prefix_fingerprint: PrefixFingerprintEnvelope,
+}
+
+#[derive(Debug, Clone)]
+pub enum StoredPrefixManifest {
+    V2(PrefixManifest),
+    V3(PrefixManifestV3),
+}
+
+impl StoredPrefixManifest {
+    pub fn schema_version(&self) -> u32 {
+        match self {
+            Self::V2(manifest) => manifest.schema_version,
+            Self::V3(manifest) => manifest.schema_version,
+        }
+    }
+
+    pub fn server_id(&self) -> Option<&str> {
+        match self {
+            Self::V2(manifest) => manifest.server_id.as_deref(),
+            Self::V3(manifest) => manifest.server_id.as_deref(),
+        }
+    }
+
+    pub fn runner_kind(&self) -> &str {
+        match self {
+            Self::V2(manifest) => &manifest.runner_kind,
+            Self::V3(manifest) => &manifest.runner_kind,
+        }
+    }
+
+    pub fn runner_path(&self) -> &str {
+        match self {
+            Self::V2(manifest) => &manifest.runner_path,
+            Self::V3(manifest) => &manifest.runner_path,
+        }
+    }
+
+    pub fn components(&self) -> &[String] {
+        match self {
+            Self::V2(manifest) => &manifest.components,
+            Self::V3(manifest) => &manifest.components,
+        }
+    }
+
+    pub fn scope(&self) -> PrefixScope {
+        match self {
+            Self::V2(manifest) => manifest.scope,
+            Self::V3(manifest) => manifest.scope,
+        }
+    }
+
+    pub fn prefix_fingerprint_digest(&self) -> Option<&str> {
+        match self {
+            Self::V2(_) => None,
+            Self::V3(manifest) => Some(manifest.prefix_fingerprint.digest.as_str()),
+        }
+    }
+
+    pub fn as_v2(&self) -> Option<&PrefixManifest> {
+        match self {
+            Self::V2(manifest) => Some(manifest),
+            Self::V3(_) => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct PrefixHealth {
     pub structure_ok: bool,
     pub configured: bool,
     pub legacy_marker: bool,
-    pub manifest: Option<PrefixManifest>,
+    pub manifest: Option<StoredPrefixManifest>,
     pub issues: Vec<String>,
 }
 
@@ -87,8 +173,61 @@ pub fn isolated_prefix_path_for_runner(server_id: &str, runner_path: &str) -> St
         .to_string()
 }
 
+fn server_path_token16(server_id: &str) -> String {
+    use sha2::{Digest, Sha256};
+    const DOMAIN: &[u8] = b"ro-launcher/server-path/v1\0";
+    let mut payload = Vec::new();
+    payload.extend_from_slice(DOMAIN);
+    let bytes = server_id.as_bytes();
+    payload.extend_from_slice(&(bytes.len() as u32).to_be_bytes());
+    payload.extend_from_slice(bytes);
+    let digest = Sha256::digest(&payload);
+    digest
+        .iter()
+        .take(8)
+        .map(|byte| format!("{:02x}", byte))
+        .collect()
+}
+
+/// Primeros 24 hex del digest completo (96 bits). El path v3 sólo los expone; el manifiesto guarda los 64.
+pub fn v3_path_digest_prefix24(prefix_fingerprint_digest_hex: &str) -> &str {
+    prefix_fingerprint_digest_hex
+        .get(..24)
+        .unwrap_or(prefix_fingerprint_digest_hex)
+}
+
+#[allow(dead_code)]
+pub fn digests_share_v3_path_suffix(left_hex: &str, right_hex: &str) -> bool {
+    v3_path_digest_prefix24(left_hex) == v3_path_digest_prefix24(right_hex)
+}
+
+pub fn isolated_prefix_path_v3(server_id: &str, prefix_fingerprint_digest_hex: &str) -> String {
+    let token16 = server_path_token16(server_id);
+    let digest24 = v3_path_digest_prefix24(prefix_fingerprint_digest_hex);
+    isolated_prefix_root()
+        .join(format!("{token16}-v3-{digest24}"))
+        .to_string_lossy()
+        .to_string()
+}
+
+pub fn is_v3_managed_prefix_path(path: &Path, server_id: &str) -> bool {
+    if path.parent() != Some(isolated_prefix_root().as_path()) {
+        return false;
+    }
+    let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+        return false;
+    };
+    let token16 = server_path_token16(server_id);
+    let prefix = format!("{token16}-v3-");
+    let Some(suffix) = name.strip_prefix(&prefix) else {
+        return false;
+    };
+    suffix.len() == 24 && suffix.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
 /// Compatibilidad temporal para call sites legacy. La resolución completa por servidor vive en
 /// `resolve_server_prefix` una vez que se dispone del modo shared/isolated/custom.
+#[allow(dead_code)]
 pub fn effective_prefix(wine_prefix: Option<String>) -> String {
     wine_prefix.unwrap_or_else(prefix_path)
 }
@@ -183,11 +322,29 @@ pub fn inspect_prefix(prefix_path: &str) -> PrefixHealth {
 
     let marker = prefix_marker_path(prefix_path);
     if marker.is_file() {
-        match std::fs::read_to_string(&marker)
-            .map_err(|error| error.to_string())
-            .and_then(|json| serde_json::from_str(&json).map_err(|error| error.to_string()))
-        {
-            Ok(manifest) => health.manifest = Some(manifest),
+        match std::fs::read_to_string(&marker) {
+            Ok(json) => match parse_stored_prefix_manifest(&json) {
+                Ok(manifest) => health.manifest = Some(manifest),
+                Err(_) => {
+                    if let Ok(probe) = serde_json::from_str::<SchemaProbe>(&json) {
+                        if probe.schema_version != PREFIX_SCHEMA_VERSION
+                            && probe.schema_version != PREFIX_SCHEMA_V3
+                        {
+                            health.issues.push(format!(
+                                "El manifiesto usa un schema incompatible (esperado {PREFIX_SCHEMA_VERSION} o {PREFIX_SCHEMA_V3})"
+                            ));
+                        } else {
+                            health
+                                .issues
+                                .push("El manifiesto del entorno está dañado".to_string());
+                        }
+                    } else {
+                        health
+                            .issues
+                            .push("El manifiesto del entorno está dañado".to_string());
+                    }
+                }
+            },
             Err(_) => health
                 .issues
                 .push("El manifiesto del entorno está dañado".to_string()),
@@ -205,20 +362,74 @@ pub fn inspect_prefix(prefix_path: &str) -> PrefixHealth {
     }
 
     health.configured = health.structure_ok && (health.manifest.is_some() || health.legacy_marker);
-    if health
-        .manifest
-        .as_ref()
-        .is_some_and(|manifest| manifest.schema_version != PREFIX_SCHEMA_VERSION)
-    {
-        health.issues.push(format!(
-            "El manifiesto usa un schema incompatible (esperado {PREFIX_SCHEMA_VERSION})"
-        ));
+    if let Some(manifest) = &health.manifest {
+        let schema = manifest.schema_version();
+        if schema != PREFIX_SCHEMA_VERSION && schema != PREFIX_SCHEMA_V3 {
+            health.issues.push(format!(
+                "El manifiesto usa un schema incompatible (esperado {PREFIX_SCHEMA_VERSION} o {PREFIX_SCHEMA_V3})"
+            ));
+        }
     }
     health
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SchemaProbe {
+    schema_version: u32,
+}
+
+fn parse_stored_prefix_manifest(json: &str) -> Result<StoredPrefixManifest, String> {
+    let probe: SchemaProbe = serde_json::from_str(json).map_err(|error| error.to_string())?;
+    match probe.schema_version {
+        PREFIX_SCHEMA_VERSION => serde_json::from_str::<PrefixManifest>(json)
+            .map(StoredPrefixManifest::V2)
+            .map_err(|error| error.to_string()),
+        PREFIX_SCHEMA_V3 => serde_json::from_str::<PrefixManifestV3>(json)
+            .map(StoredPrefixManifest::V3)
+            .map_err(|error| error.to_string()),
+        _ => Err("unsupported schema".to_string()),
+    }
+}
+
 pub fn write_prefix_manifest(prefix_path: &str, manifest: &PrefixManifest) -> Result<(), String> {
     if manifest.schema_version != PREFIX_SCHEMA_VERSION {
+        return Err("Versión de manifiesto de prefix inválida".to_string());
+    }
+    std::fs::create_dir_all(prefix_path).map_err(|error| error.to_string())?;
+    let json = serde_json::to_vec_pretty(manifest).map_err(|error| error.to_string())?;
+    let destination = prefix_marker_path(prefix_path);
+    if destination.is_symlink() {
+        return Err("El manifiesto del entorno no puede ser un symlink".to_string());
+    }
+    let temporary = Path::new(prefix_path).join(format!(
+        ".ro-launcher-prefix.tmp-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|error| error.to_string())?
+            .as_nanos()
+    ));
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&temporary)
+        .map_err(|error| error.to_string())?;
+    if let Err(error) = file.write_all(&json).and_then(|_| file.sync_all()) {
+        let _ = std::fs::remove_file(&temporary);
+        return Err(error.to_string());
+    }
+    std::fs::rename(&temporary, &destination).map_err(|error| {
+        let _ = std::fs::remove_file(&temporary);
+        error.to_string()
+    })
+}
+
+pub fn write_prefix_manifest_v3(
+    prefix_path: &str,
+    manifest: &PrefixManifestV3,
+) -> Result<(), String> {
+    if manifest.schema_version != PREFIX_SCHEMA_V3 {
         return Err("Versión de manifiesto de prefix inválida".to_string());
     }
     std::fs::create_dir_all(prefix_path).map_err(|error| error.to_string())?;
@@ -255,18 +466,38 @@ pub fn manifest_matches_runner(
     expected_kind: &str,
     expected_path: &str,
 ) -> bool {
-    manifest.runner_kind == expected_kind
-        && canonical_or_original(&manifest.runner_path) == canonical_or_original(expected_path)
+    stored_manifest_matches_runner(
+        &StoredPrefixManifest::V2(manifest.clone()),
+        expected_kind,
+        expected_path,
+    )
 }
 
+pub fn stored_manifest_matches_runner(
+    manifest: &StoredPrefixManifest,
+    expected_kind: &str,
+    expected_path: &str,
+) -> bool {
+    manifest.runner_kind() == expected_kind
+        && canonical_or_original(manifest.runner_path()) == canonical_or_original(expected_path)
+}
+
+#[allow(dead_code)]
 pub fn manifest_matches_location(manifest: &PrefixManifest, location: &PrefixLocation) -> bool {
+    manifest_matches_stored_location(&StoredPrefixManifest::V2(manifest.clone()), location)
+}
+
+pub fn manifest_matches_stored_location(
+    manifest: &StoredPrefixManifest,
+    location: &PrefixLocation,
+) -> bool {
     if !location.managed {
         return true;
     }
-    manifest.scope == location.scope
+    manifest.scope() == location.scope
         && match location.scope {
-            PrefixScope::Shared => manifest.server_id.is_none(),
-            PrefixScope::Isolated => manifest.server_id == location.server_id,
+            PrefixScope::Shared => manifest.server_id().is_none(),
+            PrefixScope::Isolated => manifest.server_id() == location.server_id.as_deref(),
             PrefixScope::Custom => true,
         }
 }
@@ -336,9 +567,9 @@ pub fn ensure_managed_reset_allowed(location: &PrefixLocation) -> Result<(), Str
         let manifest = health.manifest.ok_or_else(|| {
             "El entorno administrado no tiene un manifiesto válido; no se eliminará".to_string()
         })?;
-        if manifest.schema_version == 0
-            || manifest.schema_version > PREFIX_SCHEMA_VERSION
-            || !manifest_matches_location(&manifest, location)
+        if manifest.schema_version() == 0
+            || manifest.schema_version() > PREFIX_SCHEMA_V3
+            || !manifest_matches_stored_location(&manifest, location)
         {
             return Err(
                 "El manifiesto no pertenece al servidor seleccionado; no se eliminará".to_string(),
@@ -371,7 +602,10 @@ pub fn ensure_managed_path_safe(location: &PrefixLocation) -> Result<(), String>
                 .as_deref()
                 .ok_or_else(|| "El entorno aislado no tiene serverId".to_string())?;
             let legacy = PathBuf::from(isolated_prefix_path(server_id));
-            if path == legacy || is_runner_scoped_prefix_path(path, server_id) {
+            if path == legacy
+                || is_runner_scoped_prefix_path(path, server_id)
+                || is_v3_managed_prefix_path(path, server_id)
+            {
                 path.to_path_buf()
             } else {
                 legacy
@@ -443,7 +677,24 @@ fn canonical_or_original(path: &str) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde::Deserialize;
     use std::sync::atomic::{AtomicU64, Ordering};
+
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct PrefixManifestFixtures {
+        valid: PrefixManifest,
+        future_schema: PrefixManifest,
+        runner_mismatch: PrefixManifest,
+        corrupt: String,
+    }
+
+    fn manifest_fixtures() -> PrefixManifestFixtures {
+        serde_json::from_str(include_str!(
+            "../../../contract-fixtures/runtime-prefix-manifests.json"
+        ))
+        .unwrap()
+    }
 
     static SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -569,11 +820,77 @@ mod tests {
     }
 
     #[test]
+    fn prefix_manifest_fixtures_cover_valid_corrupt_future_and_runner_mismatch() {
+        let fixtures = manifest_fixtures();
+        let root = test_prefix("manifest-fixtures");
+        create_structure(&root);
+
+        std::fs::write(
+            root.join(PREFIX_MARKER),
+            serde_json::to_vec(&fixtures.valid).unwrap(),
+        )
+        .unwrap();
+        let valid = inspect_prefix(root.to_str().unwrap());
+        assert!(valid.configured);
+        assert!(valid.issues.is_empty());
+        let manifest = valid.manifest.as_ref().unwrap().as_v2().unwrap();
+        assert!(manifest_matches_runner(
+            manifest,
+            "wine",
+            "/opt/portable-wine/bin/wine"
+        ));
+
+        std::fs::write(root.join(PREFIX_MARKER), fixtures.corrupt).unwrap();
+        let corrupt = inspect_prefix(root.to_str().unwrap());
+        assert!(corrupt.manifest.is_none());
+        assert!(corrupt
+            .issues
+            .iter()
+            .any(|issue| issue.contains("manifiesto del entorno está dañado")));
+
+        std::fs::write(
+            root.join(PREFIX_MARKER),
+            serde_json::to_vec(&fixtures.future_schema).unwrap(),
+        )
+        .unwrap();
+        let future = inspect_prefix(root.to_str().unwrap());
+        assert!(future
+            .issues
+            .iter()
+            .any(|issue| issue.contains("schema incompatible")));
+
+        assert!(!manifest_matches_runner(
+            &fixtures.runner_mismatch,
+            "wine",
+            "/opt/portable-wine/bin/wine"
+        ));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn golden_managed_proton_path24_matches_plan() {
+        const GOLDEN: &str = "a23f2a940a9cb8e5110b0e454ad68a35a22af760c005bcd0ebdf47ab44330270";
+        assert_eq!(v3_path_digest_prefix24(GOLDEN), "a23f2a940a9cb8e5110b0e45");
+    }
+
+    #[test]
+    fn distinct_full_digests_can_share_v3_path_suffix_without_adoption() {
+        const FULL_A: &str = "a23f2a940a9cb8e5110b0e454ad68a35a22af760c005bcd0ebdf47ab44330270";
+        const FULL_B: &str = "a23f2a940a9cb8e5110b0e45ffffffffffffffffffffffffffffffffffffffff";
+        assert!(digests_share_v3_path_suffix(FULL_A, FULL_B));
+        assert_ne!(FULL_A, FULL_B);
+        assert_eq!(
+            isolated_prefix_path_v3("fixture-server", FULL_A),
+            isolated_prefix_path_v3("fixture-server", FULL_B)
+        );
+    }
+
+    #[test]
     fn incompatible_manifest_schema_is_reported() {
         let root = test_prefix("schema");
         create_structure(&root);
         let manifest = serde_json::json!({
-            "schemaVersion": PREFIX_SCHEMA_VERSION + 1,
+            "schemaVersion": PREFIX_SCHEMA_V3 + 1,
             "scope": "shared",
             "serverId": null,
             "runnerKind": "wine",
