@@ -4,6 +4,7 @@
 
 pub mod autobuff;
 pub mod autopot;
+pub mod benchmarks;
 pub mod deps;
 pub mod launcher;
 pub mod observations;

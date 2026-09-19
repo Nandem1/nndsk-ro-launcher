@@ -55,6 +55,67 @@ export interface RuntimeObservationSummary {
   visualCheck: string
 }
 
+export interface BenchmarkRunSummary {
+  runId: string
+  recordState: string
+  attachedAt: string
+  arm: string
+  sceneId: string
+  planId: string
+  graphicsProfile: string
+  visualCheck: string
+  sampleCount?: number | null
+  invalidReason?: string | null
+}
+
+export interface BenchmarkComparison {
+  schemaVersion: number
+  comparability:
+    { kind: 'comparable' } | { kind: 'incomparable'; reason: string }
+  left: BenchmarkArmMetrics
+  right: BenchmarkArmMetrics
+  deltas?: BenchmarkMetricsDelta | null
+  gates: BenchmarkComparisonGates
+  caveats: string[]
+  orderBiasUncontrolled: boolean
+  usableForAutotune: boolean
+}
+
+export interface BenchmarkArmMetrics {
+  arm: string
+  attempts: number
+  captureSuccesses: number
+  planIds: string[]
+  frametime?: BenchmarkFrametimeMetrics | null
+}
+
+export interface BenchmarkFrametimeMetrics {
+  p50Ms: number
+  p95Ms: number
+  p99Ms: number
+  onePercentLowFps: number
+  pointOnePercentLowFps: number
+  sampleCount: number
+  runCount: number
+}
+
+export interface BenchmarkMetricsDelta {
+  p50Ms: number
+  p95Ms: number
+  p99Ms: number
+  onePercentLowFps: number
+  pointOnePercentLowFps: number
+}
+
+export interface BenchmarkComparisonGates {
+  visualCorrectLeft: boolean
+  visualCorrectRight: boolean
+  startupCleanLeft: boolean
+  startupCleanRight: boolean
+  frametimeAvailable: boolean
+  passed: boolean
+}
+
 export interface StorageNotice {
   source: 'servers' | 'settings'
   kind: 'migrated' | 'recovered'

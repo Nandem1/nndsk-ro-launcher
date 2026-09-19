@@ -1,5 +1,6 @@
 pub mod autobuff;
 pub mod autopot;
+pub mod benchmark;
 pub mod dependency;
 pub mod game_client;
 pub mod launch;

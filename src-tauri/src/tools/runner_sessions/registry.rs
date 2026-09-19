@@ -618,6 +618,13 @@ impl RunnerSessionRegistry {
         self.get_session(prefix_key).is_some()
     }
 
+    pub fn plan_id_for_prefix(&self, prefix: &std::path::Path) -> Option<String> {
+        let prefix_key = super::protocol::canonicalize_prefix_path(prefix)
+            .map(|path| path.to_string_lossy().to_string())?;
+        self.get_session(&prefix_key)
+            .map(|session| session.plan_id.clone())
+    }
+
     fn get_session(&self, prefix_key: &str) -> Option<Arc<RunnerSessionInner>> {
         self.inner.sessions.lock().unwrap().get(prefix_key).cloned()
     }

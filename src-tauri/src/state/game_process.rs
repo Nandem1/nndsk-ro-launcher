@@ -5,6 +5,14 @@ use std::sync::{Arc, Mutex};
 use ro_tools_linux::ProcessIdentity;
 
 use crate::models::game_client::{GameClientSnapshot, GameClientStatus};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RunningClientFacts {
+    pub identity: ProcessIdentity,
+    pub controller: Option<ProcessIdentity>,
+    pub server_id: String,
+    pub server_name: String,
+}
 use crate::tools::runner_sessions::ClientRuntimeGuard;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -327,6 +335,41 @@ impl GameProcessHandle {
         }
     }
 
+    pub fn running_facts_for(&self, client_id: &str) -> Result<RunningClientFacts, String> {
+        let state = self.lock()?;
+        let client = state
+            .clients
+            .values()
+            .find(|client| client.metadata().client_id == client_id)
+            .ok_or_else(|| "El cliente ya no está en ejecución".to_string())?;
+        match client {
+            ProcessState::Launching {
+                stop_requested: true,
+                ..
+            } => Err("El cliente se está cerrando".to_string()),
+            ProcessState::Launching {
+                stop_requested: false,
+                ..
+            } => Err("El cliente todavía se está iniciando".to_string()),
+            ProcessState::Running {
+                stop_requested: true,
+                ..
+            } => Err("El cliente se está cerrando".to_string()),
+            ProcessState::Running {
+                metadata,
+                identity,
+                controller,
+                stop_requested: false,
+                ..
+            } => Ok(RunningClientFacts {
+                identity: *identity,
+                controller: *controller,
+                server_id: metadata.server_id.clone(),
+                server_name: metadata.server_name.clone(),
+            }),
+        }
+    }
+
     pub fn request_stop(&self, client_id: &str) -> Result<StopRequest, String> {
         let mut state = self.lock()?;
         let was_only_client = state.clients.len() == 1;
@@ -569,6 +612,17 @@ mod tests {
         process
             .begin_launch(id.into(), "server".into(), "Server".into())
             .unwrap()
+    }
+
+    #[test]
+    fn running_facts_rejects_launching_client() {
+        let process = GameProcessHandle::new();
+        let reservation = launch(&process, "launching");
+        assert!(process
+            .running_facts_for("launching")
+            .unwrap_err()
+            .contains("iniciando"));
+        process.cancel_launch(reservation);
     }
 
     #[test]

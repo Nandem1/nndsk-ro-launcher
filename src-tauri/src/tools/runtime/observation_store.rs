@@ -57,7 +57,7 @@ use super::shadow::runtime_shadow_enabled;
 use super::RuntimeProfile;
 use crate::utils::RunnerKind;
 
-static OBSERVATIONS_LOCK: Mutex<()> = Mutex::new(());
+pub(crate) static OBSERVATIONS_LOCK: Mutex<()> = Mutex::new(());
 
 const MAX_RECORDS: usize = 200;
 const MAX_AGE: Duration = Duration::from_secs(90 * 24 * 3600);
@@ -381,6 +381,50 @@ fn prune(paths: &ObservationPaths, keep_id: &str) -> Result<(), String> {
         let _ = fs::remove_file(path);
     }
     Ok(())
+}
+
+pub(crate) fn lookup_observation_for_identity(
+    client_id: &str,
+    identity: &ProcessIdentity,
+) -> Option<(String, Option<String>)> {
+    if !runtime_observe_enabled() {
+        return None;
+    }
+    let paths = ObservationPaths::production();
+    let _guard = OBSERVATIONS_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if !paths.root.is_dir() {
+        return None;
+    }
+    let mut best: Option<(String, String, Option<String>)> = None;
+    for entry in fs::read_dir(&paths.root).into_iter().flatten().flatten() {
+        let path = entry.path();
+        if let Ok(record) = read_record(&path) {
+            if record.client_id != client_id {
+                continue;
+            }
+            let game = record.process.game.as_ref();
+            if game.map(|g| g.pid == identity.pid && g.start_time == identity.start_time)
+                != Some(true)
+            {
+                continue;
+            }
+            let outcome = record.outcome.as_ref().map(outcome_kind_label);
+            let candidate = (
+                record.started_at.clone(),
+                record.observation_id.clone(),
+                outcome,
+            );
+            if best
+                .as_ref()
+                .is_none_or(|(started, _, _)| candidate.0 > *started)
+            {
+                best = Some(candidate);
+            }
+        }
+    }
+    best.map(|(_, id, outcome)| (id, outcome))
 }
 
 pub(crate) fn list_observations() -> Result<Vec<RuntimeObservationSummaryIpc>, String> {

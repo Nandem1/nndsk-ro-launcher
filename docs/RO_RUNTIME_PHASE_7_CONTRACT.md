@@ -59,5 +59,5 @@ Verificación independiente: Test A (`runtime_fingerprint_input_from_plan`) y Te
 
 - Promover observaciones a `Validated` o mutar `shipped_compatibility_records`.
 - Cambiar protocolo `ro-sessiond` / memoria.
-- D7VK productivo, benchmark harness, upload automático.
+- D7VK productivo, upload automático. El harness de benchmark vive en Fase 8 (`benchmarks/`, ADR-006).
 - Persistir args/credenciales/paths crudos en observaciones.

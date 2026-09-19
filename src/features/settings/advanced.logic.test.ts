@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import {
   advancedHasIssue,
+  benchmarksLabel,
+  comparisonSummary,
   compatibilityLine,
   dxvkHintFromDeps,
   observationsLabel,
   resolveAudioDotStatus,
   resolveDotStatus,
 } from './advanced.logic'
+import type { BenchmarkComparison } from '../../shared/types'
 import type { DependencyStatus } from '../../shared/types'
 import type { AdvancedDepsStatus } from '../../shared/types'
 
@@ -212,5 +215,93 @@ describe('advancedHasIssue', () => {
         },
       }),
     ).toBe(true)
+  })
+})
+
+describe('benchmarksLabel', () => {
+  it('incluye el conteo', () => {
+    expect(benchmarksLabel(3)).toBe('Benchmarks A/B · 3')
+  })
+})
+
+describe('comparisonSummary', () => {
+  const base: BenchmarkComparison = {
+    schemaVersion: 1,
+    comparability: { kind: 'comparable' },
+    left: {
+      arm: 'left',
+      attempts: 1,
+      captureSuccesses: 1,
+      planIds: ['p1'],
+      frametime: {
+        p50Ms: 10,
+        p95Ms: 12,
+        p99Ms: 14,
+        onePercentLowFps: 80,
+        pointOnePercentLowFps: 70,
+        sampleCount: 100,
+        runCount: 1,
+      },
+    },
+    right: {
+      arm: 'right',
+      attempts: 1,
+      captureSuccesses: 1,
+      planIds: ['p1'],
+      frametime: {
+        p50Ms: 11,
+        p95Ms: 13,
+        p99Ms: 15,
+        onePercentLowFps: 75,
+        pointOnePercentLowFps: 65,
+        sampleCount: 100,
+        runCount: 1,
+      },
+    },
+    deltas: null,
+    gates: {
+      visualCorrectLeft: true,
+      visualCorrectRight: true,
+      startupCleanLeft: true,
+      startupCleanRight: true,
+      frametimeAvailable: true,
+      passed: true,
+    },
+    caveats: [],
+    orderBiasUncontrolled: true,
+    usableForAutotune: true,
+  }
+
+  it('no declara ganador cuando los gates pasan', () => {
+    const s = comparisonSummary(base)
+    expect(s.label).toBe('Comparable')
+    expect(s.label.toLowerCase()).not.toContain('gan')
+    expect(s.label.toLowerCase()).not.toContain('winner')
+  })
+
+  it('reporta incomparable', () => {
+    const s = comparisonSummary({
+      ...base,
+      comparability: { kind: 'incomparable', reason: 'scene-mismatch' },
+    })
+    expect(s.label).toBe('Incomparable')
+    expect(s.hint).toBe('scene-mismatch')
+  })
+
+  it('no declara ganador con p50 distinto y visual incorrecto', () => {
+    const s = comparisonSummary({
+      ...base,
+      gates: { ...base.gates, visualCorrectLeft: false, passed: false },
+      left: {
+        ...base.left,
+        frametime: { ...base.left.frametime!, p50Ms: 5 },
+      },
+      right: {
+        ...base.right,
+        frametime: { ...base.right.frametime!, p50Ms: 50 },
+      },
+    })
+    expect(s.label).toBe('Gates no superados')
+    expect(s.label.toLowerCase()).not.toContain('gan')
   })
 })

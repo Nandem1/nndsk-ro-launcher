@@ -2,6 +2,8 @@
 #![allow(dead_code)]
 
 mod apply;
+pub(crate) mod benchmark;
+pub(crate) mod benchmark_store;
 mod compatibility;
 mod encode;
 mod environment;
@@ -28,12 +30,18 @@ pub(crate) use apply::{
     resolve_operational_plan_with_profile, runtime_graphics_plan_enabled, InvocationPlan,
     OperationalRuntimeInput,
 };
+pub(crate) use benchmark::{
+    host_clk_tck, host_uptime_seconds, process_age_seconds, runtime_benchmark_enabled,
+};
+pub(crate) use benchmark_store::{attach_benchmark_run, begin_benchmark_capture};
 pub(crate) use compatibility::{
     assess_compatibility, compatibility_ipc, gepard_runtime_check, gepard_subject_warnings,
     legacy_gepard_runner_check, recommendation_to_gepard_profile, runtime_compat_enabled,
     AssessedRuntime,
 };
+pub(crate) use encode::server_path_token16;
 pub(crate) use environment::GraphicsEnvironmentError;
+pub(crate) use host_gpu::probe_host_gpu;
 pub(crate) use identity::{
     prefix_v3_write_enabled, resolve_prefix_binding, resolve_prefix_binding_for_managed_descriptor,
     PrefixBinding, PrefixIdentityStatus,
@@ -45,6 +53,8 @@ pub(crate) use observation::{
     classify_run_outcome, runtime_observe_enabled, OutcomeInput, PlanAvailability, RunOutcome,
     StartupFailureClass,
 };
+pub(crate) use observation::{FingerprintEnvelopeIpc, ObservationProcessIpc};
+pub(crate) use observation_store::lookup_observation_for_identity;
 pub(crate) use observation_store::{
     delete_observations, enqueue_persist_finished, enqueue_persist_started,
     enqueue_persist_unreached, export_observations, list_observations, new_observation_id,

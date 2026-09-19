@@ -6,7 +6,7 @@ distribuida por el launcher.
 
 | Campo                   | Valor                                                                                                                                                                                   |
 | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Estado                  | Fases 0–5 y 7 en código; Fase 6A cerrada (ADR-005 `no-go`); Fase 6B no se abre; siguiente Fase 8; `GraphicsPlan` operacional; observaciones locales con `RO_LAUNCHER_RUNTIME_OBSERVE` (default ON, `=0` rollback); smokes live/AppImage no cerrados en este documento |
+| Estado                  | Fases 0–5, 7 y 8 en código; Fase 6A cerrada (ADR-005 `no-go`); Fase 6B no se abre; siguiente Fase 9; `GraphicsPlan` operacional; observaciones con `RO_LAUNCHER_RUNTIME_OBSERVE` y benchmarks A/B con `RO_LAUNCHER_RUNTIME_BENCHMARK` (default ON, `=0` rollback); smokes live/AppImage no cerrados en este documento |
 | Última revisión         | 2026-09-18                                                                                                                                                                              |
 | Alcance                 | Resolución de runner, gráficos, dependencias, identidad de prefix, artefactos administrados, compatibilidad y diagnóstico                                                               |
 | Objetivo                | Introducir seams tipados e incrementales que preserven el comportamiento validado y permitan agregar un backend gráfico sin modificar launcher, setup, tools y diagnóstico por separado |
@@ -491,7 +491,7 @@ sería el tercer caso que justifica extraer provisioning/environment común dond
   depende principalmente de DDraw/GDI no cubierto.
 - UX final para seleccionar profiles. La primera migración conserva auto-detección actual; no se
   exponen combinaciones arbitrarias.
-- Método de captura de frametime y visual correctness para benchmarks.
+- Captura in-process de frametimes (cerrado en ADR-006: CSV importado v1 para Fase 8).
 - Política futura de inventario/remoción manual de prefixes obsoletos.
 - Viabilidad y alcance de `nndsk-wine-ro`, condicionados a evidencia posterior.
 
@@ -1532,11 +1532,11 @@ Separar launcher benchmark de métricas in-game que requieran cooperación expl�
 
 **Entregables.**
 
-- [ ] Protocolo que fija cliente, mapa/escena, duración, warm-up, runner, profile, GPU/driver y carga.
-- [ ] Métricas de frametime p50/p95/p99, 1%/0.1% lows, startup reliability y crashes.
-- [ ] Visual correctness/compatibility como gates, no como número dentro de un score.
-- [ ] Repeticiones, variance e invalidación de runs no comparables.
-- [ ] Export de resultados vinculados a runtime fingerprint.
+- [x] Protocolo que fija cliente, mapa/escena, duración, warm-up, runner, profile, GPU/driver y carga.
+- [x] Métricas de frametime p50/p95/p99, 1%/0.1% lows, startup reliability y crashes.
+- [x] Visual correctness/compatibility como gates, no como número dentro de un score.
+- [x] Repeticiones, variance e invalidación de runs no comparables.
+- [x] Export de resultados vinculados a runtime fingerprint.
 
 **No entra.** Ranking global, benchmark en background sin consentimiento, AutoTune ni afirmar
 causalidad entre hosts distintos.
@@ -1686,7 +1686,7 @@ Para cualquier fase que cambie provisioning, env o process ownership:
 | ADR-003 | Catálogo de artefactos y receipts                                             | inicio de fase 3                   | descriptors, trust/source policy, transaction y schema evolution            |
 | ADR-004 | Compatibility catalog basado en evidencia                                     | inicio de fase 5                   | exact matching, outcome taxonomy, curated vs local, unknown semantics       |
 | ADR-005 | Deployment y support envelope de D7VK                                         | fin de fase 6A (**cerrado `no-go`**) | release exacto, layout/owner, DirectDraw delegation, constraints y go/no-go |
-| ADR-006 | Protocolo de benchmark reproducible                                           | antes de fase 8                    | workload, metrics, invalidation, privacy y comparability                    |
+| ADR-006 | Protocolo de benchmark reproducible                                           | Fase 8 (**aceptado**)              | workload, metrics, invalidation, privacy y comparability                    |
 
 No se necesita un ADR para cada struct ni para `nndsk-wine-ro` ahora. Este último merece ADRs sólo
 si comienza una investigación con patches/build pipeline concretos.

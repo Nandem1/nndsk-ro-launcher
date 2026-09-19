@@ -14,6 +14,12 @@ use commands::{
         list_client_profiles, refine_autopot_level_scan, refine_autopot_map_scan,
         refine_autopot_memory_scan, start_autopot, stop_autopot, update_autopot_config,
     },
+    benchmarks::{
+        begin_runtime_benchmark_capture, compare_runtime_benchmarks, delete_runtime_benchmarks,
+        export_runtime_benchmark_comparison, export_runtime_benchmarks,
+        finish_runtime_benchmark_capture, import_runtime_benchmark_samples,
+        list_runtime_benchmarks, set_runtime_benchmark_visual_check, start_runtime_benchmark_run,
+    },
     deps::check_dependencies,
     launcher::{launch_game, list_game_clients, stop_all_games, stop_game},
     observations::{
@@ -105,6 +111,16 @@ pub fn run() {
             list_runtime_observations,
             export_runtime_observations,
             delete_runtime_observations,
+            start_runtime_benchmark_run,
+            begin_runtime_benchmark_capture,
+            finish_runtime_benchmark_capture,
+            import_runtime_benchmark_samples,
+            set_runtime_benchmark_visual_check,
+            list_runtime_benchmarks,
+            compare_runtime_benchmarks,
+            export_runtime_benchmarks,
+            export_runtime_benchmark_comparison,
+            delete_runtime_benchmarks,
         ])
         .build(tauri::generate_context!())
         .expect("error al iniciar la aplicación")

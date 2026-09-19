@@ -1,6 +1,8 @@
 import { audioFromDeps } from '../../shared/audio'
 import type {
   AdvancedDepsStatus,
+  BenchmarkComparison,
+  BenchmarkFrametimeMetrics,
   CompatibilityStatus,
   DependencyStatus,
 } from '../../shared/types'
@@ -8,6 +10,41 @@ import type { DotStatus } from '../../shared/ui/StatusDot'
 
 export function observationsLabel(count: number): string {
   return `Observaciones · ${count}`
+}
+
+export function benchmarksLabel(count: number): string {
+  return `Benchmarks A/B · ${count}`
+}
+
+export function formatFrametimeLine(
+  metrics: BenchmarkFrametimeMetrics,
+): string {
+  return `p50 ${metrics.p50Ms.toFixed(2)} ms · p95 ${metrics.p95Ms.toFixed(2)} · p99 ${metrics.p99Ms.toFixed(2)} · 1% ${metrics.onePercentLowFps.toFixed(1)} fps`
+}
+
+export function comparisonSummary(comparison: BenchmarkComparison): {
+  label: string
+  hint: string
+} {
+  if (comparison.comparability.kind === 'incomparable') {
+    return {
+      label: 'Incomparable',
+      hint: comparison.comparability.reason,
+    }
+  }
+  if (!comparison.gates.passed) {
+    const left = comparison.left.frametime
+    const right = comparison.right.frametime
+    const hint =
+      left && right
+        ? `Izq ${formatFrametimeLine(left)} · Der ${formatFrametimeLine(right)}`
+        : 'Gates no superados'
+    return { label: 'Gates no superados', hint }
+  }
+  return {
+    label: 'Comparable',
+    hint: comparison.caveats.join(' · ') || 'Protocolo alineado',
+  }
 }
 
 export function resolveDotStatus(
