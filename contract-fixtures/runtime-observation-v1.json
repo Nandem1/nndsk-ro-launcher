@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "observationId": "00000000-0000-4000-8000-000000000001",
+  "recordState": "finished",
+  "startedAt": "2026-09-18T00:00:00Z",
+  "finishedAt": "2026-09-18T00:01:00Z",
+  "clientId": "client-local",
+  "serverLocalId": "local-server",
+  "serverToken": "0123456789abcdef",
+  "gameExecutableName": "ragexe.exe",
+  "invocationTarget": "game",
+  "planId": "565e8df745e282d09c093302ee143341592f41a5449128231ae35c2015ec5a3e",
+  "runtimeFingerprint": {
+    "schemaVersion": 1,
+    "algorithm": "sha256",
+    "digest": "565e8df745e282d09c093302ee143341592f41a5449128231ae35c2015ec5a3e"
+  },
+  "prefixFingerprint": {
+    "schemaVersion": 1,
+    "algorithm": "sha256",
+    "digest": "a23f2a940a9cb8e5110b0e454ad68a35a22af760c005bcd0ebdf47ab44330270"
+  },
+  "prefixToken": "prefix-token",
+  "selectionSource": "productDefault",
+  "runnerKind": "proton",
+  "graphicsProfile": "dxvk",
+  "dxvkProvider": "runnerOwned",
+  "dxvkComponentId": "runner/dxvk",
+  "overlayVerified": false,
+  "receipts": [],
+  "subject": {
+    "kind": "absent"
+  },
+  "hostGpu": {
+    "completeness": "unavailable",
+    "cards": [],
+    "vulkanApi": null
+  },
+  "process": {
+    "game": {
+      "pid": 4242,
+      "startTime": 1000
+    },
+    "controller": {
+      "pid": 4241,
+      "startTime": 999
+    },
+    "finalGame": {
+      "pid": 4242,
+      "startTime": 1000
+    },
+    "identityStale": false,
+    "handoffCount": 0
+  },
+  "supervisor": {
+    "enabled": true,
+    "supervisor": {
+      "pid": 4200,
+      "startTime": 900
+    }
+  },
+  "appimage": {
+    "appdirSet": false
+  },
+  "flags": {
+    "observe": true,
+    "graphics": true,
+    "compat": true,
+    "shadow": false,
+    "prefixV3": true,
+    "sessionSupervisor": true
+  },
+  "outcome": {
+    "kind": "processEnded",
+    "controllerExitCode": 0
+  },
+  "visualCheck": "pending",
+  "planAvailability": "resolved"
+}

@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "comparability": {
+    "kind": "comparable"
+  },
+  "left": {
+    "arm": "a",
+    "attempts": 1,
+    "captureSuccesses": 1,
+    "planIds": [
+      "plan"
+    ],
+    "frametime": {
+      "p50Ms": 20.0,
+      "p95Ms": 30.0,
+      "p99Ms": 30.0,
+      "onePercentLowFps": 33.333333333333336,
+      "pointOnePercentLowFps": 33.333333333333336,
+      "sampleCount": 3,
+      "runCount": 1
+    }
+  },
+  "right": {
+    "arm": "b",
+    "attempts": 1,
+    "captureSuccesses": 1,
+    "planIds": [
+      "plan"
+    ],
+    "frametime": {
+      "p50Ms": 20.0,
+      "p95Ms": 30.0,
+      "p99Ms": 30.0,
+      "onePercentLowFps": 33.333333333333336,
+      "pointOnePercentLowFps": 33.333333333333336,
+      "sampleCount": 3,
+      "runCount": 1
+    }
+  },
+  "deltas": {
+    "p50Ms": 0.0,
+    "p95Ms": 0.0,
+    "p99Ms": 0.0,
+    "onePercentLowFps": 0.0,
+    "pointOnePercentLowFps": 0.0
+  },
+  "gates": {
+    "visualCorrectLeft": true,
+    "visualCorrectRight": true,
+    "startupCleanLeft": true,
+    "startupCleanRight": true,
+    "frametimeAvailable": true,
+    "passed": true
+  },
+  "caveats": [
+    "thermal-unmeasured",
+    "same-runtime-plan"
+  ],
+  "orderBiasUncontrolled": true,
+  "usableForAutotune": false
+}

@@ -4,6 +4,7 @@ use std::path::Path;
 use crate::models::launch::LaunchStrategy;
 use crate::models::server::ServerConfig;
 use crate::models::server_tools::{ClientDiagnostics, ToolInfo};
+use crate::tools::runtime::{gepard_subject_warnings, runtime_compat_enabled};
 use crate::utils::find_file_case_insensitive;
 
 const MAX_PE_SIZE: u64 = 128 * 1024 * 1024;
@@ -102,26 +103,7 @@ pub fn inspect_client(
                 .to_string(),
         );
     }
-    if let Some(gepard) = gepard {
-        if let Some(build) = gepard.build {
-            warnings.push(format!(
-                "Gepard Shield {} (FileVersion {}, SHA-256 {}…) reconocido: perfil validado {}.",
-                build.product_version,
-                build.file_version,
-                &build.sha256[..12],
-                build.runner.stack_label(),
-            ));
-        } else {
-            let fingerprint = gepard
-                .sha256
-                .as_deref()
-                .map(|sha256| format!(" (SHA-256 {}…)", &sha256[..12]))
-                .unwrap_or_default();
-            warnings.push(format!(
-                "Build de Gepard no validada{fingerprint}; conserva un prefix separado al probar runners."
-            ));
-        }
-    }
+    warnings.extend(gepard_subject_warnings(gepard, runtime_compat_enabled()));
 
     ClientDiagnostics {
         architecture: root.architecture.map(str::to_string),

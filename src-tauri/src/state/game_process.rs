@@ -5,6 +5,16 @@ use std::sync::{Arc, Mutex};
 use ro_tools_linux::ProcessIdentity;
 
 use crate::models::game_client::{GameClientSnapshot, GameClientStatus};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RunningClientFacts {
+    pub identity: ProcessIdentity,
+    pub controller: Option<ProcessIdentity>,
+    pub server_id: String,
+    pub server_name: String,
+    pub runtime_plan_id: String,
+    pub observation_id: Option<String>,
+}
 use crate::tools::runner_sessions::ClientRuntimeGuard;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -30,6 +40,8 @@ enum ProcessState {
         metadata: ClientMetadata,
         identity: ProcessIdentity,
         controller: Option<ProcessIdentity>,
+        runtime_plan_id: String,
+        observation_id: Option<String>,
         #[allow(dead_code)]
         runtime: ClientRuntimeGuard,
         stop_requested: bool,
@@ -164,6 +176,8 @@ impl GameProcessHandle {
         reservation: LaunchReservation,
         identity: ProcessIdentity,
         runtime: ClientRuntimeGuard,
+        runtime_plan_id: String,
+        observation_id: Option<String>,
     ) -> Result<GameClientSnapshot, String> {
         let mut state = self.lock()?;
         if state.clients.iter().any(|(generation, client)| {
@@ -185,6 +199,8 @@ impl GameProcessHandle {
                     metadata: metadata.clone(),
                     identity,
                     controller: *controller,
+                    runtime_plan_id,
+                    observation_id,
                     runtime,
                     stop_requested: false,
                 };
@@ -324,6 +340,45 @@ impl GameProcessHandle {
             ProcessState::Launching { .. } => {
                 Err("El cliente todavía se está iniciando".to_string())
             }
+        }
+    }
+
+    pub fn running_facts_for(&self, client_id: &str) -> Result<RunningClientFacts, String> {
+        let state = self.lock()?;
+        let client = state
+            .clients
+            .values()
+            .find(|client| client.metadata().client_id == client_id)
+            .ok_or_else(|| "El cliente ya no está en ejecución".to_string())?;
+        match client {
+            ProcessState::Launching {
+                stop_requested: true,
+                ..
+            } => Err("El cliente se está cerrando".to_string()),
+            ProcessState::Launching {
+                stop_requested: false,
+                ..
+            } => Err("El cliente todavía se está iniciando".to_string()),
+            ProcessState::Running {
+                stop_requested: true,
+                ..
+            } => Err("El cliente se está cerrando".to_string()),
+            ProcessState::Running {
+                metadata,
+                identity,
+                controller,
+                runtime_plan_id,
+                observation_id,
+                stop_requested: false,
+                ..
+            } => Ok(RunningClientFacts {
+                identity: *identity,
+                controller: *controller,
+                server_id: metadata.server_id.clone(),
+                server_name: metadata.server_name.clone(),
+                runtime_plan_id: runtime_plan_id.clone(),
+                observation_id: observation_id.clone(),
+            }),
         }
     }
 
@@ -572,6 +627,17 @@ mod tests {
     }
 
     #[test]
+    fn running_facts_rejects_launching_client() {
+        let process = GameProcessHandle::new();
+        let reservation = launch(&process, "launching");
+        assert!(process
+            .running_facts_for("launching")
+            .unwrap_err()
+            .contains("iniciando"));
+        process.cancel_launch(reservation);
+    }
+
+    #[test]
     fn permits_multiple_running_clients_but_serializes_detection() {
         let process = GameProcessHandle::new();
         let first = launch(&process, "first");
@@ -579,12 +645,18 @@ mod tests {
             .begin_launch("parallel".into(), "server".into(), "Server".into())
             .is_err());
         process
-            .mark_running(first, identity(42), direct_runtime())
+            .mark_running(first, identity(42), direct_runtime(), "plan-a".into(), None)
             .unwrap();
 
         let second = launch(&process, "second");
         process
-            .mark_running(second, identity(84), direct_runtime())
+            .mark_running(
+                second,
+                identity(84),
+                direct_runtime(),
+                "plan-b".into(),
+                None,
+            )
             .unwrap();
 
         assert_eq!(process.snapshots().unwrap().len(), 2);
@@ -598,7 +670,13 @@ mod tests {
         process.cancel_launch(first);
         let second = launch(&process, "second");
         process
-            .mark_running(second, identity(84), direct_runtime())
+            .mark_running(
+                second,
+                identity(84),
+                direct_runtime(),
+                "plan-b".into(),
+                None,
+            )
             .unwrap();
         assert_eq!(process.snapshots().unwrap()[0].client_id, "second");
     }
@@ -608,11 +686,17 @@ mod tests {
         let process = GameProcessHandle::new();
         let first = launch(&process, "first");
         process
-            .mark_running(first, identity(42), direct_runtime())
+            .mark_running(first, identity(42), direct_runtime(), "plan-a".into(), None)
             .unwrap();
         let second = launch(&process, "second");
         process
-            .mark_running(second, identity(84), direct_runtime())
+            .mark_running(
+                second,
+                identity(84),
+                direct_runtime(),
+                "plan-b".into(),
+                None,
+            )
             .unwrap();
 
         let stop = process.request_stop("first").unwrap();
@@ -629,13 +713,19 @@ mod tests {
         let process = GameProcessHandle::new();
         let first = launch(&process, "first");
         process
-            .mark_running(first, identity(42), direct_runtime())
+            .mark_running(first, identity(42), direct_runtime(), "plan-a".into(), None)
             .unwrap();
 
         let second = launch(&process, "second");
         assert!(!process.candidate_available_for_handoff(first, identity(84)));
         process
-            .mark_running(second, identity(84), direct_runtime())
+            .mark_running(
+                second,
+                identity(84),
+                direct_runtime(),
+                "plan-b".into(),
+                None,
+            )
             .unwrap();
         assert!(!process.candidate_available_for_handoff(first, identity(84)));
     }
@@ -648,10 +738,19 @@ mod tests {
         process.mark_controller(reservation, controller).unwrap();
         assert!(process.contains_identity(&controller));
         process
-            .mark_running(reservation, identity(42), direct_runtime())
+            .mark_running(
+                reservation,
+                identity(42),
+                direct_runtime(),
+                "plan-a".into(),
+                Some("observation-a".into()),
+            )
             .unwrap();
         assert!(process.contains_identity(&identity(42)));
         assert!(!process.contains_identity(&identity(99)));
+        let facts = process.running_facts_for("first").unwrap();
+        assert_eq!(facts.runtime_plan_id, "plan-a");
+        assert_eq!(facts.observation_id.as_deref(), Some("observation-a"));
     }
 
     #[test]
@@ -674,7 +773,7 @@ mod tests {
             profile_memory: Some(ProfileMemory::Valid),
         };
         process
-            .mark_running(reservation, identity, runtime)
+            .mark_running(reservation, identity, runtime, "plan-a".into(), None)
             .expect("running");
         let replacement = ProcessIdentity {
             pid: identity.pid,
@@ -716,7 +815,7 @@ mod tests {
             profile_memory: Some(ProfileMemory::NotConfigured),
         };
         process
-            .mark_running(reservation, identity, runtime)
+            .mark_running(reservation, identity, runtime, "plan-a".into(), None)
             .expect("running");
         let new_lease = registry
             .register(identity, launcher_memory_ancestor())
@@ -741,7 +840,13 @@ mod tests {
             .begin_launch("first".into(), "sakura".into(), "Sakura".into())
             .unwrap();
         process
-            .mark_running(reservation, identity(42), direct_runtime())
+            .mark_running(
+                reservation,
+                identity(42),
+                direct_runtime(),
+                "plan-a".into(),
+                None,
+            )
             .unwrap();
 
         assert_eq!(process.sole_running_pid_for("sakura").unwrap(), 42);

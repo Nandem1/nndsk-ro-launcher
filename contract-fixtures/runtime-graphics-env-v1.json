@@ -1,0 +1,18 @@
+{
+  "managedDxvkWithOverlay": {
+    "d3d8": "n,b",
+    "d3d9": "n,b",
+    "d3d10core": "n,b",
+    "d3d11": "n,b",
+    "d3dimm": "n,b",
+    "ddraw": "n,b",
+    "dxgi": "n,b"
+  },
+  "managedDxvkMaintenancePatcher": {
+    "d3d8": "n,b",
+    "d3d9": "n,b",
+    "d3d10core": "n,b",
+    "d3d11": "n,b",
+    "dxgi": "n,b"
+  }
+}

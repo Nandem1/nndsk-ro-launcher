@@ -122,4 +122,16 @@ mod tests {
         drop(second);
         assert!(OperationGuard::acquire("prefix", &path).is_ok());
     }
+
+    #[test]
+    fn shared_dgvoodoo_blocks_exclusive_install() {
+        let path = std::env::temp_dir().join(format!(
+            "ro-launcher-operation-dgvoodoo-{}",
+            std::process::id()
+        ));
+        let launch = OperationGuard::acquire_shared("dgvoodoo", &path).unwrap();
+        assert!(OperationGuard::acquire("dgvoodoo", &path).is_err());
+        drop(launch);
+        assert!(OperationGuard::acquire("dgvoodoo", &path).is_ok());
+    }
 }

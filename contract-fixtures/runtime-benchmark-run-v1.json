@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 1,
+  "runId": "r",
+  "recordState": "samples-imported",
+  "attachedAt": "2026-01-01T00:00:00Z",
+  "captureStartedAt": null,
+  "captureFinishedAt": null,
+  "clientId": "c",
+  "serverLocalId": "s",
+  "serverToken": "tok",
+  "observationId": null,
+  "arm": "a",
+  "spec": {
+    "protocolRevision": 1,
+    "sceneId": "payon-town",
+    "loadDescriptor": "load",
+    "resolution": {
+      "width": 1920,
+      "height": 1080,
+      "fullscreen": false
+    },
+    "warmupSeconds": 0,
+    "captureSeconds": 30,
+    "thermalDeclared": "unmeasured"
+  },
+  "planId": "plan",
+  "runtimeFingerprint": {
+    "schemaVersion": 1,
+    "algorithm": "sha256",
+    "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "prefixFingerprint": {
+    "schemaVersion": 1,
+    "algorithm": "sha256",
+    "digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "prefixToken": "pt",
+  "selectionSource": "productDefault",
+  "runnerKind": "wine",
+  "graphicsProfile": "dxvk",
+  "dxvkProvider": "managedPrefix",
+  "dxvkComponentId": "dxvk-2.6.2",
+  "overlayVerified": false,
+  "subject": {
+    "kind": "absent"
+  },
+  "hostGpu": {
+    "completeness": "known",
+    "cards": [
+      {
+        "sysfsCard": "card0",
+        "vendorId": "10de",
+        "deviceId": "2484",
+        "driver": "nvidia"
+      }
+    ],
+    "vulkanApi": null
+  },
+  "process": {
+    "game": null,
+    "controller": null,
+    "finalGame": null,
+    "identityStale": false,
+    "handoffCount": 0
+  },
+  "flags": {
+    "graphicsPlan": true,
+    "supervisor": true,
+    "observe": true,
+    "benchmark": true
+  },
+  "captureAdapter": "imported-csv-v1",
+  "samples": {
+    "adapter": "imported-csv-v1",
+    "sourceSha256": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "sampleCount": 3,
+    "frametimeMs": [
+      10.0,
+      20.0,
+      30.0
+    ],
+    "monotonicNs": null
+  },
+  "visualCheck": "passed",
+  "linkedOutcomeKind": null
+}

@@ -1,0 +1,18 @@
+{
+  "protonDxvk": {
+    "planId": "565e8df745e282d09c093302ee143341592f41a5449128231ae35c2015ec5a3e",
+    "selectionSource": "productDefault",
+    "graphicsProfile": "dxvk",
+    "dxvkProvider": "runnerOwned",
+    "dxvkComponentId": "runner/dxvk",
+    "overlayVerified": false
+  },
+  "wine716DgVoodoo": {
+    "planId": "b9263bc23f3c7df997acd7fe2ffa6f162f315a67f1d28e39a943a9d72c3f7d8e",
+    "selectionSource": "serverOverride",
+    "graphicsProfile": "dgVoodooDxvk",
+    "dxvkProvider": "managedPrefix",
+    "dxvkComponentId": "dxvk-2.6.2",
+    "overlayVerified": true
+  }
+}

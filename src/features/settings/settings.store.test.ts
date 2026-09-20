@@ -26,7 +26,7 @@ describe('settings store runner selection', () => {
     })
   })
 
-  it('migrates an existing Wine selection to the managed runtime', async () => {
+  it('preserves an unavailable persisted Wine selection without saving', async () => {
     vi.spyOn(api, 'listRunners').mockResolvedValue([proton])
     const saveSettings = vi.spyOn(api, 'saveSettings').mockResolvedValue()
     const loadDepsStatus = vi.fn().mockResolvedValue(undefined)
@@ -37,13 +37,10 @@ describe('settings store runner selection', () => {
 
     await useSettingsStore.getState().loadRunners()
 
-    expect(useSettingsStore.getState().selectedRunner).toBe(proton.path)
-    expect(useSettingsStore.getState().notice?.kind).toBe('migrated')
-    expect(saveSettings).toHaveBeenCalledWith({
-      defaultRunner: proton.path,
-      richPresenceEnabled: false,
-    })
-    expect(loadDepsStatus).toHaveBeenCalledWith(proton.path)
+    expect(useSettingsStore.getState().selectedRunner).toBe(LEGACY_DEFAULT_WINE)
+    expect(useSettingsStore.getState().notice).toBeNull()
+    expect(saveSettings).not.toHaveBeenCalled()
+    expect(loadDepsStatus).toHaveBeenCalledWith(LEGACY_DEFAULT_WINE)
   })
 
   it('selects the preferred runner for a fresh configuration', async () => {

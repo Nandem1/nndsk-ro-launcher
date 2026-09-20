@@ -1,28 +1,41 @@
 use std::path::Path;
 
+use tauri::AppHandle;
+
 use crate::models::dependency::{DependencyStatus, RuntimeCheck, RuntimeCheckSeverity};
 use crate::models::server::ServerConfig;
 use crate::tools::prefix::{DxvkProvision, MANAGED_DXVK_COMPONENT};
 use crate::tools::runners::{managed_dxvk_ready, managed_proton_path, managed_runtime_ready};
+use crate::tools::runtime::{
+    assess_compatibility, build_runtime_plan_summary, compatibility_ipc, gepard_runtime_check,
+    inspect_subject, legacy_gepard_runner_check, observe_legacy_runtime,
+    operational_session_anchor, paths_match, recommendation_to_gepard_profile,
+    resolve_operational_plan_with_profile, resolve_prefix_binding_for_managed_descriptor,
+    runtime_compat_enabled, runtime_graphics_plan_enabled, runtime_shadow_enabled, AssessedRuntime,
+    DgVoodooObservation, DgVoodooState, LegacyRuntimeInput, OperationalRuntimeInput, RuntimePlan,
+    RuntimeProfile, ShadowOperation,
+};
 use crate::tools::server_tools;
 use crate::utils::audio;
 use crate::utils::{
     ensure_custom_setup_allowed, ensure_managed_path_safe, ensure_managed_reset_allowed,
-    inspect_prefix, is_dxvk_installed, manifest_matches_location, manifest_matches_runner,
+    inspect_prefix, is_dxvk_installed, manifest_matches_stored_location,
     proton_runner_vkd3d_companions_available, proton_vkd3d_companions_available,
     resolve_server_prefix_with_runner, resolve_server_wine_context_with_runner,
-    resolve_wine_context, runtime_prefix_blockers, PrefixScope, WineContext, PREFIX_SCHEMA_VERSION,
+    resolve_wine_context, runtime_prefix_blockers, stored_manifest_matches_runner, PrefixScope,
+    WineContext, PREFIX_SCHEMA_V3, PREFIX_SCHEMA_VERSION,
 };
 use ro_tools_linux::{detect_input_permissions, detect_uinput_permissions};
 
 pub async fn check_dependencies(
+    app: &AppHandle,
     server: Option<ServerConfig>,
     runner: Option<String>,
 ) -> Result<DependencyStatus, String> {
     if !managed_runtime_ready() {
         return managed_runtime_pending(server.as_ref(), runner.as_deref());
     }
-    let ctx = resolve_context(server.as_ref(), runner).await?;
+    let ctx = resolve_context(server.as_ref(), runner.clone()).await?;
     let health = inspect_prefix(&ctx.prefix);
     let externally_managed = ctx.location.scope == PrefixScope::Custom;
     let prefix_configured = if externally_managed {
@@ -36,7 +49,7 @@ pub async fn check_dependencies(
     let mut prefix_issues = health.issues.clone();
 
     let manifest_compatible = match &health.manifest {
-        Some(manifest) if manifest.runner_kind == "unknown" => {
+        Some(manifest) if manifest.runner_kind() == "unknown" => {
             prefix_issues.push(
                 "El manifiesto es legacy y no identifica el runner; rearma el entorno antes de instalar componentes"
                     .to_string(),
@@ -44,13 +57,15 @@ pub async fn check_dependencies(
             false
         }
         Some(manifest) => {
-            let matches = manifest.schema_version == PREFIX_SCHEMA_VERSION
-                && manifest_matches_location(manifest, &ctx.location)
-                && manifest_matches_runner(manifest, &runner_kind, &runner_path);
+            let schema = manifest.schema_version();
+            let matches = (schema == PREFIX_SCHEMA_VERSION || schema == PREFIX_SCHEMA_V3)
+                && manifest_matches_stored_location(manifest, &ctx.location)
+                && (schema == PREFIX_SCHEMA_V3
+                    || stored_manifest_matches_runner(manifest, &runner_kind, &runner_path));
             if !matches {
                 prefix_issues.push(format!(
                     "El entorno fue creado con otro runner ({})",
-                    manifest.runner_path
+                    manifest.runner_path()
                 ));
             }
             matches
@@ -75,11 +90,96 @@ pub async fn check_dependencies(
 
     let mut blockers = runtime_prefix_blockers(&ctx, &health);
     let webview2_required = server.as_ref().is_some_and(server_tools::requires_webview2);
-    let dxvk_provision = DxvkProvision::for_runner(&ctx.resolved);
+    let dgvoodoo_configured = server.as_ref().is_some_and(|server| {
+        server_tools::scan_dgvoodoo_status(app, server)
+            .map(|status| status.configured)
+            .unwrap_or(false)
+    });
+    let operational_input = OperationalRuntimeInput {
+        server_runner: server.as_ref().and_then(|server| server.runner.as_deref()),
+        default_runner: runner.as_deref(),
+        context: &ctx,
+        dgvoodoo: DgVoodooState::verified(dgvoodoo_configured),
+        webview2_required,
+    };
+    let mut operational_profile_plan: Option<(RuntimeProfile, RuntimePlan)> = None;
+    if runtime_graphics_plan_enabled() || runtime_compat_enabled() {
+        if let Ok(pair) = resolve_operational_plan_with_profile(operational_input) {
+            operational_profile_plan = Some(pair);
+        }
+    }
+    let (dxvk_provision, mut runtime_plan) = if runtime_graphics_plan_enabled() {
+        let (profile, plan) = operational_profile_plan
+            .as_ref()
+            .ok_or_else(|| "runtime-plan-resolution-failed".to_string())?;
+        let anchor = operational_session_anchor(&ctx, Some(plan), webview2_required);
+        let summary =
+            build_runtime_plan_summary(anchor.plan_id, profile, plan, dgvoodoo_configured);
+        (
+            plan.graphics().dxvk_provider().provision_kind(),
+            Some(summary),
+        )
+    } else {
+        (DxvkProvision::for_runner(&ctx.resolved), None)
+    };
+    let game_dir = server
+        .as_ref()
+        .and_then(|server| Path::new(&server.executable_path).parent());
+    let compatibility_subject = inspect_subject(game_dir);
+    let compatibility_snapshot = {
+        let assessed = operational_profile_plan
+            .as_ref()
+            .map(|(_, plan)| AssessedRuntime {
+                plan,
+                probe: &ctx.probe,
+            });
+        assess_compatibility(&compatibility_subject, assessed.as_ref())
+    };
+    let compatibility_status = if runtime_compat_enabled() {
+        Some(compatibility_ipc(&compatibility_snapshot))
+    } else {
+        None
+    };
+    if let Some(summary) = runtime_plan.as_mut() {
+        summary.compatibility = compatibility_status.clone();
+    }
+    let legacy_recommendation = if runtime_compat_enabled() {
+        compatibility_snapshot
+            .recommendation
+            .as_ref()
+            .map(recommendation_to_gepard_profile)
+    } else {
+        server
+            .as_ref()
+            .and_then(server_tools::recommended_gepard_build)
+            .map(|build| build.runner)
+    };
+    if runtime_shadow_enabled() {
+        let dgvoodoo = match server.as_ref() {
+            Some(server) => match server_tools::scan_dgvoodoo_status(app, server) {
+                Ok(status) => DgVoodooObservation::verified(status.configured),
+                Err(_) => DgVoodooObservation::Unavailable,
+            },
+            None => DgVoodooObservation::verified(false),
+        };
+        observe_legacy_runtime(
+            Some(app),
+            ShadowOperation::DependencyCheck,
+            LegacyRuntimeInput {
+                server_runner: server.as_ref().and_then(|server| server.runner.as_deref()),
+                default_runner: runner.as_deref(),
+                context: &ctx,
+                dxvk: dxvk_provision,
+                dgvoodoo,
+                webview2_required,
+                recommendation: legacy_recommendation,
+            },
+        );
+    }
     let manifest_has_component = |component: &str| {
         health.manifest.as_ref().is_some_and(|manifest| {
             manifest
-                .components
+                .components()
                 .iter()
                 .any(|installed| installed == component)
         })
@@ -117,10 +217,17 @@ pub async fn check_dependencies(
     let path_safe = ensure_managed_path_safe(&ctx.location).is_ok()
         && ensure_custom_setup_allowed(&ctx.location).is_ok();
     let incompatible_manifest = health.manifest.as_ref().is_some_and(|manifest| {
-        manifest.schema_version != PREFIX_SCHEMA_VERSION
-            || !manifest_matches_location(manifest, &ctx.location)
-            || (manifest.runner_kind != "unknown"
-                && !manifest_matches_runner(manifest, &runner_kind, &runner_path))
+        let schema = manifest.schema_version();
+        if schema > PREFIX_SCHEMA_V3 {
+            return true;
+        }
+        if schema == PREFIX_SCHEMA_V3 {
+            return !manifest_matches_stored_location(manifest, &ctx.location);
+        }
+        schema != PREFIX_SCHEMA_VERSION
+            || !manifest_matches_stored_location(manifest, &ctx.location)
+            || (manifest.runner_kind() != "unknown"
+                && !stored_manifest_matches_runner(manifest, &runner_kind, &runner_path))
     });
     let mut required_verbs = vec!["vcrun2019", "d3dx9", "corefonts"];
     if dxvk_provision == DxvkProvision::Winetricks {
@@ -145,7 +252,7 @@ pub async fn check_dependencies(
     let runner_unknown = health
         .manifest
         .as_ref()
-        .is_some_and(|manifest| manifest.runner_kind == "unknown");
+        .is_some_and(|manifest| manifest.runner_kind() == "unknown");
     let prefix_root = Path::new(&ctx.prefix);
     let managed_unclaimed = ctx.location.managed
         && prefix_root.is_dir()
@@ -202,38 +309,15 @@ pub async fn check_dependencies(
         remediation: (!runner_vkd3d_ok)
             .then(|| "Cambia o reinstala la distribución Proton".to_string()),
     }];
-    if let Some(build) = server
+    if runtime_compat_enabled() {
+        if let Some(check) = gepard_runtime_check(&compatibility_snapshot) {
+            checks.push(check);
+        }
+    } else if let Some(build) = server
         .as_ref()
         .and_then(server_tools::recommended_gepard_build)
     {
-        let compatible = match build.runner {
-            server_tools::GepardRunnerProfile::ModernProton => ctx.resolved.is_proton(),
-            server_tools::GepardRunnerProfile::Wine716Legacy => ctx.resolved.is_wine_7_16(),
-        };
-        checks.push(RuntimeCheck {
-            id: "gepard-runner".to_string(),
-            severity: if compatible {
-                RuntimeCheckSeverity::Ok
-            } else {
-                RuntimeCheckSeverity::Warning
-            },
-            message: if compatible {
-                format!(
-                    "Gepard {} build {} · perfil validado {}",
-                    build.product_version,
-                    build.file_version,
-                    build.runner.stack_label()
-                )
-            } else {
-                format!(
-                    "Gepard {} build {} recomienda el perfil validado {}",
-                    build.product_version,
-                    build.file_version,
-                    build.runner.stack_label()
-                )
-            },
-            remediation: (!compatible).then(|| build.runner.remediation().to_string()),
-        });
+        checks.push(legacy_gepard_runner_check(build, &ctx.resolved));
     }
     if !missing_verbs.is_empty() {
         checks.push(RuntimeCheck {
@@ -348,6 +432,8 @@ pub async fn check_dependencies(
             && runner_vkd3d_ok
             && ensure_managed_reset_allowed(&ctx.location).is_ok(),
         checks,
+        runtime_plan,
+        compatibility: compatibility_status,
     })
 }
 
@@ -355,11 +441,18 @@ fn managed_runtime_pending(
     server: Option<&ServerConfig>,
     selected_runner: Option<&str>,
 ) -> Result<DependencyStatus, String> {
-    let effective_runner = server
-        .and_then(|server| server.runner.as_deref())
-        .or(selected_runner)
-        .filter(|runner| !runner.trim().is_empty());
-    let location = resolve_server_prefix_with_runner(server, effective_runner)?;
+    let effective_runner = effective_runner_path(
+        server.and_then(|server| server.runner.as_deref()),
+        selected_runner,
+    );
+    let location = if effective_runner.is_none()
+        || effective_runner
+            .is_some_and(|runner| paths_match(Path::new(runner), &managed_proton_path()))
+    {
+        resolve_prefix_binding_for_managed_descriptor(server)?.location
+    } else {
+        resolve_server_prefix_with_runner(server, effective_runner)?
+    };
     let health = inspect_prefix(&location.path);
     let prefix_root = Path::new(&location.path);
     let managed_unclaimed = location.managed
@@ -384,13 +477,15 @@ fn managed_runtime_pending(
         "wine"
     };
     let manifest_compatible = health.manifest.as_ref().is_some_and(|manifest| {
-        manifest.schema_version == PREFIX_SCHEMA_VERSION
-            && manifest_matches_location(manifest, &location)
-            && manifest_matches_runner(
-                manifest,
-                expected_runner_kind,
-                expected_runner_path.to_string_lossy().as_ref(),
-            )
+        let schema = manifest.schema_version();
+        (schema == PREFIX_SCHEMA_VERSION || schema == PREFIX_SCHEMA_V3)
+            && manifest_matches_stored_location(manifest, &location)
+            && (schema == PREFIX_SCHEMA_V3
+                || stored_manifest_matches_runner(
+                    manifest,
+                    expected_runner_kind,
+                    expected_runner_path.to_string_lossy().as_ref(),
+                ))
     });
     let requires_rebuild = health.legacy_marker
         || health
@@ -471,7 +566,25 @@ fn managed_runtime_pending(
                 remediation: None,
             },
         ],
+        runtime_plan: None,
+        compatibility: if runtime_compat_enabled() {
+            let game_dir = server.and_then(|server| Path::new(&server.executable_path).parent());
+            let subject = inspect_subject(game_dir);
+            let snapshot = assess_compatibility(&subject, None);
+            Some(compatibility_ipc(&snapshot))
+        } else {
+            None
+        },
     })
+}
+
+fn effective_runner_path<'a>(
+    server_runner: Option<&'a str>,
+    selected_runner: Option<&'a str>,
+) -> Option<&'a str> {
+    server_runner
+        .filter(|runner| !runner.trim().is_empty())
+        .or_else(|| selected_runner.filter(|runner| !runner.trim().is_empty()))
 }
 
 async fn resolve_context(
@@ -488,4 +601,21 @@ async fn resolve_context(
 fn proton_dxvk_available(proton_root: &Path) -> bool {
     let dxvk = proton_root.join("files/lib/wine/dxvk");
     dxvk.join("x86_64-windows/d3d9.dll").is_file() && dxvk.join("i386-windows/d3d9.dll").is_file()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::effective_runner_path;
+
+    #[test]
+    fn empty_server_runner_does_not_mask_the_global_selection() {
+        assert_eq!(
+            effective_runner_path(Some("  "), Some("/opt/wine/bin/wine")),
+            Some("/opt/wine/bin/wine")
+        );
+        assert_eq!(
+            effective_runner_path(Some("/server/wine"), Some("/global/wine")),
+            Some("/server/wine")
+        );
+    }
 }

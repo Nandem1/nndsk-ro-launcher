@@ -1,0 +1,39 @@
+{
+  "canonicalFieldIds": [
+    "base-setup-recipe-revision",
+    "desired-prefix-fingerprint",
+    "dxvk",
+    "environment-builder-revision",
+    "graphics-profile",
+    "invocation-policy-revision",
+    "observed-prefix-architecture",
+    "overlay",
+    "overlay-config-digest",
+    "prefix-binding-status",
+    "repairable-dependency-identities",
+    "runner-identity",
+    "runner-kind",
+    "runtime-plan-recipe-revision",
+    "supported-prefix-architectures",
+    "sync-plan",
+    "umu-provenance",
+    "webview2-required",
+    "wow64-layout"
+  ],
+  "managedProtonDxvk": {
+    "desiredPrefixDigestSha256Hex": "a23f2a940a9cb8e5110b0e454ad68a35a22af760c005bcd0ebdf47ab44330270",
+    "observedMaterialSha256Hex": {
+      "entrypoint": "54af56937a136b38daf369c0d057ed741bfb08b0c3fd8a55f58e70d347e757c9",
+      "umuEntrypoint": "0f7593c794b6c43b752f6e4c8ebbe6434a5786369e3f64ba8b40e6e467b761f6"
+    },
+    "digestSha256Hex": "565e8df745e282d09c093302ee143341592f41a5449128231ae35c2015ec5a3e"
+  },
+  "wine716ManagedDxvk": {
+    "desiredPrefixDigestSha256Hex": "b16b4bb4d6bd3d66d01cf0da25f2056f3533c3464dc31067c93f67a52b92f4af",
+    "digestSha256Hex": "28f7edaad4eeeef7b2a546a4a76f95a7d92b5daac9843c20a5a8cfd15b6bd0db"
+  },
+  "wine716DgVoodooDxvk": {
+    "desiredPrefixDigestSha256Hex": "b16b4bb4d6bd3d66d01cf0da25f2056f3533c3464dc31067c93f67a52b92f4af",
+    "digestSha256Hex": "b9263bc23f3c7df997acd7fe2ffa6f162f315a67f1d28e39a943a9d72c3f7d8e"
+  }
+}

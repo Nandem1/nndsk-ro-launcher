@@ -1,0 +1,22 @@
+{
+  "schema2": {
+    "schemaVersion": 2,
+    "files": [
+      {
+        "name": "DDraw.dll",
+        "size": 1,
+        "hash": "0000000000000000"
+      }
+    ]
+  },
+  "futureSchema": {
+    "schemaVersion": 999,
+    "files": [
+      {
+        "name": "DDraw.dll",
+        "size": 1,
+        "hash": "0000000000000000"
+      }
+    ]
+  }
+}

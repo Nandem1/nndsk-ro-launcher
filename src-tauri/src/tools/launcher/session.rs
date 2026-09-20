@@ -18,23 +18,49 @@ use crate::tools::input::InputGateway;
 use crate::tools::memory_sessions::{
     launcher_memory_ancestor, MemoryAncestor, MemorySessionRegistry,
 };
-use crate::tools::prefix::MANAGED_DXVK_COMPONENT;
+use crate::tools::prefix::{DxvkProvision, MANAGED_DXVK_COMPONENT};
 use crate::tools::presence::{overrides_from_autopot, PresenceHandle};
 use crate::tools::runner_sessions::{
     path_log_token, prefix_log_token, ClientRuntimeGuard, RunnerOperation, RunnerSessionRegistry,
     SessionOwnership, SpawnedRunner,
 };
 use crate::tools::runners::ensure_managed_runtime;
+use crate::tools::runtime::{
+    apply_graphics_environment_to_invocation, classify_run_outcome, enqueue_persist_finished,
+    enqueue_persist_started, enqueue_persist_unreached, new_observation_id, observe_legacy_runtime,
+    operational_session_anchor, resolve_operational_plan_with_profile, runtime_benchmark_enabled,
+    runtime_graphics_plan_enabled, runtime_observe_enabled, runtime_shadow_enabled,
+    DgVoodooObservation, DgVoodooState, InvocationPlan, InvocationTarget, LegacyRuntimeInput,
+    ObservationFinishedPayload, ObservationStartedPayload, OperationalRuntimeInput, OutcomeInput,
+    PlanAvailability, RunOutcome, RuntimePlan, RuntimeProfile, ShadowOperation,
+    StartupFailureClass,
+};
 use crate::tools::server_tools;
 use crate::tools::spammer::SpammerHandle;
 use crate::utils::audio;
 use crate::utils::gecko::install_gecko_for_runner;
 use crate::utils::process::drain_game_streams_redacted;
 use crate::utils::{
-    apply_game_env, emit_tool_log_opt, required_game_dir, resolve_server_wine_context_with_runner,
+    emit_tool_log_opt, required_game_dir, resolve_server_wine_context_with_runner,
     validate_runtime_prefix, work_dir_from_exe, ExitEvent, OperationGuard, EVENT_GAME_CLIENT,
     EVENT_GAME_EXIT,
 };
+
+fn graphics_environment_error_message(
+    error: crate::tools::runtime::GraphicsEnvironmentError,
+) -> String {
+    match error {
+        crate::tools::runtime::GraphicsEnvironmentError::InvalidDllName => {
+            "invalid-dll-name".to_string()
+        }
+        crate::tools::runtime::GraphicsEnvironmentError::OverrideConflict(conflict) => {
+            format!("override-conflict:{}", conflict.dll)
+        }
+        crate::tools::runtime::GraphicsEnvironmentError::EnvironmentConflict(conflict) => {
+            format!("environment-conflict:{}", conflict.key)
+        }
+    }
+}
 
 const DIRECT_LAUNCH_TIMEOUT: Duration = Duration::from_secs(30);
 const PATCHER_LAUNCH_TIMEOUT: Duration = Duration::from_secs(5 * 60);
@@ -72,9 +98,10 @@ pub async fn launch_game(
         sessions,
         memory,
     } = tools;
+    let default_runner = runner.clone();
     ensure_managed_runtime(&app).await?;
     let ctx = resolve_server_wine_context_with_runner(Some(&server), runner).await?;
-    let prefix_health = validate_runtime_prefix(&ctx)?;
+    validate_runtime_prefix(&ctx)?;
     let missing_components =
         server_tools::missing_runtime_components(&server, std::path::Path::new(&ctx.prefix));
     if !missing_components.is_empty() {
@@ -112,40 +139,129 @@ pub async fn launch_game(
         format!("[Launch] uinput preparado antes del runner: {devices}"),
     );
 
-    let op = RunnerOperation::begin(Some(&app), sessions, &game, &ctx).await?;
+    let tools_status = server_tools::scan_status(&app, &server).ok();
+    let dgvoodoo_configured = tools_status
+        .as_ref()
+        .is_some_and(|status| status.dgvoodoo.configured);
+    let webview2_required = tools_status
+        .as_ref()
+        .is_some_and(|status| status.diagnostics.webview2_required);
     let game_dir = required_game_dir(&server.executable_path)?;
+    let operational_input = OperationalRuntimeInput {
+        server_runner: server.runner.as_deref(),
+        default_runner: default_runner.as_deref(),
+        context: &ctx,
+        dgvoodoo: DgVoodooState::verified(dgvoodoo_configured),
+        webview2_required,
+    };
+    let operational_profile_plan = if runtime_graphics_plan_enabled()
+        || runtime_observe_enabled()
+        || runtime_benchmark_enabled()
+    {
+        resolve_operational_plan_with_profile(operational_input).ok()
+    } else {
+        None
+    };
+    let anchor = operational_session_anchor(
+        &ctx,
+        operational_profile_plan.as_ref().map(|(_, plan)| plan),
+        webview2_required,
+    );
+    let observation_id = if runtime_observe_enabled() {
+        Some(new_observation_id())
+    } else {
+        None
+    };
+    let op = RunnerOperation::begin(Some(&app), sessions, &game, &ctx, &anchor).await?;
     let prefix_operation =
         OperationGuard::acquire_shared("prefix", std::path::Path::new(&ctx.prefix))?;
     let dgvoodoo_operation =
         OperationGuard::acquire_shared("dgvoodoo", std::path::Path::new(&game_dir))?;
-    install_gecko_for_runner(&app, &op).await?;
-    audio::ensure_audio_driver(Some(&app), &op).await?;
-
-    let tools_status = server_tools::scan_status(&app, &server).ok();
-    let use_dgvoodoo = tools_status
-        .as_ref()
-        .is_some_and(|status| status.dgvoodoo.configured);
-    let wine_7_16 = ctx.resolved.is_wine_7_16();
-    let use_managed_dxvk = wine_7_16
-        && prefix_health.manifest.as_ref().is_some_and(|manifest| {
-            manifest
-                .components
-                .iter()
-                .any(|component| component == MANAGED_DXVK_COMPONENT)
-        });
-    if wine_7_16 && !use_managed_dxvk {
+    let locked_dgvoodoo_configured = server_tools::scan_dgvoodoo_status(&app, &server)
+        .map(|status| status.configured)
+        .unwrap_or(false);
+    if locked_dgvoodoo_configured != dgvoodoo_configured {
         return Err(
-            "El entorno Wine 7.16 no registra DXVK 2.6.2; rearma este entorno antes de jugar"
+            "La configuración dgVoodoo cambió durante la preparación; vuelve a intentar"
                 .to_string(),
         );
     }
-    if use_managed_dxvk {
-        let prefix_token = prefix_log_token(std::path::Path::new(&ctx.prefix));
-        emit_tool_log_opt(
+    let prefix_health = validate_runtime_prefix(&ctx)?;
+    install_gecko_for_runner(&app, &op).await?;
+    audio::ensure_audio_driver(Some(&app), &op).await?;
+    let wine_7_16 = ctx.resolved.is_wine_7_16();
+    let manifest_has_managed_dxvk = prefix_health.manifest.as_ref().is_some_and(|manifest| {
+        manifest
+            .components()
+            .iter()
+            .any(|component| component == MANAGED_DXVK_COMPONENT)
+    });
+    if runtime_shadow_enabled() {
+        let dxvk = if ctx.resolved.is_proton() {
+            DxvkProvision::Runner
+        } else if wine_7_16 {
+            DxvkProvision::Managed
+        } else {
+            DxvkProvision::Winetricks
+        };
+        observe_legacy_runtime(
             Some(&app),
-            format!("[Graphics] Wine 7.16 old WoW64 + DXVK 2.6.2 | prefix={prefix_token}"),
+            ShadowOperation::Launch,
+            LegacyRuntimeInput {
+                server_runner: server.runner.as_deref(),
+                default_runner: default_runner.as_deref(),
+                context: &ctx,
+                dxvk,
+                dgvoodoo: tools_status
+                    .as_ref()
+                    .map(|status| DgVoodooObservation::verified(status.dgvoodoo.configured))
+                    .unwrap_or(DgVoodooObservation::Unavailable),
+                webview2_required,
+                recommendation: None,
+            },
         );
     }
+    let graphics_target = if is_patcher {
+        InvocationTarget::LaunchPatcher
+    } else {
+        InvocationTarget::Game
+    };
+    let operational_plan = if runtime_graphics_plan_enabled() {
+        let plan = operational_profile_plan
+            .as_ref()
+            .map(|(_, plan)| plan)
+            .ok_or_else(|| "runtime-plan-resolution-failed".to_string())?;
+        if plan.graphics().dxvk_provider().is_managed_prefix() && !manifest_has_managed_dxvk {
+            return Err(
+                "El entorno Wine 7.16 no registra DXVK 2.6.2; rearma este entorno antes de jugar"
+                    .to_string(),
+            );
+        }
+        if plan.graphics().dxvk_provider().is_managed_prefix() {
+            let prefix_token = prefix_log_token(std::path::Path::new(&ctx.prefix));
+            emit_tool_log_opt(
+                Some(&app),
+                format!("[Graphics] Wine 7.16 old WoW64 + DXVK 2.6.2 | prefix={prefix_token}"),
+            );
+        }
+        Some(plan)
+    } else {
+        let use_managed_dxvk = wine_7_16 && manifest_has_managed_dxvk;
+        if wine_7_16 && !use_managed_dxvk {
+            return Err(
+                "El entorno Wine 7.16 no registra DXVK 2.6.2; rearma este entorno antes de jugar"
+                    .to_string(),
+            );
+        }
+        if use_managed_dxvk {
+            let prefix_token = prefix_log_token(std::path::Path::new(&ctx.prefix));
+            emit_tool_log_opt(
+                Some(&app),
+                format!("[Graphics] Wine 7.16 old WoW64 + DXVK 2.6.2 | prefix={prefix_token}"),
+            );
+        }
+        None
+    };
     if wine_7_16 {
         emit_tool_log_opt(
             Some(&app),
@@ -169,7 +285,28 @@ pub async fn launch_game(
     let mut invocation =
         ctx.resolved
             .game_invocation(&ctx.prefix, &launch_exe, rendered_args.iter(), &work_dir)?;
-    apply_game_env(&mut invocation, use_dgvoodoo, use_managed_dxvk, &ctx.prefix);
+    if let Some(plan) = &operational_plan {
+        let graphics = InvocationPlan {
+            target: graphics_target,
+            plan,
+        }
+        .environment()
+        .map_err(graphics_environment_error_message)?;
+        apply_graphics_environment_to_invocation(&mut invocation, &graphics)
+            .map_err(graphics_environment_error_message)?;
+    } else {
+        let use_dgvoodoo = dgvoodoo_configured;
+        let use_managed_dxvk = wine_7_16 && manifest_has_managed_dxvk;
+        {
+            #[allow(deprecated)]
+            crate::utils::apply_game_env(
+                &mut invocation,
+                use_dgvoodoo,
+                use_managed_dxvk,
+                &ctx.prefix,
+            );
+        }
+    }
 
     let mut spawned = op.spawn(invocation, &redaction_values).await?;
     let controller_pid = spawned
@@ -177,6 +314,28 @@ pub async fn launch_game(
         .ok_or_else(|| "El runner no informó su PID".to_string())?;
     let Some(controller_identity) = capture_process_identity(controller_pid) else {
         let _ = spawned.terminate().await;
+        enqueue_unreached_observation(
+            observation_id.clone(),
+            operational_profile_plan.as_ref(),
+            &server,
+            &client_id,
+            is_patcher,
+            &anchor,
+            &ctx,
+            dgvoodoo_configured,
+            &game_dir,
+            None,
+            op.lease().map(|lease| lease.supervisor_identity()),
+            supervised_session,
+            classify_run_outcome(OutcomeInput {
+                reached_running: false,
+                stop_requested: false,
+                startup_timeout: false,
+                startup_failure: Some(StartupFailureClass::ControllerIdentityMissing),
+                controller_exit_before_terminate: None,
+                controller_exit_after_terminate: -1,
+            }),
+        );
         return Err("El proceso controlador terminó antes de poder identificarlo".to_string());
     };
     if let Err(error) = game.mark_controller(reservation, controller_identity) {
@@ -228,6 +387,34 @@ pub async fn launch_game(
             if let Some(task) = output_task {
                 let _ = task.await;
             }
+            let stop_requested = error.contains("cancelado por el usuario");
+            let startup_timeout = error.contains("dentro de");
+            enqueue_unreached_observation(
+                observation_id.clone(),
+                operational_profile_plan.as_ref(),
+                &server,
+                &client_id,
+                is_patcher,
+                &anchor,
+                &ctx,
+                dgvoodoo_configured,
+                &game_dir,
+                Some(controller_identity),
+                op.lease().map(|lease| lease.supervisor_identity()),
+                supervised_session,
+                classify_run_outcome(OutcomeInput {
+                    reached_running: false,
+                    stop_requested,
+                    startup_timeout,
+                    startup_failure: if stop_requested || startup_timeout {
+                        None
+                    } else {
+                        Some(StartupFailureClass::GameProcessWaitFailed)
+                    },
+                    controller_exit_before_terminate: None,
+                    controller_exit_after_terminate: -1,
+                }),
+            );
             return Err(error);
         }
     };
@@ -276,7 +463,13 @@ pub async fn launch_game(
         },
     };
 
-    let snapshot = match game.mark_running(reservation, identity, runtime) {
+    let snapshot = match game.mark_running(
+        reservation,
+        identity,
+        runtime,
+        anchor.plan_id.clone(),
+        observation_id.clone(),
+    ) {
         Ok(snapshot) => snapshot,
         Err(error) => {
             let _ = spawned.terminate().await;
@@ -286,6 +479,7 @@ pub async fn launch_game(
             return Err(error);
         }
     };
+    let supervisor_identity = op.lease().map(|lease| lease.supervisor_identity());
     drop(op);
 
     if supervised_session {
@@ -319,6 +513,43 @@ pub async fn launch_game(
 
     let mut launch_snapshot = snapshot;
     launch_snapshot.profile_memory = profile_memory;
+    let observation_started_task = if let (Some(observation_id), Some((profile, plan))) =
+        (observation_id.as_ref(), operational_profile_plan.as_ref())
+    {
+        enqueue_persist_started(ObservationStartedPayload {
+            observation_id: observation_id.clone(),
+            client_id: client_id.clone(),
+            server_local_id: server.id.clone(),
+            game_executable_name: std::path::Path::new(&server.executable_path)
+                .file_name()
+                .map(|name| name.to_string_lossy().to_string())
+                .unwrap_or_else(|| "game.exe".to_string()),
+            invocation_target: if is_patcher {
+                "launch-patcher".to_string()
+            } else {
+                "game".to_string()
+            },
+            plan_id: anchor.plan_id.clone(),
+            runtime_fingerprint: anchor.runtime_fingerprint.clone(),
+            prefix_fingerprint_hex: ctx.identity.desired_fingerprint.digest.hex_digest(),
+            prefix_token: prefix_log_token(std::path::Path::new(&ctx.prefix)),
+            profile: profile.clone(),
+            plan: plan.clone(),
+            overlay_verified: dgvoodoo_configured,
+            game_dir: Some(game_dir.clone()),
+            game_identity: Some(identity),
+            controller_identity: Some(controller_identity),
+            supervisor_identity,
+            supervised: supervised_session,
+            plan_availability: if operational_profile_plan.is_some() {
+                PlanAvailability::Resolved
+            } else {
+                PlanAvailability::Unresolved
+            },
+        })
+    } else {
+        None
+    };
     spawn_exit_task(
         app,
         game,
@@ -340,9 +571,70 @@ pub async fn launch_game(
         memory.clone(),
         memory_ancestor,
         hp_base,
+        observation_id,
+        observation_started_task,
+        controller_identity,
     );
 
     Ok(launch_snapshot)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn enqueue_unreached_observation(
+    observation_id: Option<String>,
+    plan_pair: Option<&(RuntimeProfile, RuntimePlan)>,
+    server: &ServerConfig,
+    client_id: &str,
+    is_patcher: bool,
+    anchor: &crate::tools::runtime::SessionAnchorV2,
+    ctx: &crate::utils::WineContext,
+    dgvoodoo_configured: bool,
+    game_dir: &str,
+    controller_identity: Option<ProcessIdentity>,
+    supervisor_identity: Option<ProcessIdentity>,
+    supervised: bool,
+    outcome: RunOutcome,
+) {
+    let (Some(observation_id), Some((profile, plan))) = (observation_id, plan_pair) else {
+        return;
+    };
+    enqueue_persist_unreached(
+        ObservationStartedPayload {
+            observation_id: observation_id.clone(),
+            client_id: client_id.to_string(),
+            server_local_id: server.id.clone(),
+            game_executable_name: std::path::Path::new(&server.executable_path)
+                .file_name()
+                .map(|name| name.to_string_lossy().to_string())
+                .unwrap_or_else(|| "game.exe".to_string()),
+            invocation_target: if is_patcher {
+                "launch-patcher".to_string()
+            } else {
+                "game".to_string()
+            },
+            plan_id: anchor.plan_id.clone(),
+            runtime_fingerprint: anchor.runtime_fingerprint.clone(),
+            prefix_fingerprint_hex: ctx.identity.desired_fingerprint.digest.hex_digest(),
+            prefix_token: prefix_log_token(std::path::Path::new(&ctx.prefix)),
+            profile: profile.clone(),
+            plan: plan.clone(),
+            overlay_verified: dgvoodoo_configured,
+            game_dir: Some(game_dir.to_string()),
+            game_identity: None,
+            controller_identity,
+            supervisor_identity,
+            supervised,
+            plan_availability: PlanAvailability::Resolved,
+        },
+        ObservationFinishedPayload {
+            observation_id,
+            outcome,
+            game_identity: None,
+            controller_identity,
+            identity_stale: false,
+            handoff_count: 0,
+        },
+    );
 }
 
 enum ControllerHandle<'a> {
@@ -379,6 +671,9 @@ fn spawn_exit_task(
     memory: MemorySessionRegistry,
     memory_ancestor: MemoryAncestor,
     hp_base: u32,
+    observation_id: Option<String>,
+    observation_started_task: Option<tokio::task::JoinHandle<()>>,
+    initial_controller_identity: ProcessIdentity,
 ) {
     let presence_client_id = snapshot.client_id.clone();
     let app_for_exit = app.clone();
@@ -389,6 +684,8 @@ fn spawn_exit_task(
         let mut seen = baseline;
         seen.insert(active_identity);
         let controller_pid = controller.controller_pid().unwrap_or(0);
+        let mut handoff_count = 0u32;
+        let started_game_identity = identity;
         loop {
             while verify_process_identity(&active_identity) {
                 sleep(Duration::from_millis(500)).await;
@@ -464,12 +761,35 @@ fn spawn_exit_task(
             }
             seen.insert(replacement);
             active_identity = replacement;
+            handoff_count += 1;
         }
 
+        let spontaneous = controller.try_exit_status();
+        let stop_requested = game.stop_requested(reservation);
         let code = {
             let _ = controller.terminate().await;
             controller.wait().await.unwrap_or(-1)
         };
+        if let Some(started_task) = observation_started_task {
+            let _ = started_task.await;
+        }
+        if let Some(observation_id) = observation_id {
+            enqueue_persist_finished(ObservationFinishedPayload {
+                observation_id,
+                outcome: classify_run_outcome(OutcomeInput {
+                    reached_running: true,
+                    stop_requested,
+                    startup_timeout: false,
+                    startup_failure: None,
+                    controller_exit_before_terminate: spontaneous,
+                    controller_exit_after_terminate: code,
+                }),
+                game_identity: Some(active_identity),
+                controller_identity: Some(initial_controller_identity),
+                identity_stale: active_identity != started_game_identity && handoff_count == 0,
+                handoff_count,
+            });
+        }
         if let Some(task) = output_task {
             let _ = task.await;
         }

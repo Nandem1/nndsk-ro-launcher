@@ -6,7 +6,8 @@ use tokio::time::{sleep, timeout};
 
 use crate::state::GameProcessHandle;
 use crate::utils::{
-    inspect_prefix, pipe_output, resolve_runner, OperationGuard, WineContext, PREFIX_SCHEMA_VERSION,
+    inspect_prefix, pipe_output, resolve_runner, OperationGuard, WineContext, PREFIX_SCHEMA_V3,
+    PREFIX_SCHEMA_VERSION,
 };
 
 use super::SessionError;
@@ -105,14 +106,17 @@ fn foreign_runner_available(prefix: &str, ctx: &WineContext) -> bool {
     let Some(manifest) = health.manifest else {
         return false;
     };
-    if manifest.schema_version != PREFIX_SCHEMA_VERSION || manifest.runner_kind == "unknown" {
+    let schema = manifest.schema_version();
+    if (schema != PREFIX_SCHEMA_VERSION && schema != PREFIX_SCHEMA_V3)
+        || manifest.runner_kind() == "unknown"
+    {
         return false;
     }
-    let Ok(recorded) = resolve_runner(&manifest.runner_path) else {
+    let Ok(recorded) = resolve_runner(manifest.runner_path()) else {
         return false;
     };
     foreign_from_resolved(
-        &manifest.runner_kind,
+        manifest.runner_kind(),
         recorded.kind_label(),
         recorded.runner_path(),
         ctx.resolved.runner_path(),
@@ -166,9 +170,9 @@ async fn shutdown_foreign_leftover_once(ctx: &WineContext) -> Result<(), Session
     let manifest = health
         .manifest
         .ok_or_else(|| SessionError::validation(OUTSIDE_SUPERVISOR_MSG))?;
-    let runner = resolve_runner(&manifest.runner_path)
+    let runner = resolve_runner(manifest.runner_path())
         .map_err(|_| SessionError::validation(OUTSIDE_SUPERVISOR_MSG))?;
-    if runner.kind_label() != manifest.runner_kind {
+    if runner.kind_label() != manifest.runner_kind() {
         return Err(SessionError::validation(OUTSIDE_SUPERVISOR_MSG));
     }
     let invocation = runner
@@ -299,7 +303,8 @@ mod tests {
             memory_access: None,
             profile_memory: None,
         };
-        game.mark_running(reservation, registered, runtime).unwrap();
+        game.mark_running(reservation, registered, runtime, "test-plan".into(), None)
+            .unwrap();
         let leftover = identity(1);
         let err = plan_bootstrap_prefix_processes_with(&[leftover, registered], &game, |id| {
             id.pid == leftover.pid

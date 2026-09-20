@@ -31,6 +31,10 @@ pub fn apply_prefix_env_command(cmd: &mut Command, prefix_path: &str) {
     apply_prefix_env(cmd, prefix_path);
 }
 
+#[deprecated(
+    since = "0.0.0",
+    note = "Usar GraphicsPlan::environment_for + apply_graphics_environment; retiro previsto 2026-12-18"
+)]
 pub fn apply_game_env<E: ProcessEnv>(
     env: &mut E,
     use_dgvoodoo: bool,
@@ -71,12 +75,17 @@ pub fn dxvk_state_root(prefix_path: &str) -> PathBuf {
 }
 
 /// OpenSetup y el patcher deben enumerar la misma GPU y backend que usará el juego.
+#[deprecated(
+    since = "0.0.0",
+    note = "Usar GraphicsPlan::environment_for + apply_graphics_environment; retiro previsto 2026-12-18"
+)]
 pub fn apply_tool_env<E: ProcessEnv>(
     env: &mut E,
     use_dgvoodoo: bool,
     use_managed_dxvk: bool,
     prefix_path: &str,
 ) {
+    #[allow(deprecated)]
     apply_game_env(env, use_dgvoodoo, use_managed_dxvk, prefix_path);
 }
 
@@ -206,6 +215,8 @@ fn filter_appimage_paths(value: &OsStr, app_dir: &Path) -> Option<OsString> {
 
 #[cfg(test)]
 mod tests {
+    #![allow(deprecated)]
+
     use super::*;
     use std::collections::HashMap;
 
@@ -298,5 +309,33 @@ mod tests {
         assert_eq!(command_env(&command, "DXVK_HUD"), None);
         assert_eq!(command_env(&command, "DXVK_ASYNC"), None);
         assert_eq!(command_env(&command, "PROTON_USE_WOW64"), None);
+    }
+
+    #[test]
+    fn legacy_target_matrix_keeps_maintenance_patcher_without_dgvoodoo() {
+        let overlay_and_dxvk = OsString::from(
+            "d3dimm=n,b;ddraw=n,b;d3d8=n,b;d3d9=n,b;d3d10core=n,b;d3d11=n,b;dxgi=n,b",
+        );
+        let dxvk_only = OsString::from("d3d8=n,b;d3d9=n,b;d3d10core=n,b;d3d11=n,b;dxgi=n,b");
+        for (target, use_dgvoodoo, expected) in [
+            ("game", true, overlay_and_dxvk.clone()),
+            ("launch-patcher", true, overlay_and_dxvk.clone()),
+            ("maintenance-patcher", false, dxvk_only.clone()),
+            ("open-setup", true, overlay_and_dxvk.clone()),
+            ("graphics-control-panel", true, overlay_and_dxvk.clone()),
+        ] {
+            let mut command = Command::new("/usr/bin/true");
+            apply_game_env(&mut command, use_dgvoodoo, true, "/tmp/prefix");
+            assert_eq!(
+                command_env(&command, "WINEDLLOVERRIDES"),
+                Some(Some(expected)),
+                "target {target}"
+            );
+            assert_eq!(
+                command_env(&command, "WINE_LARGE_ADDRESS_AWARE"),
+                Some(Some("1".into())),
+                "target {target}"
+            );
+        }
     }
 }

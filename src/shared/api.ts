@@ -19,6 +19,9 @@ import type {
   ServerToolsStatus,
   SpammerConfig,
   SpammerStatusEvent,
+  BenchmarkComparison,
+  BenchmarkRunSummary,
+  RuntimeObservationSummary,
   StorageNotice,
   ToolKind,
   UninstallDgVoodooResult,
@@ -81,6 +84,73 @@ export const api = {
   },
 
   takeStorageNotices: () => invoke<StorageNotice[]>('take_storage_notices'),
+
+  listRuntimeObservations: () =>
+    invoke<RuntimeObservationSummary[]>('list_runtime_observations'),
+
+  exportRuntimeObservations: (destPath: string) =>
+    invoke<{ exportedCount: number }>('export_runtime_observations', {
+      destPath,
+    }),
+
+  deleteRuntimeObservations: () => invoke<void>('delete_runtime_observations'),
+
+  startRuntimeBenchmarkRun: (input: {
+    clientId: string
+    server: ServerConfig
+    runner: string | null
+    arm: string
+    sceneId: string
+    loadDescriptor: string
+    resolution: { width: number; height: number; fullscreen: boolean }
+    warmupSeconds: number
+    captureSeconds: number
+    thermalDeclared?: string
+  }) => invoke<BenchmarkRunSummary>('start_runtime_benchmark_run', { input }),
+
+  beginRuntimeBenchmarkCapture: (runId: string) =>
+    invoke<BenchmarkRunSummary>('begin_runtime_benchmark_capture', { runId }),
+
+  finishRuntimeBenchmarkCapture: (runId: string) =>
+    invoke<BenchmarkRunSummary>('finish_runtime_benchmark_capture', { runId }),
+
+  importRuntimeBenchmarkSamples: (runId: string, csvPath: string) =>
+    invoke<BenchmarkRunSummary>('import_runtime_benchmark_samples', {
+      runId,
+      csvPath,
+    }),
+
+  setRuntimeBenchmarkVisualCheck: (runId: string, status: string) =>
+    invoke<BenchmarkRunSummary>('set_runtime_benchmark_visual_check', {
+      runId,
+      status,
+    }),
+
+  listRuntimeBenchmarks: () =>
+    invoke<BenchmarkRunSummary[]>('list_runtime_benchmarks'),
+
+  compareRuntimeBenchmarks: (leftRunIds: string[], rightRunIds: string[]) =>
+    invoke<BenchmarkComparison>('compare_runtime_benchmarks', {
+      input: { leftRunIds, rightRunIds },
+    }),
+
+  exportRuntimeBenchmarks: (destPath: string, runIds: string[]) =>
+    invoke<{ exportedCount: number }>('export_runtime_benchmarks', {
+      destPath,
+      runIds,
+    }),
+
+  exportRuntimeBenchmarkComparison: (
+    destPath: string,
+    leftRunIds: string[],
+    rightRunIds: string[],
+  ) =>
+    invoke<{ exportedCount: number }>('export_runtime_benchmark_comparison', {
+      destPath,
+      input: { leftRunIds, rightRunIds },
+    }),
+
+  deleteRuntimeBenchmarks: () => invoke<void>('delete_runtime_benchmarks'),
 
   listRunners: () => invoke<RunnerInfo[]>('list_runners'),
 

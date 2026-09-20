@@ -13,6 +13,7 @@
 //! 2. Orquestación → `tools/<feature>/session.rs` (+ módulos internos)
 //! 3. Handler → `commands/<feature>.rs`
 
+pub(crate) mod artifacts;
 pub mod autobuff;
 pub mod autopot;
 pub mod deps;
@@ -24,6 +25,7 @@ pub mod prefix;
 pub mod presence;
 pub mod runner_sessions;
 pub mod runners;
+pub(crate) mod runtime;
 pub mod server_tools;
 pub mod session;
 pub mod spammer;
