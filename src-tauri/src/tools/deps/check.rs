@@ -441,10 +441,10 @@ fn managed_runtime_pending(
     server: Option<&ServerConfig>,
     selected_runner: Option<&str>,
 ) -> Result<DependencyStatus, String> {
-    let effective_runner = server
-        .and_then(|server| server.runner.as_deref())
-        .or(selected_runner)
-        .filter(|runner| !runner.trim().is_empty());
+    let effective_runner = effective_runner_path(
+        server.and_then(|server| server.runner.as_deref()),
+        selected_runner,
+    );
     let location = if effective_runner.is_none()
         || effective_runner
             .is_some_and(|runner| paths_match(Path::new(runner), &managed_proton_path()))
@@ -578,6 +578,15 @@ fn managed_runtime_pending(
     })
 }
 
+fn effective_runner_path<'a>(
+    server_runner: Option<&'a str>,
+    selected_runner: Option<&'a str>,
+) -> Option<&'a str> {
+    server_runner
+        .filter(|runner| !runner.trim().is_empty())
+        .or_else(|| selected_runner.filter(|runner| !runner.trim().is_empty()))
+}
+
 async fn resolve_context(
     server: Option<&ServerConfig>,
     runner: Option<String>,
@@ -592,4 +601,21 @@ async fn resolve_context(
 fn proton_dxvk_available(proton_root: &Path) -> bool {
     let dxvk = proton_root.join("files/lib/wine/dxvk");
     dxvk.join("x86_64-windows/d3d9.dll").is_file() && dxvk.join("i386-windows/d3d9.dll").is_file()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::effective_runner_path;
+
+    #[test]
+    fn empty_server_runner_does_not_mask_the_global_selection() {
+        assert_eq!(
+            effective_runner_path(Some("  "), Some("/opt/wine/bin/wine")),
+            Some("/opt/wine/bin/wine")
+        );
+        assert_eq!(
+            effective_runner_path(Some("/server/wine"), Some("/global/wine")),
+            Some("/server/wine")
+        );
+    }
 }

@@ -327,7 +327,8 @@ pub(crate) fn parse_imported_csv_v1(path: &Path) -> Result<ParsedCsvSamples, Str
             continue;
         }
         let parts: Vec<&str> = line.split(',').map(str::trim).collect();
-        if parts.is_empty() {
+        let expected_columns = if monotonic_ns.is_some() { 2 } else { 1 };
+        if parts.len() != expected_columns {
             return Err("csv-invalid-row".into());
         }
         let value = parts[0]
@@ -338,9 +339,6 @@ pub(crate) fn parse_imported_csv_v1(path: &Path) -> Result<ParsedCsvSamples, Str
         }
         frametime_ms.push(value);
         if let Some(ref mut mono) = monotonic_ns {
-            if parts.len() < 2 {
-                return Err("csv-invalid-row".into());
-            }
             let ns = parts[1]
                 .parse::<u64>()
                 .map_err(|_| "csv-invalid-row".to_string())?;
@@ -944,6 +942,31 @@ mod tests {
         assert_eq!(parsed.frametime_ms.len(), 100);
         assert_eq!(parsed.frametime_ms[0], 1.0);
         assert_eq!(parsed.frametime_ms[99], 100.0);
+    }
+
+    #[test]
+    fn imported_csv_rejects_extra_or_missing_columns() {
+        let one_column = std::env::temp_dir().join(format!(
+            "ro-benchmark-csv-one-column-{}.csv",
+            std::process::id()
+        ));
+        std::fs::write(&one_column, "frametimeMs\n16.6,unexpected\n").unwrap();
+        assert_eq!(
+            parse_imported_csv_v1(&one_column).unwrap_err(),
+            "csv-invalid-row"
+        );
+
+        let two_columns = std::env::temp_dir().join(format!(
+            "ro-benchmark-csv-two-columns-{}.csv",
+            std::process::id()
+        ));
+        std::fs::write(&two_columns, "frametimeMs,monotonicNs\n16.6\n").unwrap();
+        assert_eq!(
+            parse_imported_csv_v1(&two_columns).unwrap_err(),
+            "csv-invalid-row"
+        );
+        let _ = std::fs::remove_file(one_column);
+        let _ = std::fs::remove_file(two_columns);
     }
 
     #[test]

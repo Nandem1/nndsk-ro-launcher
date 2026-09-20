@@ -37,6 +37,15 @@ pub(crate) struct PrefixBinding {
     pub(crate) eligibility: RuntimeEligibility,
 }
 
+impl PrefixBinding {
+    pub(crate) fn ineligible_reasons(&self) -> Option<&[String]> {
+        match &self.eligibility {
+            RuntimeEligibility::Ineligible { reasons } => Some(reasons),
+            RuntimeEligibility::Eligible | RuntimeEligibility::Indeterminate { .. } => None,
+        }
+    }
+}
+
 pub(crate) fn prefix_v3_write_enabled() -> bool {
     prefix_v3_write_enabled_from(std::env::var("RO_LAUNCHER_PREFIX_V3").ok().as_deref())
 }
@@ -69,31 +78,10 @@ pub(crate) fn resolve_prefix_binding_for_managed_descriptor(
 ) -> Result<PrefixBinding, String> {
     let desired = compute_prefix_fingerprint(&managed_proton_prefix_fingerprint_input());
     let runner_path = managed_proton_path();
-    let base = PrefixLocation {
-        path: server
-            .map(|server| {
-                if server.effective_prefix_mode() == crate::models::server::PrefixMode::Isolated {
-                    isolated_prefix_path_for_runner(
-                        &server.id,
-                        runner_path.to_string_lossy().as_ref(),
-                    )
-                } else {
-                    crate::utils::prefix_path()
-                }
-            })
-            .unwrap_or_else(crate::utils::prefix_path),
-        scope: server
-            .map(|s| match s.effective_prefix_mode() {
-                crate::models::server::PrefixMode::Shared => PrefixScope::Shared,
-                crate::models::server::PrefixMode::Isolated => PrefixScope::Isolated,
-                crate::models::server::PrefixMode::Custom => PrefixScope::Custom,
-            })
-            .unwrap_or(PrefixScope::Shared),
-        managed: server
-            .map(|s| s.effective_prefix_mode() != crate::models::server::PrefixMode::Custom)
-            .unwrap_or(true),
-        server_id: server.map(|s| s.id.clone()),
-    };
+    let base = crate::utils::resolve_server_prefix_with_runner(
+        server,
+        Some(runner_path.to_string_lossy().as_ref()),
+    )?;
     resolve_prefix_binding_for_location(server, &managed_proton_stub(), &desired, base)
 }
 
@@ -140,7 +128,7 @@ fn resolve_prefix_binding_for_location(
         });
     }
 
-    if let Some(reason) = v3_path_fingerprint_conflict(server_id, desired) {
+    if let Some(reason) = v3_path_identity_conflict(server_id, desired) {
         location.path = isolated_prefix_path_v3(server_id, &desired.digest.hex_digest());
         return Ok(PrefixBinding {
             status: PrefixIdentityStatus::Incompatible,
@@ -164,6 +152,20 @@ fn resolve_prefix_binding_for_location(
             location,
             eligibility: RuntimeEligibility::Eligible,
         });
+    }
+
+    if !prefix_v3_write_enabled() {
+        if let Some(reason) = v2_path_identity_conflict_at(&v2_path, server_id, resolved) {
+            location.path = v2_path;
+            return Ok(PrefixBinding {
+                status: PrefixIdentityStatus::Incompatible,
+                desired_fingerprint: desired.clone(),
+                location,
+                eligibility: RuntimeEligibility::Ineligible {
+                    reasons: vec![reason],
+                },
+            });
+        }
     }
 
     let v2_exists = Path::new(&v2_path).is_dir();
@@ -213,13 +215,44 @@ fn resolve_prefix_binding_for_location(
     })
 }
 
-/// Directorio v3 en el path truncado con manifiesto cuyo digest completo no coincide (colisión o mismatch).
-fn v3_path_fingerprint_conflict(server_id: &str, desired: &PrefixFingerprint) -> Option<String> {
-    let path = isolated_prefix_path_v3(server_id, &desired.digest.hex_digest());
-    v3_path_fingerprint_conflict_at(&path, server_id, desired)
+fn v2_path_identity_conflict_at(
+    path: &str,
+    server_id: &str,
+    resolved: &ResolvedRunner,
+) -> Option<String> {
+    let root = Path::new(path);
+    if !root.is_dir()
+        || root
+            .read_dir()
+            .is_ok_and(|mut entries| entries.next().is_none())
+    {
+        return None;
+    }
+    let health = inspect_prefix(path);
+    if health.legacy_marker {
+        return None;
+    }
+    match health.manifest.as_ref() {
+        Some(manifest)
+            if manifest.schema_version() == crate::utils::PREFIX_SCHEMA_VERSION
+                && manifest.server_id() == Some(server_id)
+                && try_legacy_v2_match(server_id, resolved, path) =>
+        {
+            None
+        }
+        Some(_) => Some("v2-prefix-identity-mismatch".to_string()),
+        None => Some("nonempty-without-manifest".to_string()),
+    }
 }
 
-fn v3_path_fingerprint_conflict_at(
+/// Any occupied v3 target that is not the exact server+fingerprint binding is foreign state.
+/// It must never fall through to provisioning, because that would adopt or overwrite a prefix.
+fn v3_path_identity_conflict(server_id: &str, desired: &PrefixFingerprint) -> Option<String> {
+    let path = isolated_prefix_path_v3(server_id, &desired.digest.hex_digest());
+    v3_path_identity_conflict_at(&path, server_id, desired)
+}
+
+fn v3_path_identity_conflict_at(
     path: &str,
     server_id: &str,
     desired: &PrefixFingerprint,
@@ -228,17 +261,25 @@ fn v3_path_fingerprint_conflict_at(
     if !root.is_dir() {
         return None;
     }
-    let health = inspect_prefix(path);
-    let manifest = health.manifest.as_ref()?;
-    if manifest.schema_version() != PREFIX_SCHEMA_V3 {
+    if root
+        .read_dir()
+        .is_ok_and(|mut entries| entries.next().is_none())
+    {
         return None;
     }
+    let health = inspect_prefix(path);
+    let Some(manifest) = health.manifest.as_ref() else {
+        return Some("nonempty-without-manifest".to_string());
+    };
+    if manifest.schema_version() != PREFIX_SCHEMA_V3 {
+        return Some("v3-prefix-manifest-schema-mismatch".to_string());
+    }
     if manifest.server_id() != Some(server_id) {
-        return None;
+        return Some("v3-prefix-server-mismatch".to_string());
     }
     let on_disk = manifest.prefix_fingerprint_digest();
     let wanted = desired.digest.hex_digest();
-    if on_disk.is_some_and(|digest| digest != wanted) {
+    if on_disk != Some(wanted.as_str()) {
         Some("v3-prefix-fingerprint-mismatch".to_string())
     } else {
         None
@@ -375,15 +416,6 @@ fn role_label(role: super::model::ObservedMaterialRole) -> String {
 }
 
 #[cfg(test)]
-pub(crate) fn test_desired_prefix_fingerprint(
-    resolved: &ResolvedRunner,
-    probe: &RunnerProbe,
-    wine_7_16: bool,
-) -> Result<PrefixFingerprint, String> {
-    desired_prefix_fingerprint(resolved, probe, wine_7_16)
-}
-
-#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -460,11 +492,87 @@ mod tests {
             DIGEST_DESIRED
         ));
         assert_eq!(
-            v3_path_fingerprint_conflict_at(&path, &server_id, &desired),
+            v3_path_identity_conflict_at(&path, &server_id, &desired),
             Some("v3-prefix-fingerprint-mismatch".to_string())
         );
         assert!(try_v3_verified(&server_id, &desired).is_none());
 
         std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn v3_target_rejects_manifest_owned_by_another_server() {
+        use crate::utils::{write_prefix_manifest_v3, PrefixFingerprintEnvelope, PrefixManifestV3};
+
+        const DIGEST: &str = "a23f2a940a9cb8e5110b0e454ad68a35a22af760c005bcd0ebdf47ab44330270";
+        let root = std::env::temp_dir().join(format!(
+            "ro-launcher-v3-server-mismatch-{}",
+            std::process::id()
+        ));
+        if root.exists() {
+            std::fs::remove_dir_all(&root).unwrap();
+        }
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.to_string_lossy().to_string();
+        write_prefix_manifest_v3(
+            &path,
+            &PrefixManifestV3 {
+                schema_version: PREFIX_SCHEMA_V3,
+                scope: PrefixScope::Isolated,
+                server_id: Some("other-server".to_string()),
+                runner_kind: "proton".to_string(),
+                runner_path: "/opt/managed/proton".to_string(),
+                components: Vec::new(),
+                prefix_fingerprint: PrefixFingerprintEnvelope {
+                    schema_version: 1,
+                    algorithm: "sha256".to_string(),
+                    digest: DIGEST.to_string(),
+                },
+            },
+        )
+        .expect("manifest v3");
+
+        let desired = crate::tools::runtime::fingerprint::prefix_fingerprint_from_hex(DIGEST);
+        assert_eq!(
+            v3_path_identity_conflict_at(&path, "expected-server", &desired),
+            Some("v3-prefix-server-mismatch".to_string())
+        );
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn occupied_v2_target_rejects_another_server_manifest() {
+        use crate::utils::{write_prefix_manifest, PrefixManifest};
+
+        let root = std::env::temp_dir().join(format!(
+            "ro-launcher-v2-server-mismatch-{}",
+            std::process::id()
+        ));
+        if root.exists() {
+            std::fs::remove_dir_all(&root).unwrap();
+        }
+        std::fs::create_dir_all(root.join("drive_c/windows/system32")).unwrap();
+        std::fs::create_dir_all(root.join("dosdevices")).unwrap();
+        std::fs::write(root.join("system.reg"), "reg").unwrap();
+        std::fs::write(root.join("user.reg"), "reg").unwrap();
+        let path = root.to_string_lossy().to_string();
+        write_prefix_manifest(
+            &path,
+            &PrefixManifest {
+                schema_version: crate::utils::PREFIX_SCHEMA_VERSION,
+                scope: PrefixScope::Isolated,
+                server_id: Some("other-server".to_string()),
+                runner_kind: "proton".to_string(),
+                runner_path: "/opt/managed/proton".to_string(),
+                components: Vec::new(),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            v2_path_identity_conflict_at(&path, "expected-server", &managed_proton_stub()),
+            Some("v2-prefix-identity-mismatch".to_string())
+        );
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

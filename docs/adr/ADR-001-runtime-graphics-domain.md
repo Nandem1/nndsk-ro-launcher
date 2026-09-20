@@ -268,8 +268,9 @@ enum GraphicsProfile {
 }
 ```
 
-No se agregan `D7vk`, `WineD3d`, `Custom`, `Layers(Vec<_>)` ni parameters libres. D7VK aparece como
-variant únicamente después del spike y ADR de deployment.
+No se agregan `D7vk`, `WineD3d`, `Custom`, `Layers(Vec<_>)` ni parameters libres. ADR-005 cerró el
+spike D7VK como `no-go`; un variant sólo podría aparecer tras un ADR sustituto con autorización y
+evidencia nuevas.
 
 El plan resuelto es:
 
@@ -394,9 +395,10 @@ struct EnvironmentContribution {
 `NativeThenBuiltin`, equivalente a `n,b`; otras órdenes se añaden sólo con un consumidor real.
 
 `ComponentOwner` identifica tanto el dominio físico como el componente lógico. Por ejemplo,
-`prefix/dxvk-2.6.2` y un futuro `prefix/d7vk-x` son owners diferentes aunque ambos vivan en el
-prefix. `EnvironmentContributorId` identifica de forma estable `runner`, `runtime-base` o el
-component ID gráfico; no se deriva de un display label.
+`prefix/dxvk-2.6.2` y un hipotético `prefix/backend-futuro-x` serían owners diferentes aunque ambos
+vivieran en el prefix. Esto ilustra el modelo, no autoriza un payload concreto.
+`EnvironmentContributorId` identifica de forma estable `runner`, `runtime-base` o el component ID
+gráfico; no se deriva de un display label.
 
 `DllOverrideSet` usa orden determinista por `DllName`. Su operación de merge es:
 
@@ -601,7 +603,8 @@ invalida. No se cachea por display label ni sólo por path.
 - absorber dgVoodoo dentro del prefix manifest;
 - tratar marker/shape como payload hash verificado;
 - usar last-write-wins para DLL/env conflicts;
-- añadir D7VK o WineD3D antes de un consumidor productivo.
+- añadir WineD3D u otro backend sin un consumidor productivo; D7VK queda además prohibido por
+  ADR-005.
 
 ## 14. Consecuencias
 

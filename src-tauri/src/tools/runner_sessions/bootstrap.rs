@@ -303,7 +303,8 @@ mod tests {
             memory_access: None,
             profile_memory: None,
         };
-        game.mark_running(reservation, registered, runtime).unwrap();
+        game.mark_running(reservation, registered, runtime, "test-plan".into(), None)
+            .unwrap();
         let leftover = identity(1);
         let err = plan_bootstrap_prefix_processes_with(&[leftover, registered], &game, |id| {
             id.pid == leftover.pid

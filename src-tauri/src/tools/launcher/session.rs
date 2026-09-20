@@ -28,7 +28,7 @@ use crate::tools::runners::ensure_managed_runtime;
 use crate::tools::runtime::{
     apply_graphics_environment_to_invocation, classify_run_outcome, enqueue_persist_finished,
     enqueue_persist_started, enqueue_persist_unreached, new_observation_id, observe_legacy_runtime,
-    operational_session_anchor, resolve_operational_plan_with_profile,
+    operational_session_anchor, resolve_operational_plan_with_profile, runtime_benchmark_enabled,
     runtime_graphics_plan_enabled, runtime_observe_enabled, runtime_shadow_enabled,
     DgVoodooObservation, DgVoodooState, InvocationPlan, InvocationTarget, LegacyRuntimeInput,
     ObservationFinishedPayload, ObservationStartedPayload, OperationalRuntimeInput, OutcomeInput,
@@ -101,7 +101,7 @@ pub async fn launch_game(
     let default_runner = runner.clone();
     ensure_managed_runtime(&app).await?;
     let ctx = resolve_server_wine_context_with_runner(Some(&server), runner).await?;
-    let prefix_health = validate_runtime_prefix(&ctx)?;
+    validate_runtime_prefix(&ctx)?;
     let missing_components =
         server_tools::missing_runtime_components(&server, std::path::Path::new(&ctx.prefix));
     if !missing_components.is_empty() {
@@ -154,7 +154,10 @@ pub async fn launch_game(
         dgvoodoo: DgVoodooState::verified(dgvoodoo_configured),
         webview2_required,
     };
-    let operational_profile_plan = if runtime_graphics_plan_enabled() || runtime_observe_enabled() {
+    let operational_profile_plan = if runtime_graphics_plan_enabled()
+        || runtime_observe_enabled()
+        || runtime_benchmark_enabled()
+    {
         resolve_operational_plan_with_profile(operational_input).ok()
     } else {
         None
@@ -174,6 +177,16 @@ pub async fn launch_game(
         OperationGuard::acquire_shared("prefix", std::path::Path::new(&ctx.prefix))?;
     let dgvoodoo_operation =
         OperationGuard::acquire_shared("dgvoodoo", std::path::Path::new(&game_dir))?;
+    let locked_dgvoodoo_configured = server_tools::scan_dgvoodoo_status(&app, &server)
+        .map(|status| status.configured)
+        .unwrap_or(false);
+    if locked_dgvoodoo_configured != dgvoodoo_configured {
+        return Err(
+            "La configuración dgVoodoo cambió durante la preparación; vuelve a intentar"
+                .to_string(),
+        );
+    }
+    let prefix_health = validate_runtime_prefix(&ctx)?;
     install_gecko_for_runner(&app, &op).await?;
     audio::ensure_audio_driver(Some(&app), &op).await?;
     let wine_7_16 = ctx.resolved.is_wine_7_16();
@@ -450,7 +463,13 @@ pub async fn launch_game(
         },
     };
 
-    let snapshot = match game.mark_running(reservation, identity, runtime) {
+    let snapshot = match game.mark_running(
+        reservation,
+        identity,
+        runtime,
+        anchor.plan_id.clone(),
+        observation_id.clone(),
+    ) {
         Ok(snapshot) => snapshot,
         Err(error) => {
             let _ = spawned.terminate().await;
@@ -494,7 +513,7 @@ pub async fn launch_game(
 
     let mut launch_snapshot = snapshot;
     launch_snapshot.profile_memory = profile_memory;
-    if let (Some(observation_id), Some((profile, plan))) =
+    let observation_started_task = if let (Some(observation_id), Some((profile, plan))) =
         (observation_id.as_ref(), operational_profile_plan.as_ref())
     {
         enqueue_persist_started(ObservationStartedPayload {
@@ -527,8 +546,10 @@ pub async fn launch_game(
             } else {
                 PlanAvailability::Unresolved
             },
-        });
-    }
+        })
+    } else {
+        None
+    };
     spawn_exit_task(
         app,
         game,
@@ -551,6 +572,7 @@ pub async fn launch_game(
         memory_ancestor,
         hp_base,
         observation_id,
+        observation_started_task,
         controller_identity,
     );
 
@@ -650,6 +672,7 @@ fn spawn_exit_task(
     memory_ancestor: MemoryAncestor,
     hp_base: u32,
     observation_id: Option<String>,
+    observation_started_task: Option<tokio::task::JoinHandle<()>>,
     initial_controller_identity: ProcessIdentity,
 ) {
     let presence_client_id = snapshot.client_id.clone();
@@ -747,6 +770,9 @@ fn spawn_exit_task(
             let _ = controller.terminate().await;
             controller.wait().await.unwrap_or(-1)
         };
+        if let Some(started_task) = observation_started_task {
+            let _ = started_task.await;
+        }
         if let Some(observation_id) = observation_id {
             enqueue_persist_finished(ObservationFinishedPayload {
                 observation_id,

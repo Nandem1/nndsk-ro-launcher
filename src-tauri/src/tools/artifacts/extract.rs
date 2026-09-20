@@ -123,7 +123,12 @@ fn validate_entry_type(
             if !path_is_valid_utf8(&link_name) {
                 return Err("symlink con destino no UTF-8".to_string());
             }
-            validate_link_target(staging_dir, normalized_path, &link_name)?;
+            validate_link_target(
+                staging_dir,
+                normalized_path,
+                &link_name,
+                entry_type == EntryType::Link,
+            )?;
         }
         EntryType::Regular
         | EntryType::Directory
@@ -144,16 +149,23 @@ fn validate_link_target(
     staging_dir: &Path,
     entry_path: &Path,
     link_name: &Path,
+    archive_root_relative: bool,
 ) -> Result<(), String> {
     if link_name.is_absolute() {
         return Err("symlink absoluto en archive".to_string());
     }
-    let parent = entry_path.parent().unwrap_or(Path::new(""));
-    let parent_norm = normalize_relative_path(parent)?;
-    let link_norm = normalize_relative_path(link_name)?;
-    let combined = parent_norm.join(link_norm);
-    normalize_relative_path(&combined)?;
-    let resolved = staging_dir.join(combined);
+    // A symlink target is relative to the directory containing the link, while
+    // a tar hard-link target is relative to the archive root. Normalize only
+    // after composing the symlink path so legitimate targets such as
+    // `gamefixes-gog/foo.py -> ../gamefixes-steam/foo.py` are accepted without
+    // permitting them to escape staging.
+    let combined = if archive_root_relative {
+        link_name.to_path_buf()
+    } else {
+        entry_path.parent().unwrap_or(Path::new("")).join(link_name)
+    };
+    let normalized = normalize_relative_path(&combined)?;
+    let resolved = staging_dir.join(normalized);
     if !resolved.starts_with(staging_dir) {
         return Err("symlink fuera de staging".to_string());
     }
@@ -254,6 +266,28 @@ mod tests {
         extract_archive(descriptor, &archive, &staging).unwrap();
         let _ = std::fs::remove_file(archive);
         let _ = std::fs::remove_dir_all(staging);
+    }
+
+    #[test]
+    fn extract_allows_parent_symlink_that_stays_inside_staging() {
+        let staging = std::env::temp_dir().join(format!(
+            "ro-launcher-link-validation-{}",
+            std::process::id()
+        ));
+        validate_link_target(
+            &staging,
+            Path::new("protonfixes/gamefixes-gog/fix.py"),
+            Path::new("../gamefixes-steam/fix.py"),
+            false,
+        )
+        .unwrap();
+        assert!(validate_link_target(
+            &staging,
+            Path::new("protonfixes/fix.py"),
+            Path::new("../../outside"),
+            false,
+        )
+        .is_err());
     }
 
     #[test]

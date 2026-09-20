@@ -712,6 +712,13 @@ pub struct WineContext {
 
 pub fn runtime_prefix_blockers(ctx: &WineContext, health: &PrefixHealth) -> Vec<String> {
     let mut blockers = Vec::new();
+    if let Some(reasons) = ctx.identity.ineligible_reasons() {
+        blockers.extend(
+            reasons
+                .iter()
+                .map(|reason| format!("Identidad de entorno incompatible: {reason}")),
+        );
+    }
     if let Err(error) = ensure_managed_path_safe(&ctx.location) {
         blockers.push(error);
     }

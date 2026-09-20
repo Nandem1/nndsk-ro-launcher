@@ -31,6 +31,12 @@ impl RunnerOperation {
         ctx: &WineContext,
         anchor: &SessionAnchorV2,
     ) -> Result<Self, String> {
+        if let Some(reasons) = ctx.identity.ineligible_reasons() {
+            return Err(format!(
+                "La identidad del entorno no es compatible: {}",
+                reasons.join(" · ")
+            ));
+        }
         let lease = if session_supervisor_enabled() {
             let result = match app {
                 Some(app) => sessions.begin_operation(app, ctx, game, anchor).await,

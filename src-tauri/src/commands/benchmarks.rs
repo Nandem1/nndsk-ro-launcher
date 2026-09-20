@@ -7,8 +7,7 @@ use crate::models::benchmark::{
     BenchmarkComparisonIpc, BenchmarkExportResultIpc, BenchmarkRunSummaryIpc,
     CompareRuntimeBenchmarksIpc, StartRuntimeBenchmarkRunIpc,
 };
-use crate::models::server::ServerConfig;
-use crate::state::{GameState, ServerRepository, StorageNotices};
+use crate::state::GameState;
 use crate::tools::runner_sessions::{prefix_log_token, session_supervisor_enabled};
 use crate::tools::runtime::{
     attach_benchmark_run, begin_benchmark_capture,
@@ -33,46 +32,6 @@ use crate::tools::runtime::{
 };
 use crate::tools::server_tools;
 use crate::utils::{required_game_dir, resolve_server_wine_context_with_runner, RunnerKind};
-
-async fn resolve_plan_id(
-    app: &AppHandle,
-    server: &ServerConfig,
-    runner: Option<String>,
-) -> Result<String, String> {
-    let ctx = resolve_server_wine_context_with_runner(Some(server), runner).await?;
-    let tools_status = server_tools::scan_status(app, server).ok();
-    let dgvoodoo_configured = tools_status
-        .as_ref()
-        .is_some_and(|status| status.dgvoodoo.configured);
-    let webview2_required = tools_status
-        .as_ref()
-        .is_some_and(|status| status.diagnostics.webview2_required);
-    let (_, plan) = resolve_operational_plan_with_profile(OperationalRuntimeInput {
-        server_runner: server.runner.as_deref(),
-        default_runner: server.runner.as_deref(),
-        context: &ctx,
-        dgvoodoo: DgVoodooState::verified(dgvoodoo_configured),
-        webview2_required,
-    })
-    .map_err(|_| "plan-resolution-failed".to_string())?;
-    let anchor = operational_session_anchor(&ctx, Some(&plan), webview2_required);
-    if anchor.plan_id == session_anchor_unavailable().plan_id {
-        return Err("plan-id-unavailable".into());
-    }
-    Ok(anchor.plan_id)
-}
-
-fn server_by_id(
-    repository: &ServerRepository,
-    notices: &StorageNotices,
-    server_id: &str,
-) -> Result<ServerConfig, String> {
-    repository
-        .list(notices)?
-        .into_iter()
-        .find(|server| server.id == server_id)
-        .ok_or_else(|| "client-not-running".to_string())
-}
 
 #[tauri::command]
 pub async fn start_runtime_benchmark_run(
@@ -127,6 +86,9 @@ pub async fn start_runtime_benchmark_run(
     if anchor.plan_id == session_anchor_unavailable().plan_id {
         return Err("plan-id-unavailable".into());
     }
+    if facts.runtime_plan_id != anchor.plan_id {
+        return Err("plan-id-mismatch".into());
+    }
 
     let supervisor = session_supervisor_enabled();
     if supervisor {
@@ -139,10 +101,9 @@ pub async fn start_runtime_benchmark_run(
         }
     }
 
-    let (observation_id, linked_outcome) =
-        lookup_observation_for_identity(&input.client_id, &facts.identity)
-            .map(|(id, outcome)| (Some(id), outcome))
-            .unwrap_or((None, None));
+    let linked_outcome = lookup_observation_for_identity(&input.client_id, &facts.identity)
+        .and_then(|(_, outcome)| outcome);
+    let observation_id = facts.observation_id.clone();
 
     let invalid_reason = build_invalid_at_attach(linked_outcome.as_deref());
     let summary =
@@ -228,28 +189,23 @@ pub async fn start_runtime_benchmark_run(
 
 #[tauri::command]
 pub async fn begin_runtime_benchmark_capture(
-    app: AppHandle,
     state: State<'_, GameState>,
-    servers: State<'_, ServerRepository>,
-    notices: State<'_, StorageNotices>,
     run_id: String,
 ) -> Result<BenchmarkRunSummaryIpc, String> {
     if !runtime_benchmark_enabled() {
         return Err("runtime-benchmark-disabled".into());
     }
     let record = load_benchmark_run(&run_id)?;
-    let server = server_by_id(&servers, &notices, &record.server_local_id)?;
     let facts = state.game.running_facts_for(&record.client_id)?;
     if !verify_process_identity(&facts.identity) {
         return Err("process-identity-stale".into());
     }
-    let resolved_plan_id = resolve_plan_id(&app, &server, server.runner.clone()).await?;
     let process_age = host_uptime_seconds()
         .and_then(|uptime| process_age_seconds(facts.identity.start_time, uptime, host_clk_tck()));
     begin_benchmark_capture(
         &run_id,
         &facts.identity,
-        &resolved_plan_id,
+        &facts.runtime_plan_id,
         record.spec.warmup_seconds,
         process_age,
     )

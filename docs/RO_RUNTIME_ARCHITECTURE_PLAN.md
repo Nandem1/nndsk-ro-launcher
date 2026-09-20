@@ -11,8 +11,8 @@ distribuida por el launcher.
 | Alcance                 | Resolución de runner, gráficos, dependencias, identidad de prefix, artefactos administrados, compatibilidad y diagnóstico                                                               |
 | Objetivo                | Introducir seams tipados e incrementales que preserven el comportamiento validado y permitan agregar un backend gráfico sin modificar launcher, setup, tools y diagnóstico por separado |
 | Decisión bloqueante     | Cerrada por `docs/adr/ADR-001-runtime-graphics-domain.md` y `docs/adr/ADR-002-runtime-prefix-identity.md`                                                                               |
-| Primer consumidor nuevo | D7VK rechazado (`no-go`); el seam queda listo para otro backend si hay evidencia. Siguiente fase: observabilidad (7)                                                                    |
-| Fuera de esta tarea     | Implementar Fases 2–9, descargar D7VK o modificar runtimes, prefixes, clientes o anti-cheat                                                                                             |
+| Primer consumidor nuevo | D7VK rechazado (`no-go`); el seam queda listo para otro backend si hay evidencia. La siguiente fase abierta es AutoTune conservador (9)                                                  |
+| Fuera de esta tarea     | Fase 9, cualquier integración productiva D7VK, y modificar runtimes, prefixes, clientes o anti-cheat para eludir validaciones                                                            |
 
 ## 1. Cómo leer este documento
 
@@ -472,10 +472,10 @@ sería el tercer caso que justifica extraer provisioning/environment común dond
    una vez por target; conflictos son errores, no last-write-wins silencioso.
 9. **Compatibilidad basada en evidencia exacta.** La ausencia de record produce `Unknown`; nunca un
    fallback optimista.
-10. **D7VK llega después del seam y de un spike.** Permanece experimental y opt-in hasta completar
-    matriz real; no desplaza dgVoodoo ni se declara más rápido por diseño.
-11. **Compatibility DB antes que D7VK productivo.** Primero se corrige el significado de
-    “validated”; después se registra D7VK como experimental.
+10. **D7VK quedó cerrado en el spike.** ADR-005 registró `no-go` porque Gepard rechaza
+    `ddraw.dll`; no existe variant, artefacto, descarga, toggle ni fallback D7VK productivo.
+11. **Compatibility DB precede cualquier backend nuevo.** Un backend futuro sólo puede abrirse con
+    evidencia exacta; el resultado D7VK no se registra como `Experimental` ni se generaliza.
 12. **Benchmark y AutoTune no participan en resolución temprana.** Se agregan sólo después de
     fingerprints, receipts, compatibilidad y observabilidad reproducible.
 
@@ -484,11 +484,6 @@ sería el tercer caso que justifica extraer provisioning/environment común dond
 - Una identidad _completa_ para runners externos sigue diferida: ADR-002 fija
   `ExternalObserved` con roles/digests acotados, pero no lo eleva a receipt exacto ni propone hashear
   recursivamente una distribución.
-- Deployment D7VK para RO: side-by-side en game dir o system path del prefix. El upstream documenta
-  ambos y no son equivalentes para ownership/rollback.
-- Release D7VK concreta, arquitecturas y checksums; se fijan durante el spike, no en este planning.
-- Si el cliente RO objetivo usa D3D immediate-mode 3/5/6/7 suficiente para beneficiarse de D7VK o
-  depende principalmente de DDraw/GDI no cubierto.
 - UX final para seleccionar profiles. La primera migración conserva auto-detección actual; no se
   exponen combinaciones arbitrarias.
 - Captura in-process de frametimes (cerrado en ADR-006: CSV importado v1 para Fase 8).
@@ -851,8 +846,8 @@ El catálogo shipped y las observaciones locales son cosas distintas:
 | Runner/UMU/DXVK descargado       | artifact store global | runtime marker/receipt           | `runtime`               |
 | DLLs/deps dentro de prefix       | prefix provisioner    | prefix manifest                  | `prefix` exclusivo      |
 | dgVoodoo en game dir             | dgVoodoo overlay      | `.ro-launcher-dgvoodoo.json`     | `dgvoodoo`/game dir     |
-| D7VK side-by-side, si se aprueba | graphics overlay      | manifest propio o común v2       | game dir                |
-| D7VK system path, si se aprueba  | prefix provisioner    | prefix receipt con backup        | `prefix` exclusivo      |
+| D7VK side-by-side (rechazado)    | ninguno               | no se persiste                    | ADR-005 `no-go`         |
+| D7VK system path (rechazado)     | ninguno               | no se persiste                    | no se rodea Gepard      |
 | Environment de proceso           | invocation factory    | runtime fingerprint/log redacted | operation/session lease |
 
 No se permite que un mismo archivo tenga dos owners. Cualquier collision produce preflight error
@@ -965,6 +960,12 @@ Cada fase que escriba schema nuevo debe poder volver a la release anterior sin d
 - el rollback nunca elimina el prefix nuevo: sólo deja de seleccionarlo.
 
 ## 12. D7VK como prueba del seam, no como centro del diseño
+
+**Estado cerrado.** Esta sección conserva el razonamiento y los criterios que guiaron el spike.
+ADR-005 resolvió `no-go`: Gepard `26.9.3.1` rechazó el payload como `illegal file ddraw.dll`.
+Por ello no se implementa Fase 6B ni se intenta reubicar, renombrar, disfrazar o allowlistear el
+binario desde el launcher. Sólo una autorización explícita del servidor o un cliente controlado sin
+esa política permitiría abrir un ADR nuevo; no es trabajo pendiente de esta arquitectura.
 
 ### 12.1 Corrección del modelo conceptual
 
@@ -1085,7 +1086,7 @@ temporales; no reemplazan tests ni deben convertirse en preferencias permanentes
 | 4     | DXVK/dgVoodoo vertical    | `GraphicsPlan` pasa a ser autoridad operacional        |
 | 5     | Compatibilidad exacta     | assessments se ligan al runtime verificable            |
 | 6A    | Spike D7VK                | no productivo; decide deployment y scope               |
-| 6B    | D7VK experimental         | primer backend nuevo, sólo con go explícito            |
+| 6B    | D7VK experimental         | cancelada/prohibida por ADR-005 `no-go`                 |
 | 7     | Observabilidad            | outcomes locales unidos a fingerprint                  |
 | 8     | Benchmark A/B             | comparación opt-in, sin selección automática           |
 | 9     | AutoTune                  | candidato futuro, exacto y conservador                 |
@@ -1442,6 +1443,9 @@ con evidencia reproducible. Un no-go es salida válida. **Cumplido 2026-09-18** 
 
 ### Fase 6B — D7VK experimental como vertical slice
 
+**Estado: no abierta y prohibida por ADR-005.** Lo siguiente queda como criterio histórico para un
+eventual ADR sustituto, no como backlog del producto actual.
+
 **Objetivo.** Si ADR-005 es go, agregar D7VK como profile opt-in y demostrar que el seam no requiere
 ramificar medio launcher.
 
@@ -1533,9 +1537,11 @@ Separar launcher benchmark de métricas in-game que requieran cooperación expl�
 **Entregables.**
 
 - [x] Protocolo que fija cliente, mapa/escena, duración, warm-up, runner, profile, GPU/driver y carga.
-- [x] Métricas de frametime p50/p95/p99, 1%/0.1% lows, startup reliability y crashes.
+- [x] Métricas de frametime p50/p95/p99 y 1%/0.1% lows; capture attempts y outcomes de observación
+      vinculados cuando existen. No se presenta como harness de launch ni mide fallos previos al attach.
 - [x] Visual correctness/compatibility como gates, no como número dentro de un score.
-- [x] Repeticiones, variance e invalidación de runs no comparables.
+- [x] Repeticiones, conteo por brazo e invalidación de runs no comparables. La primera versión no
+      publica una estadística de varianza entre runs.
 - [x] Export de resultados vinculados a runtime fingerprint.
 
 **No entra.** Ranking global, benchmark en background sin consentimiento, AutoTune ni afirmar
@@ -1544,8 +1550,8 @@ causalidad entre hosts distintos.
 **Compatibilidad/rollback.** Herramienta opt-in y separada del launch normal. No muta profiles ni
 compatibility catalog.
 
-**Tests y validación.** Datasets sintéticos para percentiles/variance; missing samples; clock jumps;
-crash parcial; A/B order bias; smoke real repetido. Validar que un run visualmente incorrecto queda
+**Tests y validación.** Datasets sintéticos para percentiles; missing samples; clock jumps;
+outcome vinculado; A/B order bias; smoke real repetido. Validar que un run visualmente incorrecto queda
 invalidado aunque tenga mejores FPS.
 
 **Adversarial review.** Cambiar driver, thermal state, resolución o scene entre A/B y comprobar que
@@ -1763,8 +1769,6 @@ bypass, packet manipulation ni memory writes.
 
 ### 17.6 Desconocidos que permanecen abiertos
 
-- El release/version/arquitectura de D7VK apropiado y su support envelope real.
-- Si side-by-side basta para los clientes objetivo o se necesita una mutación prefix-owned.
 - Cómo identificar de forma durable ciertos builds de cliente cuando no haya hash recogido.
 - Qué provenance exacta puede obtenerse hoy del DXVK instalado por winetricks.
 - El volumen de evidencia necesario para justificar benchmark y AutoTune.

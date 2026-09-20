@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 | --- | --- |
-| Estado | Fase 2 implementada en código; `RuntimeFingerprint` completo pendiente de facts en orquestación |
+| Estado | Fase 2 implementada; `RuntimeFingerprint` completo y facts de orquestación cerrados en Fase 7 |
 | Fecha | 2026-09-17 |
 | Commit local | `aaf5836` (*Implement runtime phase 2 prefix identity and session anchors*) |
 | Alcance | Fingerprints, path/manifest v3, alias v2, session `plan_id`; sin env operacional (Fase 4) |
@@ -66,10 +66,9 @@ Fixture JSON: [`contract-fixtures/runtime-prefix-manifest-v3.json`](../contract-
 | Session anchor | `src-tauri/src/tools/runtime/session_anchor.rs` |
 | Prefix I/O | `src-tauri/src/utils/prefix.rs` |
 
-## 6. Pendiente explícito (misma release lógica, siguiente iteración)
+## 6. Cierres posteriores y pendientes de validación
 
 - **`compute_runtime_fingerprint` v1** cerrado en Fase 7 (`runtime_fingerprint.rs`); goldens Proton, Wine 7.16 DXVK y Wine 7.16 dgVoodoo en `contract-fixtures/runtime-fingerprint-v1.json` (Test A + Test B canónico).
-- Goldens adicionales de **RuntimeFingerprint** (Proton+DXVK, Wine 7.16, overlay dgVoodoo).
 - Tests dedicados: collision path v3 (cubierto en `identity.rs` / `prefix.rs`); pendientes `plan_id` bajo lease, flag `=0` write-new, matriz ADR-002 §3 ampliada.
 - Smoke **`npm run tauri:dev`**: prefix aislado nuevo v3, alias v2 fixture, flag `=0` (plan §12).
 

@@ -30,7 +30,7 @@ Independiente de `RO_LAUNCHER_RUNTIME_GRAPHICS`, `RO_LAUNCHER_RUNTIME_COMPAT`, `
 
 ## 3. Goldens
 
-- [`contract-fixtures/runtime-fingerprint-v1.json`](../contract-fixtures/runtime-fingerprint-v1.json) — Proton managed, Wine 7.16 DXVK y Wine 7.16 dgVoodoo; incluye `canonicalFieldIds`.
+- [`contract-fixtures/runtime-fingerprint-v1.json`](../contract-fixtures/runtime-fingerprint-v1.json) — Proton managed, Wine 7.16 DXVK y Wine 7.16 dgVoodoo; incluye `canonicalFieldIds`. Los inputs sintéticos fijan digests de prefix/material observado para que el golden no dependa del runtime instalado ni de la ruta absoluta del checkout; la identidad productiva sí conserva su location token y hashes observados reales.
 - [`contract-fixtures/runtime-observation-v1.json`](../contract-fixtures/runtime-observation-v1.json) — ejemplo finished redacted.
 - [`contract-fixtures/runtime-plan-summary.json`](../contract-fixtures/runtime-plan-summary.json) — `planId` Proton y Wine 7.16 dgVoodoo actualizados al digest v1.
 

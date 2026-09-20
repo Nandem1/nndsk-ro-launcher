@@ -15,8 +15,8 @@ Las dos reglas en `server_tools/gepard.rs` mapean hashes exactos a `GepardRunner
 Eso contradice `AGENTS.md`: Sakura exige Wine 7.16 old-WoW64 y DXVK 2.6.2 managed; Honey exige
 Proton-CachyOS 11 administrado, no cualquier Proton.
 
-`RuntimeFingerprint` completo sigue diferido (placeholder en session anchor). La Fase 5 no usa el
-digest de fingerprint para matching.
+En Fase 5 `RuntimeFingerprint` completo seguía diferido; Fase 7 cerró su digest y los session facts.
+El catálogo v1 deliberadamente no usa ese digest para matching.
 
 ## 2. Decisiones cerradas
 
@@ -88,4 +88,5 @@ launch, modificación de Gepard/GameGuard, match por `servers.json` labels.
 
 - UI y deps pueden citar `evidence_id` exacto en Validated.
 - Shadow puede mapear recommendation a `GepardRunnerProfile` sin ampliar predicados de Validated.
-- Completar `compute_runtime_fingerprint` sigue siendo trabajo de Fase 2 pendiente; no bloquea Fase 5.
+- Fase 7 completó `compute_runtime_fingerprint`; el catálogo v1 conserva
+  `CompatibilityRuntimeSpec` como match key por decisión, no por ausencia del fingerprint.

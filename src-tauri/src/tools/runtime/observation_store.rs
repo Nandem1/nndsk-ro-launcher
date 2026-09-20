@@ -107,14 +107,16 @@ pub(crate) struct ObservationFinishedPayload {
     pub handoff_count: u32,
 }
 
-pub(crate) fn enqueue_persist_started(payload: ObservationStartedPayload) {
+pub(crate) fn enqueue_persist_started(
+    payload: ObservationStartedPayload,
+) -> Option<tokio::task::JoinHandle<()>> {
     if !runtime_observe_enabled() {
-        return;
+        return None;
     }
     let paths = ObservationPaths::production();
-    tokio::task::spawn_blocking(move || {
+    Some(tokio::task::spawn_blocking(move || {
         let _ = persist_started(&paths, payload);
-    });
+    }))
 }
 
 pub(crate) fn enqueue_persist_finished(payload: ObservationFinishedPayload) {
@@ -174,7 +176,6 @@ fn persist_finished(
     record.record_state = RecordState::Finished;
     record.finished_at = Some(Utc::now().to_rfc3339());
     record.outcome = Some(payload.outcome);
-    record.process.game = payload.game_identity.map(to_identity_ipc);
     record.process.final_game = payload.game_identity.map(to_identity_ipc);
     record.process.controller = payload.controller_identity.map(to_identity_ipc);
     record.process.identity_stale = payload.identity_stale;
@@ -631,7 +632,10 @@ mod tests {
                 vulkan_api: None,
             },
             process: ObservationProcessIpc {
-                game: None,
+                game: Some(ProcessIdentityIpc {
+                    pid: 100,
+                    start_time: 1_000,
+                }),
                 controller: None,
                 final_game: None,
                 identity_stale: false,
@@ -657,6 +661,28 @@ mod tests {
         write_record(&paths, &record).unwrap();
         let loaded = read_record(&record_path(&paths, &record.observation_id)).unwrap();
         assert_eq!(loaded.observation_id, "good");
+
+        persist_finished(
+            &paths,
+            ObservationFinishedPayload {
+                observation_id: record.observation_id.clone(),
+                outcome: RunOutcome::CleanExit {
+                    controller_exit_code: 0,
+                },
+                game_identity: Some(ProcessIdentity {
+                    pid: 200,
+                    start_time: 2_000,
+                }),
+                controller_identity: None,
+                identity_stale: false,
+                handoff_count: 1,
+            },
+        )
+        .unwrap();
+        let finished = read_record(&record_path(&paths, &record.observation_id)).unwrap();
+        assert_eq!(finished.process.game.unwrap().pid, 100);
+        assert_eq!(finished.process.final_game.unwrap().pid, 200);
+        assert_eq!(finished.process.handoff_count, 1);
         let _ = fs::remove_dir_all(root);
     }
 }

@@ -1,10 +1,11 @@
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use chrono::Utc;
-use ro_tools_linux::ProcessIdentity;
+use ro_tools_linux::{verify_process_identity, ProcessIdentity};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -17,8 +18,8 @@ use crate::utils::{app_data_dir, replace_json};
 use super::benchmark::{
     arm_label, compare_benchmark_runs, duration_within_tolerance, invalid_reason_label,
     linked_outcome_unusable, min_samples_for_capture, parse_imported_csv_v1, record_state_label,
-    runtime_benchmark_enabled, visual_check_label, BenchmarkInvalidReason, BenchmarkRecordState,
-    BenchmarkVisualCheck, CaptureAdapterKind, RuntimeBenchmarkRunV1,
+    runtime_benchmark_enabled, visual_check_label, BenchmarkArm, BenchmarkInvalidReason,
+    BenchmarkRecordState, BenchmarkVisualCheck, CaptureAdapterKind, RuntimeBenchmarkRunV1,
     RUNTIME_BENCHMARK_SCHEMA_VERSION,
 };
 use super::encode::sha256_hex;
@@ -92,8 +93,9 @@ struct RuntimeBenchmarkComparisonExportBundle {
     comparison: BenchmarkComparisonIpc,
 }
 
-fn record_path(paths: &BenchmarkPaths, run_id: &str) -> PathBuf {
-    paths.root.join(format!("run-{run_id}.json"))
+fn record_path(paths: &BenchmarkPaths, run_id: &str) -> Result<PathBuf, String> {
+    Uuid::parse_str(run_id).map_err(|_| "invalid-run-id".to_string())?;
+    Ok(paths.root.join(format!("run-{run_id}.json")))
 }
 
 pub(crate) fn new_benchmark_run_id() -> String {
@@ -102,7 +104,7 @@ pub(crate) fn new_benchmark_run_id() -> String {
 
 pub(crate) fn load_benchmark_run(run_id: &str) -> Result<RuntimeBenchmarkRunV1, String> {
     let paths = BenchmarkPaths::production();
-    let path = record_path(&paths, run_id);
+    let path = record_path(&paths, run_id)?;
     if !path.exists() {
         return Err("run-not-found".into());
     }
@@ -144,7 +146,7 @@ pub(crate) fn begin_benchmark_capture(
     let _guard = BENCHMARKS_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let mut record = read_record(&record_path(&paths, run_id))?;
+    let mut record = read_record(&record_path(&paths, run_id)?)?;
     if record.record_state != BenchmarkRecordState::Attached {
         return Err("illegal-state-transition".into());
     }
@@ -181,7 +183,7 @@ pub(crate) fn finish_benchmark_capture(
     let _guard = BENCHMARKS_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let mut record = read_record(&record_path(&paths, run_id))?;
+    let mut record = read_record(&record_path(&paths, run_id)?)?;
     if record.record_state != BenchmarkRecordState::Capturing {
         return Err("illegal-state-transition".into());
     }
@@ -214,7 +216,7 @@ pub(crate) fn import_benchmark_samples(
     let _guard = BENCHMARKS_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let mut record = read_record(&record_path(&paths, run_id))?;
+    let mut record = read_record(&record_path(&paths, run_id)?)?;
     if record.visual_check != BenchmarkVisualCheck::Pending {
         return Err("samples-frozen".into());
     }
@@ -263,7 +265,7 @@ pub(crate) fn set_benchmark_visual_check(
     let _guard = BENCHMARKS_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let mut record = read_record(&record_path(&paths, run_id))?;
+    let mut record = read_record(&record_path(&paths, run_id)?)?;
     if !matches!(
         record.record_state,
         BenchmarkRecordState::CaptureFinished | BenchmarkRecordState::SamplesImported
@@ -287,7 +289,15 @@ pub(crate) fn list_benchmark_runs() -> Result<Vec<BenchmarkRunSummaryIpc>, Strin
             .flatten()
         {
             let path = entry.path();
-            if let Ok(record) = read_record(&path) {
+            if let Ok(mut record) = read_record(&path) {
+                if matches!(
+                    record.record_state,
+                    BenchmarkRecordState::Attached | BenchmarkRecordState::Capturing
+                ) && !benchmark_process_is_alive(&record)
+                {
+                    invalidate(&mut record, BenchmarkInvalidReason::ProcessGone);
+                    write_record(&paths, &record)?;
+                }
                 summaries.push(summary_from_record(&record));
             }
         }
@@ -332,9 +342,10 @@ pub(crate) fn export_benchmark_runs(
     let _guard = BENCHMARKS_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
+    validate_run_ids(run_ids)?;
     let mut runs = Vec::new();
     for run_id in run_ids {
-        let record = read_record(&record_path(&paths, run_id))?;
+        let record = read_record(&record_path(&paths, run_id)?)?;
         runs.push(export_record(&record));
     }
     let bundle = RuntimeBenchmarkExportBundle {
@@ -358,24 +369,25 @@ pub(crate) fn compare_benchmark_runs_by_id(
     if input.left_run_ids.is_empty() || input.right_run_ids.is_empty() {
         return Err("compare-empty-arm".into());
     }
+    validate_comparison_ids(input)?;
     let mut left = Vec::new();
     for id in &input.left_run_ids {
-        let path = record_path(&paths, id);
+        let path = record_path(&paths, id)?;
         if !path.exists() {
             return Err("run-not-found".into());
         }
         let record = read_record(&path)?;
-        validate_for_compare(&record)?;
+        validate_for_compare(&record, BenchmarkArm::A)?;
         left.push(record);
     }
     let mut right = Vec::new();
     for id in &input.right_run_ids {
-        let path = record_path(&paths, id);
+        let path = record_path(&paths, id)?;
         if !path.exists() {
             return Err("run-not-found".into());
         }
         let record = read_record(&path)?;
-        validate_for_compare(&record)?;
+        validate_for_compare(&record, BenchmarkArm::B)?;
         right.push(record);
     }
     Ok(compare_benchmark_runs(left, right))
@@ -399,7 +411,41 @@ pub(crate) fn export_benchmark_comparison(
     Ok(BenchmarkExportResultIpc { exported_count: 1 })
 }
 
-fn validate_for_compare(record: &RuntimeBenchmarkRunV1) -> Result<(), String> {
+fn validate_run_ids(run_ids: &[String]) -> Result<(), String> {
+    if run_ids.len() > MAX_RECORDS {
+        return Err("too-many-run-ids".into());
+    }
+    let mut unique = HashSet::new();
+    for run_id in run_ids {
+        Uuid::parse_str(run_id).map_err(|_| "invalid-run-id".to_string())?;
+        if !unique.insert(run_id.as_str()) {
+            return Err("duplicate-run-id".into());
+        }
+    }
+    Ok(())
+}
+
+fn validate_comparison_ids(input: &CompareRuntimeBenchmarksIpc) -> Result<(), String> {
+    validate_run_ids(&input.left_run_ids)?;
+    validate_run_ids(&input.right_run_ids)?;
+    let left_ids: HashSet<&str> = input.left_run_ids.iter().map(String::as_str).collect();
+    if input
+        .right_run_ids
+        .iter()
+        .any(|id| left_ids.contains(id.as_str()))
+    {
+        return Err("compare-overlapping-runs".into());
+    }
+    Ok(())
+}
+
+fn validate_for_compare(
+    record: &RuntimeBenchmarkRunV1,
+    expected_arm: BenchmarkArm,
+) -> Result<(), String> {
+    if record.arm != expected_arm {
+        return Err("compare-arm-mismatch".into());
+    }
     if record.record_state == BenchmarkRecordState::Invalid {
         return Err("run-invalid".into());
     }
@@ -435,7 +481,7 @@ fn client_has_active_capture(
         .flatten()
     {
         let path = entry.path();
-        if let Ok(record) = read_record(&path) {
+        if let Ok(mut record) = read_record(&path) {
             if record.client_id != client_id {
                 continue;
             }
@@ -446,6 +492,11 @@ fn client_has_active_capture(
                 record.record_state,
                 BenchmarkRecordState::Attached | BenchmarkRecordState::Capturing
             ) {
+                if !benchmark_process_is_alive(&record) {
+                    invalidate(&mut record, BenchmarkInvalidReason::ProcessGone);
+                    write_record(paths, &record)?;
+                    continue;
+                }
                 return Ok(true);
             }
         }
@@ -453,10 +504,19 @@ fn client_has_active_capture(
     Ok(false)
 }
 
+fn benchmark_process_is_alive(record: &RuntimeBenchmarkRunV1) -> bool {
+    record.process.game.as_ref().is_some_and(|game| {
+        verify_process_identity(&ProcessIdentity {
+            pid: game.pid,
+            start_time: game.start_time,
+        })
+    })
+}
+
 fn write_record(paths: &BenchmarkPaths, record: &RuntimeBenchmarkRunV1) -> Result<(), String> {
     fs::create_dir_all(&paths.root).map_err(|error| error.to_string())?;
     let redacted = redact_benchmark_for_disk(record);
-    replace_json(&record_path(paths, &record.run_id), &redacted)
+    replace_json(&record_path(paths, &record.run_id)?, &redacted)
 }
 
 fn redact_benchmark_for_disk(record: &RuntimeBenchmarkRunV1) -> RuntimeBenchmarkRunV1 {
@@ -673,5 +733,31 @@ mod tests {
         fs::write(&path, r#"{"schemaVersion":2}"#).unwrap();
         assert!(read_record(&path).is_err());
         assert!(!path.exists());
+    }
+
+    #[test]
+    fn run_ids_cannot_escape_the_benchmark_directory() {
+        let paths = BenchmarkPaths { root: temp_root() };
+        assert_eq!(
+            record_path(&paths, "../../outside").unwrap_err(),
+            "invalid-run-id"
+        );
+    }
+
+    #[test]
+    fn comparison_ids_reject_duplicates_and_overlap() {
+        let id = Uuid::new_v4().to_string();
+        assert_eq!(
+            validate_run_ids(&[id.clone(), id.clone()]).unwrap_err(),
+            "duplicate-run-id"
+        );
+        let input = CompareRuntimeBenchmarksIpc {
+            left_run_ids: vec![id.clone()],
+            right_run_ids: vec![id],
+        };
+        assert_eq!(
+            validate_comparison_ids(&input).unwrap_err(),
+            "compare-overlapping-runs"
+        );
     }
 }

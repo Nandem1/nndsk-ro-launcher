@@ -188,6 +188,14 @@ pub async fn launch_tool(
     };
 
     let status = scan_status(app, server)?;
+    if status.dgvoodoo.configured != dgvoodoo_configured
+        || status.diagnostics.webview2_required != webview2_required
+    {
+        return Err(
+            "La configuración del runtime cambió durante la preparación; vuelve a intentar"
+                .to_string(),
+        );
+    }
     let exe_path = tool_executable_path(&status, tool)?;
     let wine_7_16 = ctx.resolved.is_wine_7_16();
     let manifest_has_managed_dxvk = prefix_health.manifest.as_ref().is_some_and(|manifest| {

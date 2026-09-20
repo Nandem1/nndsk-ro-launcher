@@ -6,6 +6,7 @@ import { resolveRunner } from '../../shared/resolveRunner'
 import { Panel } from '../../shared/ui/Panel'
 import { StatusDot, type DotStatus } from '../../shared/ui/StatusDot'
 import { useSelectedServer } from '../servers/useSelectedServer'
+import { useLauncherStore } from '../launcher/launcher.store'
 import type {
   BenchmarkComparison,
   BenchmarkRunSummary,
@@ -52,7 +53,6 @@ export function AdvancedSettings() {
   const [observationCount, setObservationCount] = useState(0)
   const [benchmarkCount, setBenchmarkCount] = useState(0)
   const [benchmarkRuns, setBenchmarkRuns] = useState<BenchmarkRunSummary[]>([])
-  const [runningClientId, setRunningClientId] = useState('')
   const [activeRunId, setActiveRunId] = useState<string | null>(null)
   const [arm, setArm] = useState<'a' | 'b'>('a')
   const [sceneId, setSceneId] = useState('payon-town')
@@ -70,6 +70,11 @@ export function AdvancedSettings() {
   const runners = useSettingsStore((state) => state.runners)
   const selectedRunner = useSettingsStore((state) => state.selectedRunner)
   const server = useSelectedServer()
+  const clients = useLauncherStore((state) => state.clients)
+  const runningClientId =
+    clients.find(
+      (client) => client.status === 'running' && client.serverId === server?.id,
+    )?.clientId ?? ''
 
   const refreshBenchmarks = () => {
     void api.listRuntimeBenchmarks().then((rows) => {
@@ -83,13 +88,6 @@ export function AdvancedSettings() {
       setObservationCount(rows.length)
     })
     refreshBenchmarks()
-    void api.listGameClients().then((clients) => {
-      if (!server) return
-      const running = clients.find(
-        (c) => c.status === 'running' && c.serverId === server.id,
-      )
-      setRunningClientId(running?.clientId ?? '')
-    })
   }, [advancedStatus, server])
 
   const effectiveRunner = server
@@ -245,6 +243,14 @@ export function AdvancedSettings() {
     runIdToToggle: string,
     checked: boolean,
   ) => {
+    if (checked) {
+      const oppositeSetter = side === 'left' ? setCompareRight : setCompareLeft
+      oppositeSetter((prev) => {
+        const next = new Set(prev)
+        next.delete(runIdToToggle)
+        return next
+      })
+    }
     const setter = side === 'left' ? setCompareLeft : setCompareRight
     setter((prev) => {
       const next = new Set(prev)
@@ -523,8 +529,18 @@ export function AdvancedSettings() {
                 <div key={run.runId} className="flex items-center gap-2">
                   <label className="flex items-center gap-0.5">
                     <input
+                      type="radio"
+                      name="active-benchmark-run"
+                      checked={activeRunId === run.runId}
+                      onChange={() => setActiveRunId(run.runId)}
+                    />
+                    Usar
+                  </label>
+                  <label className="flex items-center gap-0.5">
+                    <input
                       type="checkbox"
                       checked={compareLeft.has(run.runId)}
+                      disabled={run.arm !== 'a'}
                       onChange={(e) =>
                         toggleCompare('left', run.runId, e.target.checked)
                       }
@@ -535,6 +551,7 @@ export function AdvancedSettings() {
                     <input
                       type="checkbox"
                       checked={compareRight.has(run.runId)}
+                      disabled={run.arm !== 'b'}
                       onChange={(e) =>
                         toggleCompare('right', run.runId, e.target.checked)
                       }

@@ -467,7 +467,8 @@ fn encode_component_provenance(provenance: &ComponentProvenance) -> CanonicalVal
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tools::runners::managed_proton_path;
+    use crate::tools::artifacts::PROTON_SHA512;
+    use crate::tools::runners::MANAGED_RUNNER_ID;
     use crate::tools::runtime::encode::fingerprint_digest;
     use crate::tools::runtime::fingerprint::managed_proton_prefix_fingerprint_input;
     use crate::tools::runtime::identity::{
@@ -480,6 +481,7 @@ mod tests {
     };
     use crate::utils::{PrefixLocation, PrefixScope, ResolvedRunner};
     use sha2::Digest;
+    use std::collections::BTreeSet;
     use std::path::PathBuf;
 
     fn prefix_binding() -> super::super::identity::PrefixBinding {
@@ -530,12 +532,21 @@ mod tests {
         (runner, probe)
     }
 
-    fn wine716_prefix_binding(
-        runner: &ResolvedRunner,
-        probe: &super::super::probe::RunnerProbe,
-    ) -> super::super::identity::PrefixBinding {
-        use super::super::identity::{test_desired_prefix_fingerprint, PrefixBinding};
-        let desired = test_desired_prefix_fingerprint(runner, probe, true).expect("prefix fp");
+    const WINE716_FIXTURE_PREFIX_DIGEST: &str =
+        "b16b4bb4d6bd3d66d01cf0da25f2056f3533c3464dc31067c93f67a52b92f4af";
+    const MANAGED_PROTON_ENTRYPOINT_DIGEST: &str =
+        "54af56937a136b38daf369c0d057ed741bfb08b0c3fd8a55f58e70d347e757c9";
+    const MANAGED_UMU_ENTRYPOINT_DIGEST: &str =
+        "0f7593c794b6c43b752f6e4c8ebbe6434a5786369e3f64ba8b40e6e467b761f6";
+
+    fn wine716_prefix_binding() -> super::super::identity::PrefixBinding {
+        use super::super::fingerprint::prefix_fingerprint_from_hex;
+        use super::super::identity::PrefixBinding;
+
+        // The product prefix fingerprint intentionally includes the canonical external-runner
+        // location. A cross-machine runtime golden must pin that upstream identity instead of
+        // deriving it from CARGO_MANIFEST_DIR (which differs between a workstation and CI).
+        let desired = prefix_fingerprint_from_hex(WINE716_FIXTURE_PREFIX_DIGEST);
         PrefixBinding {
             status: PrefixIdentityStatus::LegacyV2RunnerMatched,
             desired_fingerprint: desired,
@@ -558,7 +569,7 @@ mod tests {
             dgvoodoo: DgVoodooState::verified(dgvoodoo),
         })
         .unwrap();
-        let binding = wine716_prefix_binding(&runner, &probe);
+        let binding = wine716_prefix_binding();
         let location = binding.location.clone();
         resolve_runtime(RuntimeResolutionInput {
             profile,
@@ -573,11 +584,7 @@ mod tests {
     }
 
     fn managed_proton_plan(dgvoodoo: bool) -> RuntimePlan {
-        let managed_proton = ResolvedRunner::test_proton(
-            managed_proton_path().join("proton"),
-            managed_proton_path(),
-            managed_proton_path().join("umu-run"),
-        );
+        let managed_proton = crate::utils::resolved_managed_proton_descriptor();
         let profile = profile_from_legacy(LegacyProfileInput {
             server_runner: None,
             default_runner: None,
@@ -591,11 +598,29 @@ mod tests {
             resolved: &managed_proton,
             prefix: location,
             prefix_binding: prefix_binding(),
-            probe: probe_runner(&managed_proton),
+            probe: managed_proton_fixture_probe(),
             dgvoodoo: DgVoodooState::verified(dgvoodoo),
             webview2_required: false,
         })
         .unwrap()
+    }
+
+    fn managed_proton_fixture_probe() -> super::super::probe::RunnerProbe {
+        use super::super::model::PayloadVerification;
+        use super::super::probe::probe_managed_proton_descriptor;
+
+        let mut probe = probe_managed_proton_descriptor(PayloadVerification::ShapeVerified);
+        probe.identity.observed_material.roles = BTreeSet::from([
+            ObservedMaterial {
+                role: ObservedMaterialRole::Entrypoint,
+                digest: Some(hex_to_bytes(MANAGED_PROTON_ENTRYPOINT_DIGEST)),
+            },
+            ObservedMaterial {
+                role: ObservedMaterialRole::UmuEntrypoint,
+                digest: Some(hex_to_bytes(MANAGED_UMU_ENTRYPOINT_DIGEST)),
+            },
+        ]);
+        probe
     }
 
     #[test]
@@ -627,8 +652,7 @@ mod tests {
     #[test]
     fn wine716_managed_dxvk_runtime_fingerprint_matches_fixture() {
         let plan = wine716_plan(false);
-        let binding =
-            wine716_prefix_binding(&wine716_old_wow64_runner().0, &wine716_old_wow64_runner().1);
+        let binding = wine716_prefix_binding();
         let fp = compute_runtime_fingerprint_from_input(&runtime_fingerprint_input_from_plan(
             &plan, &binding,
         ));
@@ -639,8 +663,7 @@ mod tests {
     fn wine716_dgvoodoo_changes_runtime_fingerprint_not_prefix() {
         let plain = wine716_plan(false);
         let overlay = wine716_plan(true);
-        let (runner, probe) = wine716_old_wow64_runner();
-        let binding = wine716_prefix_binding(&runner, &probe);
+        let binding = wine716_prefix_binding();
         let fp_plain = compute_runtime_fingerprint_from_input(
             &runtime_fingerprint_input_from_plan(&plain, &binding),
         );
@@ -663,8 +686,7 @@ mod tests {
     #[test]
     fn wine716_dgvoodoo_runtime_fingerprint_matches_fixture() {
         let plan = wine716_plan(true);
-        let (runner, probe) = wine716_old_wow64_runner();
-        let binding = wine716_prefix_binding(&runner, &probe);
+        let binding = wine716_prefix_binding();
         let fp = compute_runtime_fingerprint_from_input(&runtime_fingerprint_input_from_plan(
             &plan, &binding,
         ));
@@ -742,34 +764,55 @@ mod tests {
         ])
     }
 
-    fn proton_role_ids() -> Vec<&'static str> {
-        let root = managed_proton_path();
-        let mut roles = vec!["entrypoint"];
-        if root.join("files/bin/wine").is_file() {
-            roles.push("proton-inner-wine");
-        }
-        if root.join("version").is_file() {
-            roles.push("proton-version");
-        }
-        roles.push("umu-entrypoint");
-        roles
+    fn proton_observed_material() -> CanonicalValue {
+        CanonicalValue::Sequence(vec![
+            observed_role(
+                "entrypoint",
+                Some(hex_to_bytes(MANAGED_PROTON_ENTRYPOINT_DIGEST)),
+            ),
+            observed_role(
+                "umu-entrypoint",
+                Some(hex_to_bytes(MANAGED_UMU_ENTRYPOINT_DIGEST)),
+            ),
+        ])
     }
 
-    fn proton_observed_material() -> CanonicalValue {
-        let script = managed_proton_path().join("proton");
-        let root = managed_proton_path();
-        let umu = managed_proton_path().join("umu-run");
-        let mut roles = vec![observed_role("entrypoint", sha256_file(&script))];
-        let inner = root.join("files/bin/wine");
-        if inner.is_file() {
-            roles.push(observed_role("proton-inner-wine", sha256_file(&inner)));
-        }
-        let version = root.join("version");
-        if version.is_file() {
-            roles.push(observed_role("proton-version", sha256_file(&version)));
-        }
-        roles.push(observed_role("umu-entrypoint", sha256_file(&umu)));
-        CanonicalValue::Sequence(roles)
+    fn managed_proton_artifact_identity_tree() -> CanonicalValue {
+        CanonicalValue::record(vec![
+            (
+                "architectures".to_string(),
+                CanonicalValue::Sequence(vec![CanonicalValue::enum_variant(
+                    "x86-64",
+                    CanonicalValue::empty_record(),
+                )]),
+            ),
+            (
+                "artifact-id".to_string(),
+                CanonicalValue::String(MANAGED_RUNNER_ID.to_string()),
+            ),
+            (
+                "install-recipe-revision".to_string(),
+                CanonicalValue::U64(1),
+            ),
+            (
+                "platform".to_string(),
+                CanonicalValue::String("linux-x86_64".to_string()),
+            ),
+            ("schema-version".to_string(), CanonicalValue::U64(1)),
+            (
+                "source-digest".to_string(),
+                CanonicalValue::record(vec![
+                    (
+                        "algorithm".to_string(),
+                        CanonicalValue::String("sha512".to_string()),
+                    ),
+                    (
+                        "bytes".to_string(),
+                        CanonicalValue::Bytes(hex_to_bytes(PROTON_SHA512)),
+                    ),
+                ]),
+            ),
+        ])
     }
 
     fn wine_observed_material() -> CanonicalValue {
@@ -841,24 +884,11 @@ mod tests {
                     (
                         "provenance".to_string(),
                         CanonicalValue::enum_variant(
-                            "external-observed",
-                            CanonicalValue::record(vec![
-                                ("completeness".to_string(), CanonicalValue::Bool(false)),
-                                (
-                                    "roles".to_string(),
-                                    CanonicalValue::Sequence(
-                                        proton_role_ids()
-                                            .into_iter()
-                                            .map(|role| {
-                                                CanonicalValue::enum_variant(
-                                                    role,
-                                                    CanonicalValue::empty_record(),
-                                                )
-                                            })
-                                            .collect(),
-                                    ),
-                                ),
-                            ]),
+                            "artifact-receipt",
+                            CanonicalValue::record(vec![(
+                                "identity".to_string(),
+                                managed_proton_artifact_identity_tree(),
+                            )]),
                         ),
                     ),
                 ]),
@@ -892,8 +922,7 @@ mod tests {
     }
 
     fn hand_tree_wine716(overlay: bool) -> CanonicalValue {
-        let (runner, probe) = wine716_old_wow64_runner();
-        let prefix = wine716_prefix_binding(&runner, &probe)
+        let prefix = wine716_prefix_binding()
             .desired_fingerprint
             .digest
             .digest

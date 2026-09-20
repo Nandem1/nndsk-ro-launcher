@@ -196,8 +196,8 @@ orquestación equivalentes. Las revisiones de recipes repairable pueden cambiar
 | DXVK runner-owned distinto                       | Sí                    | Sí                 | cambia `RunnerIdentity`; no se añade un component prefix duplicado |
 | DXVK winetricks actual                           | Sí (`LegacyUnpinned`) | Sí (recipe legacy) | no puede respaldar `Validated` exacto sin nueva evidencia          |
 | dgVoodoo version/wrappers/config                 | Sí                    | No                 | overlay game-dir con manifest propio                               |
-| D7VK futuro game-dir                             | Sí                    | No                 | sólo si ADR-005 confirma ese owner                                 |
-| D7VK futuro prefix-owned                         | Sí                    | Sí                 | sólo si ADR-005 elige ese deployment                               |
+| D7VK game-dir                                    | No                    | No                 | ADR-005 `no-go`; no existe plan productivo                         |
+| D7VK prefix-owned                                | No                    | No                 | ADR-005 prohíbe reubicar el mismo payload para rodear Gepard       |
 | WebView2                                         | Sí                    | No                 | requirement/recipe repairable; workaround Wine 7.16 se conserva    |
 | Gecko                                            | Sí                    | No                 | repairable                                                         |
 | vcrun2019/d3dx9                                  | Sí                    | No                 | recipe repairable actual                                           |

@@ -44,5 +44,6 @@ Fase 3 extrae el pipeline sin cambiar URLs, tamaños, digests ni paths `runtime/
 
 ## 5. Consecuencias
 
-- D7VK y futuros artefactos reutilizan el mismo pipeline añadiendo descriptor + validator cerrado.
+- Los futuros artefactos reutilizan el mismo pipeline añadiendo descriptor + validator cerrado;
+  D7VK queda excluido por el `no-go` de ADR-005.
 - Binario anterior a Fase 3 que no entiende schema 2 puede reinstalar tras upgrade si sólo ve v2 (rollback documentado; payload previo se preserva hasta commit exitoso).
