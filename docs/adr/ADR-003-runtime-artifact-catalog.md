@@ -1,18 +1,21 @@
 # ADR-003: catálogo de artefactos y receipts
 
-| Campo                 | Valor                                                                                          |
-| --------------------- | ---------------------------------------------------------------------------------------------- |
-| Estado                | Aceptado                                                                                       |
-| Fecha                 | 2026-09-17                                                                                     |
-| Alcance               | Fase 3 — UMU, Proton-CachyOS y DXVK 2.6.2 managed                                              |
-| Decisión              | Pipeline común descriptor → fetch/verify → safe extract → install → receipt; markers v1 + v2   |
-| Autoridad relacionada | `AGENTS.md`, `ADR-001-runtime-graphics-domain.md`, `ADR-002-runtime-prefix-identity.md`        |
+| Campo                 | Valor                                                                                        |
+| --------------------- | -------------------------------------------------------------------------------------------- |
+| Estado                | Aceptado e implementado                                                                      |
+| Fecha                 | 2026-09-17                                                                                   |
+| Alcance               | UMU, Proton-CachyOS y DXVK 2.6.2 administrados                                               |
+| Decisión              | Pipeline común descriptor → fetch/verify → safe extract → install → receipt; markers v1 + v2 |
+| Autoridad relacionada | `AGENTS.md`, `ADR-001-runtime-graphics-domain.md`, `ADR-002-runtime-prefix-identity.md`      |
 
 ## 1. Contexto
 
-`tools/runners/managed.rs` ya descarga, verifica, extrae e instala tres artefactos con rollback por rename. La identidad operacional para fingerprints (Fase 2) usa `ArtifactIdentity` constante; el marker en disco es schema 1 con sólo `artifactId` y digest de fuente.
+El pipeline anterior descargaba, verificaba, extraía e instalaba tres artefactos desde
+`tools/runners/managed.rs`, con lógica y receipts acoplados. Los fingerprints ya consumían una
+`ArtifactIdentity`, pero el marker schema 1 sólo conservaba `artifactId` y digest de fuente.
 
-Fase 3 extrae el pipeline sin cambiar URLs, tamaños, digests ni paths `runtime/<id>`. No introduce package manager, mirrors ni flags de transición.
+La extracción a un módulo común conserva URLs, tamaños, digests y paths `runtime/<id>`. No introduce
+package manager, mirrors ni flags de transición.
 
 ## 2. Decisión
 
@@ -27,11 +30,11 @@ Fase 3 extrae el pipeline sin cambiar URLs, tamaños, digests ni paths `runtime/
 
 ## 3. Schema evolution
 
-| schema_version | Lectura | Escritura nueva |
-| -------------- | ------- | --------------- |
-| 1              | Sí      | No (sólo elevación desde ensure bajo lock) |
-| 2              | Sí      | Sí (install commit) |
-| >2             | No (not ready; no borrar) | No |
+| schema_version | Lectura                   | Escritura nueva                            |
+| -------------- | ------------------------- | ------------------------------------------ |
+| 1              | Sí                        | No (sólo elevación desde ensure bajo lock) |
+| 2              | Sí                        | Sí (install commit)                        |
+| >2             | No (not ready; no borrar) | No                                         |
 
 ## 4. Alternativas rechazadas
 
@@ -46,4 +49,5 @@ Fase 3 extrae el pipeline sin cambiar URLs, tamaños, digests ni paths `runtime/
 
 - Los futuros artefactos reutilizan el mismo pipeline añadiendo descriptor + validator cerrado;
   D7VK queda excluido por el `no-go` de ADR-005.
-- Binario anterior a Fase 3 que no entiende schema 2 puede reinstalar tras upgrade si sólo ve v2 (rollback documentado; payload previo se preserva hasta commit exitoso).
+- Un binario antiguo que no entiende schema 2 puede reinstalar tras rollback si sólo ve v2; el
+  payload previo se preserva hasta el commit exitoso de la instalación.

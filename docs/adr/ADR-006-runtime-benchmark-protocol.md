@@ -1,17 +1,17 @@
 # ADR-006: protocolo de benchmark reproducible
 
-| Campo                 | Valor                                                                                    |
-| --------------------- | ---------------------------------------------------------------------------------------- |
-| Estado                | Aceptado                                                                                 |
-| Fecha                 | 2026-09-18                                                                               |
-| Alcance               | Fase 8 — harness A/B opt-in, sin AutoTune ni ranking                                     |
-| Decisión              | Protocolo v1, captura `imported-csv-v1`, comparability explícita, store `benchmarks/`  |
-| Autoridad relacionada | `AGENTS.md`, ADR-002 §fingerprints, Fase 7 observaciones, plan §Fase 8                   |
+| Campo                 | Valor                                                                                               |
+| --------------------- | --------------------------------------------------------------------------------------------------- |
+| Estado                | Aceptado e implementado                                                                             |
+| Fecha                 | 2026-09-18                                                                                          |
+| Alcance               | Harness A/B, sin AutoTune ni ranking                                                                |
+| Decisión              | Protocolo v1, captura `imported-csv-v1`, comparability explícita, store `benchmarks/`               |
+| Autoridad relacionada | [`AGENTS.md`](../../AGENTS.md), ADR-002, [arquitectura vigente](../RO_RUNTIME_ARCHITECTURE_PLAN.md) |
 
 ## 1. Contexto
 
-La Fase 7 registra outcomes y fingerprints sin métricas de rendimiento. Comparar perfiles gráficos
-requiere frametimes bajo protocolo fijo, gates de corrección visual y provenance de host/runtime.
+Las observaciones registran outcomes y fingerprints sin métricas de rendimiento. Comparar perfiles
+gráficos requiere frametimes bajo protocolo fijo, gates de corrección visual y provenance de host/runtime.
 DXVK HUD no exporta frametimes a archivo; overlays externos no están validados con Gepard.
 
 ## 2. Decisiones cerradas
@@ -41,5 +41,4 @@ AutoTune, ranking global, MangoHud/DXVK_HUD productivo, mutación de profiles, D
 
 ## 6. Consecuencias
 
-- Fase 9 puede consumir `usable_for_autotune` informativo; Fase 8 no actúa sobre él.
-- Contrato operacional: [`RO_RUNTIME_PHASE_8_CONTRACT.md`](../RO_RUNTIME_PHASE_8_CONTRACT.md).
+- Un AutoTune futuro puede consumir `usable_for_autotune` informativo; el harness no actúa sobre él.

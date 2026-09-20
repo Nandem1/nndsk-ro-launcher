@@ -1,56 +1,56 @@
 # ADR-005: deployment y support envelope de D7VK
 
-| Campo                 | Valor                                                                                    |
-| --------------------- | ---------------------------------------------------------------------------------------- |
-| Estado                | Aceptado (spike Fase 6A cerrado)                                                         |
-| Fecha                 | 2026-09-18                                                                               |
-| Alcance               | Pin D7VK v2.2, harness de install/restore en scratch, decisión go/no-go para Fase 6B     |
-| Veredicto             | `no-go`                                                                                  |
-| Autoridad relacionada | `AGENTS.md`, `docs/RO_RUNTIME_ARCHITECTURE_PLAN.md` §12, ADR-001/002/003                 |
+| Campo                 | Valor                                                                                                       |
+| --------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Estado                | Aceptado; spike cerrado                                                                                     |
+| Fecha                 | 2026-09-18                                                                                                  |
+| Alcance               | Pin D7VK v2.2, harness de install/restore en scratch y decisión de integración                              |
+| Veredicto             | `no-go`                                                                                                     |
+| Autoridad relacionada | [`AGENTS.md`](../../AGENTS.md), [arquitectura vigente](../RO_RUNTIME_ARCHITECTURE_PLAN.md), ADR-001/002/003 |
 
 ## 1. Pin del artefacto
 
-| Campo            | Valor                                                                                              |
-| ---------------- | -------------------------------------------------------------------------------------------------- |
-| `artifactId`     | `d7vk-2.2`                                                                                         |
-| Versión upstream | `2.2` (tag `v2.2`, publicado 2026-08-28)                                                           |
+| Campo            | Valor                                                                                            |
+| ---------------- | ------------------------------------------------------------------------------------------------ |
+| `artifactId`     | `d7vk-2.2`                                                                                       |
+| Versión upstream | `2.2` (tag `v2.2`, publicado 2026-08-28)                                                         |
 | URL              | `https://github.com/WinterSnowfall/d7vk/releases/download/v2.2/d7vk-v2.2.zip`                    |
-| Tamaño           | `3375635` bytes                                                                                    |
+| Tamaño           | `3375635` bytes                                                                                  |
 | SHA-256 (zip)    | `1a9ffe3639ceb5e2fb1ccb25ef388354b4476bb26bc7edf88a8dc59f2774df38`                               |
 | Licencia         | zlib/libpng ([LICENSE v2.2](https://raw.githubusercontent.com/WinterSnowfall/d7vk/v2.2/LICENSE)) |
 
-Golden: [`contract-fixtures/d7vk-spike-v2.2.json`](../contract-fixtures/d7vk-spike-v2.2.json).
+Golden: [`contract-fixtures/d7vk-spike-v2.2.json`](../../contract-fixtures/d7vk-spike-v2.2.json).
 
 ## 2. Layout observado del release
 
 **Confirmado** (listado del asset verificado en implementación):
 
-| Entrada zip                 | Notas                          |
-| --------------------------- | ------------------------------ |
-| `d7vk-v2.2/`                | directorio raíz                |
-| `d7vk-v2.2/x32/`            | única arquitectura empaquetada |
-| `d7vk-v2.2/x32/ddraw.dll`   | PE machine `0x14c` (x86)       |
+| Entrada zip               | Notas                          |
+| ------------------------- | ------------------------------ |
+| `d7vk-v2.2/`              | directorio raíz                |
+| `d7vk-v2.2/x32/`          | única arquitectura empaquetada |
+| `d7vk-v2.2/x32/ddraw.dll` | PE machine `0x14c` (x86)       |
 
 - `x64RelativeSource`: **ausente** en v2.2 (solo `x32`).
 - Payload `ddraw.dll` x86: `8785934` bytes; SHA-256 `b6f2f4b64a72047742bd522a9ff0242446a42b9bb1a8e361b114e48f4c402f8a`.
 - No hay `d3d9.dll` adicional en el zip (a diferencia de DXVK-Sarek).
 
-## 3. Respuestas a §12.3 (`RO_RUNTIME_ARCHITECTURE_PLAN.md`)
+## 3. Resultados del spike
 
-| Pregunta | Estado | Evidencia |
-| -------- | ------ | --------- |
-| Arquitectura(s) de `ddraw.dll` para clientes RO | **Confirmado** | Solo x86 en v2.2; alineado con clientes 32-bit y `pe.rs` |
-| Side-by-side junto al exe bajo Wine 7.16 old-WoW64 | **Confirmado** (carga) / **`no-go`** (Gepard) | D7VK emitió `LOADING D7VK`; Gepard `26.9.3.1` marcó `illegal file ddraw.dll` |
-| Side-by-side bajo Proton-CachyOS/UMU | **No ejecutado** | Mismo overlay de game dir; no necesario para el veredicto. No se disfraza el payload |
+| Pregunta                                                       | Estado                                                         | Evidencia                                                                                    |
+| -------------------------------------------------------------- | -------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Arquitectura(s) de `ddraw.dll` para clientes RO                | **Confirmado**                                                 | Solo x86 en v2.2; alineado con clientes 32-bit y `pe.rs`                                     |
+| Side-by-side junto al exe bajo Wine 7.16 old-WoW64             | **Confirmado** (carga) / **`no-go`** (Gepard)                  | D7VK emitió `LOADING D7VK`; Gepard `26.9.3.1` marcó `illegal file ddraw.dll`                 |
+| Side-by-side bajo Proton-CachyOS/UMU                           | **No ejecutado**                                               | Mismo overlay de game dir; no necesario para el veredicto. No se disfraza el payload         |
 | Reemplazo `system32`/`syswow64` + conservación DirectDraw real | **Confirmado** (FS en scratch) / **No ejecutado** (carga Wine) | Harness `install_prefix_owned`; live no se persigue: seguiría siendo otro `ddraw` en proceso |
-| `ddraw=n,b`, overrides y casing | **Confirmado** (merge + live) | `DllOverrideSet`; el proceso Wine 7.16 cargó D7VK nativo, no WineD3D |
-| Vulkan API/extensions del release | **Confirmado** (documentación + host) | README FAQ: Vulkan 1.4; host del spike: API 1.4.351 |
-| Variables / logs del release | **Confirmado** | `D7VK_LOG_PATH`, `D7VK_LOG_LEVEL`; HUD `DXVK_HUD`; banner `LOADING D7VK` en stderr |
-| Clientes mixtos DDraw/GDI o D3D9 directo | **PE confirmado** / **render no alcanzado** | Sakura: strings `ddraw` + `d3d9` + `d3dx9_43` + `gdi32`; Gepard abortó antes del frame |
-| Checksum y layout reproducible | **Confirmado** | Pin size/digest + golden JSON |
-| Uninstall / interruption | **Confirmado** | Tests harness + restore live de dgVoodoo (hashes originales) |
-| Patcher / OpenSetup / game mismo plan | **No aplica** en 6A | Sin profile productivo; 6B prohibida |
-| Contribución `PrefixFingerprint` | **Confirmado** (diseño) | Side-by-side: no (ADR-002). Owner productivo no se elige: 6B no se abre |
+| `ddraw=n,b`, overrides y casing                                | **Confirmado** (merge + live)                                  | `DllOverrideSet`; el proceso Wine 7.16 cargó D7VK nativo, no WineD3D                         |
+| Vulkan API/extensions del release                              | **Confirmado** (documentación + host)                          | README FAQ: Vulkan 1.4; host del spike: API 1.4.351                                          |
+| Variables / logs del release                                   | **Confirmado**                                                 | `D7VK_LOG_PATH`, `D7VK_LOG_LEVEL`; HUD `DXVK_HUD`; banner `LOADING D7VK` en stderr           |
+| Clientes mixtos DDraw/GDI o D3D9 directo                       | **PE confirmado** / **render no alcanzado**                    | Sakura: strings `ddraw` + `d3d9` + `d3dx9_43` + `gdi32`; Gepard abortó antes del frame       |
+| Checksum y layout reproducible                                 | **Confirmado**                                                 | Pin size/digest + golden JSON                                                                |
+| Uninstall / interruption                                       | **Confirmado**                                                 | Tests harness + restore live de dgVoodoo (hashes originales)                                 |
+| Patcher / OpenSetup / game mismo plan                          | **No aplica** al spike                                         | Sin profile productivo; integración prohibida                                                |
+| Contribución `PrefixFingerprint`                               | **Confirmado** (diseño)                                        | Side-by-side: no (ADR-002). No se elige owner productivo                                     |
 
 ## 4. Deployment candidato
 
@@ -83,17 +83,18 @@ Algoritmo probado en scratch (no en prefix de usuario):
 
 - D7VK no implementa DirectDraw completo; delega a Wine/native `ddraw`.
 - Reemplazar Wine `ddraw.dll` sin conservar copia como `ddraw_.dll` **no** es válido.
-- Vulkan 1.4 requerido según README principal; hosts sin 1.4 deben rechazarse en 6B (eligibility), no forzar Sarek desde el launcher sin decisión explícita.
+- Vulkan 1.4 requerido según README principal; una integración hipotética tendría que rechazar
+  hosts sin 1.4, no forzar Sarek desde el launcher sin decisión explícita.
 - Sin modificar, hookear ni evadir Gepard/GameGuard. Un `illegal file` de Gepard es **`no-go`**, no un bug de layout.
 
 ## 6. Matriz live
 
-Scratch y prefix de prueba **fuera** de `~/.local/share/ro-launcher/`. Overlay temporal del game dir restaurado al terminar. Protocolo: [`scripts/d7vk-spike-live.sh`](../scripts/d7vk-spike-live.sh).
+Scratch y prefix de prueba **fuera** de `~/.local/share/ro-launcher/`. Overlay temporal del game dir restaurado al terminar. Protocolo: [`scripts/d7vk-spike-live.sh`](../../scripts/d7vk-spike-live.sh).
 
-| Anchor runner | Startup | Render visual | GDI mixto | D3D9 directo (si PE) | Cleanup | Logs D7VK vs WineD3D |
-| ------------- | ------- | ------------- | --------- | -------------------- | ------- | -------------------- |
-| Wine 7.16 old-WoW64 | D7VK cargó; Gepard `illegal file ddraw.dll` | no alcanzado | no alcanzado | no alcanzado | restore OK (hashes dgVoodoo) | `LOADING D7VK`; no WineD3D |
-| Proton-CachyOS 11 UMU | not-run | not-run | not-run | not-run | n/a | n/a |
+| Anchor runner         | Startup                                     | Render visual | GDI mixto    | D3D9 directo (si PE) | Cleanup                      | Logs D7VK vs WineD3D       |
+| --------------------- | ------------------------------------------- | ------------- | ------------ | -------------------- | ---------------------------- | -------------------------- |
+| Wine 7.16 old-WoW64   | D7VK cargó; Gepard `illegal file ddraw.dll` | no alcanzado  | no alcanzado | no alcanzado         | restore OK (hashes dgVoodoo) | `LOADING D7VK`; no WineD3D |
+| Proton-CachyOS 11 UMU | not-run                                     | not-run       | not-run      | not-run              | n/a                          | n/a                        |
 
 Host del spike Wine 7.16 (2026-09-18):
 
@@ -113,9 +114,10 @@ Host del spike Wine 7.16 (2026-09-18):
 6. Live completo en ambos anchors **sin** rechazo de anti-cheat ni bypass → **`go`** o **`go-reduced-scope`**
 7. Live muestra fallback WineD3D silencioso, GDI roto, DLL stale o corrupción visual → **`no-go`** o **`go-reduced-scope`** con constraint explícita
 
-**Fase 6B** solo con **`go`** o **`go-reduced-scope`**. **`no-go`** prohíbe 6B. Reabrir el spike sólo si un servidor allowlistea D7VK o existe un cliente RO controlado sin esa política.
+El `no-go` prohíbe una integración productiva. Reabrir el spike sólo es válido si un servidor
+allowlistea D7VK o existe un cliente RO controlado sin esa política.
 
-## 8. Fuera de alcance (6A)
+## 8. Fuera de alcance del spike
 
 - Toggle UI, catálogo curated `Validated`, descarga automática productiva (`ensure_catalog_artifact`).
 - Variant `GraphicsProfile` / `GraphicsPlan` productivo.
@@ -124,6 +126,5 @@ Host del spike Wine 7.16 (2026-09-18):
 
 ## 9. Implementación del harness
 
-- Módulo test-only: [`src-tauri/src/tools/runtime/d7vk_spike.rs`](../src-tauri/src/tools/runtime/d7vk_spike.rs).
-- Contrato: [`RO_RUNTIME_PHASE_6A_CONTRACT.md`](../RO_RUNTIME_PHASE_6A_CONTRACT.md).
+- Módulo test-only: [`src-tauri/src/tools/runtime/d7vk_spike.rs`](../../src-tauri/src/tools/runtime/d7vk_spike.rs).
 - Lock: `OperationGuard::acquire("d7vk-spike", scratch)` exclusivo; namespaces `prefix`/`dgvoodoo`/`runtime` no usados por el spike.
