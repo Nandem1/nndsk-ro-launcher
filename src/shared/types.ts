@@ -165,10 +165,16 @@ export interface GearSwitchConfig {
   rules: GearSwitchRule[]
 }
 
+export interface ShiftModeConfig {
+  enabled: boolean
+  triggerKeys: string[]
+}
+
 export interface SpammerConfig {
   enabled: boolean
   delayMs: number
   keys: string[]
+  shiftMode: ShiftModeConfig
   gearSwitch: GearSwitchConfig
 }
 
@@ -208,6 +214,7 @@ export interface SpammerStatusEvent {
   cycleCount: number
   error?: string | null
   gearMode?: 'atk' | 'def' | null
+  shiftActive?: boolean
 }
 
 export type PrefixMode = 'shared' | 'isolated' | 'custom'

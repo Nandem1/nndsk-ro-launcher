@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use ro_tools_core::{HeldKeyWriter, KeyPressWriter, SpamCycleWriter, ToolsError};
+use ro_tools_core::{HeldKeyWriter, KeyPressWriter, SpamCycleWriter, SpamModifier, ToolsError};
 
 use super::uinput_worker::{
     InputSource, MetricsSnapshot, SpamCycleTiming, UinputInput, UinputWriter,
@@ -92,9 +92,10 @@ impl SpamCycleWriter for UinputWriter {
     fn spam_cycle(
         &self,
         key: &str,
+        modifier: Option<SpamModifier>,
         deadline: Option<std::time::Instant>,
     ) -> Result<bool, ToolsError> {
-        UinputWriter::spam_cycle(self, key, deadline)
+        UinputWriter::spam_cycle(self, key, modifier, deadline)
     }
 
     fn release_spam(&self) -> Result<(), ToolsError> {

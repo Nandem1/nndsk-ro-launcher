@@ -5,7 +5,7 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use crossbeam_channel::{bounded, Receiver, SendTimeoutError, Sender, TrySendError};
-use ro_tools_core::ToolsError;
+use ro_tools_core::{SpamModifier, ToolsError};
 use ro_tools_linux::CombatUinput;
 
 const HIGH_QUEUE_CAPACITY: usize = 8;
@@ -359,9 +359,14 @@ impl UinputWriter {
             .map(|_| ())
     }
 
-    pub fn spam_cycle(&self, key: &str, deadline: Option<Instant>) -> Result<bool, ToolsError> {
+    pub fn spam_cycle(
+        &self,
+        key: &str,
+        modifier: Option<SpamModifier>,
+        deadline: Option<Instant>,
+    ) -> Result<bool, ToolsError> {
         let ticket = self.spam_cycle_ticket(deadline);
-        self.spam_cycle_with_ticket(key, ticket)
+        self.spam_cycle_with_ticket(key, modifier, ticket)
     }
 
     pub(crate) fn spam_cycle_ticket(&self, deadline: Option<Instant>) -> SpamCycleTicket {
@@ -377,10 +382,14 @@ impl UinputWriter {
     pub(crate) fn spam_cycle_with_ticket(
         &self,
         key: &str,
+        modifier: Option<SpamModifier>,
         ticket: SpamCycleTicket,
     ) -> Result<bool, ToolsError> {
         self.submit(
-            CommandKind::SpamCycle(key.to_string()),
+            CommandKind::SpamCycle {
+                key: key.to_string(),
+                modifier,
+            },
             ticket.deadline,
             Some(ticket.cancellation),
         )
@@ -406,7 +415,7 @@ impl UinputWriter {
         cancellation: Option<SpamCancellation>,
     ) -> Result<bool, ToolsError> {
         let enqueued = Instant::now();
-        let deadline = if matches!(kind, CommandKind::SpamCycle(_)) {
+        let deadline = if matches!(kind, CommandKind::SpamCycle { .. }) {
             absolute_deadline.or(Some(enqueued + self.deadline_budget))
         } else {
             None
@@ -483,7 +492,10 @@ impl UinputWriter {
 
 enum CommandKind {
     PressKey(String),
-    SpamCycle(String),
+    SpamCycle {
+        key: String,
+        modifier: Option<SpamModifier>,
+    },
     ReleaseSpam,
     KeyEvent(String, i32),
 }
@@ -491,6 +503,7 @@ enum CommandKind {
 #[derive(Default)]
 struct SpamState {
     held_key: Option<String>,
+    held_modifier: Option<SpamModifier>,
     mouse_left_pressed: bool,
     cancelled_through: Option<u64>,
 }
@@ -530,6 +543,7 @@ enum CommandOutcome {
 
 trait InputDevice {
     fn key_event(&mut self, key: &str, value: i32) -> Result<(), ToolsError>;
+    fn modifier_event(&mut self, modifier: SpamModifier, value: i32) -> Result<(), ToolsError>;
     fn mouse_left_event(&mut self, value: i32) -> Result<(), ToolsError>;
     fn release(&mut self, key: Option<&str>, mouse_left: bool);
 }
@@ -537,6 +551,10 @@ trait InputDevice {
 impl InputDevice for CombatUinput {
     fn key_event(&mut self, key: &str, value: i32) -> Result<(), ToolsError> {
         CombatUinput::key_event(self, key, value)
+    }
+
+    fn modifier_event(&mut self, modifier: SpamModifier, value: i32) -> Result<(), ToolsError> {
+        CombatUinput::modifier_event(self, modifier, value)
     }
 
     fn mouse_left_event(&mut self, value: i32) -> Result<(), ToolsError> {
@@ -593,7 +611,7 @@ fn execute_command<D: InputDevice>(
     metrics: &Metrics,
 ) -> CommandOutcome {
     let started = Instant::now();
-    let cancelled = matches!(&command.kind, CommandKind::SpamCycle(_))
+    let cancelled = matches!(&command.kind, CommandKind::SpamCycle { .. })
         && (spam_state
             .cancelled_through
             .is_some_and(|cutoff| command.sequence <= cutoff)
@@ -621,11 +639,12 @@ fn execute_command<D: InputDevice>(
 
     let result = match &command.kind {
         CommandKind::PressKey(key) => press_key(device, spam_state, key),
-        CommandKind::SpamCycle(key) => {
+        CommandKind::SpamCycle { key, modifier } => {
             match spam_cycle(
                 device,
                 spam_state,
                 key,
+                *modifier,
                 command.spam_timing,
                 command.cancellation.as_ref(),
             ) {
@@ -741,21 +760,29 @@ fn spam_cycle(
     device: &mut impl InputDevice,
     spam_state: &mut SpamState,
     key: &str,
+    modifier: Option<SpamModifier>,
     timing: SpamCycleTiming,
     cancellation: Option<&SpamCancellation>,
 ) -> Result<bool, ToolsError> {
-    if release_spam_inputs(device, spam_state)? {
+    if release_cycle_inputs(device, spam_state)? {
         // Produce a real up->down edge before every click after the first one.
         thread::sleep(timing.key_rearm_settle());
     }
 
     if cancellation.is_some_and(SpamCancellation::requested) {
+        release_spam_inputs(device, spam_state)?;
+        return Ok(false);
+    }
+
+    reconcile_spam_modifier(device, spam_state, modifier)?;
+    if cancellation.is_some_and(SpamCancellation::requested) {
+        release_spam_inputs(device, spam_state)?;
         return Ok(false);
     }
 
     spam_state.held_key = Some(key.to_string());
     if let Err(error) = device.key_event(key, 1) {
-        device.release(Some(key), true);
+        device.release(None, true);
         return Err(error);
     }
 
@@ -769,19 +796,19 @@ fn spam_cycle(
 
     spam_state.mouse_left_pressed = true;
     if let Err(error) = device.mouse_left_event(1) {
-        device.release(Some(key), true);
+        device.release(None, true);
         return Err(error);
     }
     thread::sleep(timing.click_hold());
     if let Err(error) = device.mouse_left_event(0) {
-        device.release(Some(key), true);
+        device.release(None, true);
         return Err(error);
     }
     spam_state.mouse_left_pressed = false;
     Ok(true)
 }
 
-fn release_spam_inputs(
+fn release_cycle_inputs(
     device: &mut impl InputDevice,
     spam_state: &mut SpamState,
 ) -> Result<bool, ToolsError> {
@@ -799,7 +826,6 @@ fn release_spam_inputs(
         match device.key_event(&key, 0) {
             Ok(()) => spam_state.held_key = None,
             Err(error) => {
-                device.release(Some(&key), true);
                 if first_error.is_none() {
                     first_error = Some(error);
                 }
@@ -808,9 +834,79 @@ fn release_spam_inputs(
     }
 
     if let Some(error) = first_error {
+        device.release(None, true);
         return Err(error);
     }
     Ok(had_key)
+}
+
+fn reconcile_spam_modifier(
+    device: &mut impl InputDevice,
+    spam_state: &mut SpamState,
+    modifier: Option<SpamModifier>,
+) -> Result<(), ToolsError> {
+    if spam_state.held_modifier == modifier {
+        return Ok(());
+    }
+
+    if let Some(held) = spam_state.held_modifier {
+        if let Err(error) = device.modifier_event(held, 0) {
+            device.release(None, true);
+            return Err(error);
+        }
+        spam_state.held_modifier = None;
+    }
+
+    if let Some(next) = modifier {
+        if let Err(error) = device.modifier_event(next, 1) {
+            device.release(None, true);
+            return Err(error);
+        }
+        spam_state.held_modifier = Some(next);
+    }
+    Ok(())
+}
+
+fn release_spam_inputs(
+    device: &mut impl InputDevice,
+    spam_state: &mut SpamState,
+) -> Result<(), ToolsError> {
+    let mut first_error = None;
+
+    if spam_state.mouse_left_pressed {
+        match device.mouse_left_event(0) {
+            Ok(()) => spam_state.mouse_left_pressed = false,
+            Err(error) => first_error = Some(error),
+        }
+    }
+
+    if let Some(key) = spam_state.held_key.clone() {
+        match device.key_event(&key, 0) {
+            Ok(()) => spam_state.held_key = None,
+            Err(error) => {
+                if first_error.is_none() {
+                    first_error = Some(error);
+                }
+            }
+        }
+    }
+
+    if let Some(modifier) = spam_state.held_modifier {
+        match device.modifier_event(modifier, 0) {
+            Ok(()) => spam_state.held_modifier = None,
+            Err(error) => {
+                if first_error.is_none() {
+                    first_error = Some(error);
+                }
+            }
+        }
+    }
+
+    if let Some(error) = first_error {
+        device.release(None, true);
+        return Err(error);
+    }
+    Ok(())
 }
 
 fn record_metric(metrics: &Metrics, source: InputSource, update: impl FnOnce(&mut SourceMetrics)) {
@@ -864,6 +960,20 @@ mod tests {
             Ok(())
         }
 
+        fn modifier_event(&mut self, modifier: SpamModifier, value: i32) -> Result<(), ToolsError> {
+            let event = format!("modifier:{modifier:?}:{value}");
+            self.events.push(event.clone());
+            if self.fail_on.as_ref() == Some(&event) {
+                return Err(ToolsError::Other("mock uinput write failed".into()));
+            }
+            if self.cancel_on.as_ref() == Some(&event) {
+                if let Some(generation) = &self.cancellation_generation {
+                    generation.fetch_add(1, Ordering::AcqRel);
+                }
+            }
+            Ok(())
+        }
+
         fn mouse_left_event(&mut self, value: i32) -> Result<(), ToolsError> {
             let event = format!("mouse:{value}");
             self.events.push(event.clone());
@@ -893,6 +1003,20 @@ mod tests {
         }
     }
 
+    fn spam_command(key: &str) -> CommandKind {
+        CommandKind::SpamCycle {
+            key: key.into(),
+            modifier: None,
+        }
+    }
+
+    fn shift_spam_command(key: &str) -> CommandKind {
+        CommandKind::SpamCycle {
+            key: key.into(),
+            modifier: Some(SpamModifier::Shift),
+        }
+    }
+
     fn cancellable_command(
         kind: CommandKind,
         cancellation_generation: Arc<AtomicU64>,
@@ -915,7 +1039,7 @@ mod tests {
         let outcome = execute_command(
             &mut device,
             &mut spam_state,
-            &command(CommandKind::SpamCycle("F2".into()), None),
+            &command(spam_command("F2"), None),
             &metrics,
         );
         assert!(matches!(outcome, CommandOutcome::Completed));
@@ -935,7 +1059,7 @@ mod tests {
             let outcome = execute_command(
                 &mut device,
                 &mut spam_state,
-                &command(CommandKind::SpamCycle("F2".into()), None),
+                &command(spam_command("F2"), None),
                 &metrics,
             );
             assert!(matches!(outcome, CommandOutcome::Completed));
@@ -958,6 +1082,126 @@ mod tests {
     }
 
     #[test]
+    fn shift_spam_keeps_modifier_held_across_cycles_and_autopot() {
+        let mut device = MockDevice::default();
+        let mut spam_state = SpamState::default();
+        let metrics = Arc::new(Mutex::new(HashMap::new()));
+
+        for _ in 0..2 {
+            assert!(matches!(
+                execute_command(
+                    &mut device,
+                    &mut spam_state,
+                    &command(shift_spam_command("F2"), None),
+                    &metrics,
+                ),
+                CommandOutcome::Completed
+            ));
+        }
+        let mut autopot = command(CommandKind::PressKey("F8".into()), None);
+        autopot.source = InputSource::Autopot;
+        assert!(matches!(
+            execute_command(&mut device, &mut spam_state, &autopot, &metrics),
+            CommandOutcome::Completed
+        ));
+
+        assert_eq!(
+            device.events,
+            [
+                "modifier:Shift:1",
+                "key:F2:1",
+                "mouse:1",
+                "mouse:0",
+                "key:F2:0",
+                "key:F2:1",
+                "mouse:1",
+                "mouse:0",
+                "key:F8:1",
+                "key:F8:0",
+            ]
+        );
+        assert_eq!(spam_state.held_modifier, Some(SpamModifier::Shift));
+        assert_eq!(spam_state.held_key.as_deref(), Some("F2"));
+    }
+
+    #[test]
+    fn release_spam_releases_skill_before_shift() {
+        let mut device = MockDevice::default();
+        let mut spam_state = SpamState::default();
+        let metrics = Arc::new(Mutex::new(HashMap::new()));
+        execute_command(
+            &mut device,
+            &mut spam_state,
+            &command(shift_spam_command("F2"), None),
+            &metrics,
+        );
+
+        let outcome = execute_command(
+            &mut device,
+            &mut spam_state,
+            &command(CommandKind::ReleaseSpam, None),
+            &metrics,
+        );
+
+        assert!(matches!(outcome, CommandOutcome::Completed));
+        assert_eq!(&device.events[4..], ["key:F2:0", "modifier:Shift:0"]);
+        assert!(spam_state.held_key.is_none());
+        assert!(spam_state.held_modifier.is_none());
+    }
+
+    #[test]
+    fn changing_from_shift_to_normal_releases_modifier_before_new_skill() {
+        let mut device = MockDevice::default();
+        let mut spam_state = SpamState::default();
+        let metrics = Arc::new(Mutex::new(HashMap::new()));
+        for kind in [shift_spam_command("F2"), spam_command("F3")] {
+            assert!(matches!(
+                execute_command(&mut device, &mut spam_state, &command(kind, None), &metrics,),
+                CommandOutcome::Completed
+            ));
+        }
+
+        assert_eq!(
+            &device.events[4..],
+            [
+                "key:F2:0",
+                "modifier:Shift:0",
+                "key:F3:1",
+                "mouse:1",
+                "mouse:0",
+            ]
+        );
+        assert!(spam_state.held_modifier.is_none());
+    }
+
+    #[test]
+    fn cancellation_after_shift_down_releases_modifier_without_clicking() {
+        let cancellation_generation = Arc::new(AtomicU64::new(1));
+        let mut device = MockDevice {
+            cancel_on: Some("modifier:Shift:1".into()),
+            cancellation_generation: Some(Arc::clone(&cancellation_generation)),
+            ..Default::default()
+        };
+        let mut spam_state = SpamState::default();
+        let metrics = Arc::new(Mutex::new(HashMap::new()));
+
+        let outcome = execute_command(
+            &mut device,
+            &mut spam_state,
+            &cancellable_command(
+                shift_spam_command("F2"),
+                Arc::clone(&cancellation_generation),
+            ),
+            &metrics,
+        );
+
+        assert!(matches!(outcome, CommandOutcome::Overrun));
+        assert_eq!(device.events, ["modifier:Shift:1", "modifier:Shift:0"]);
+        assert!(spam_state.held_modifier.is_none());
+        assert!(!device.events.iter().any(|event| event == "mouse:1"));
+    }
+
+    #[test]
     fn physical_release_during_skill_settle_cancels_pending_click() {
         let cancellation_generation = Arc::new(AtomicU64::new(1));
         let mut device = MockDevice {
@@ -971,7 +1215,7 @@ mod tests {
         let outcome = execute_command(
             &mut device,
             &mut spam_state,
-            &cancellable_command(CommandKind::SpamCycle("F2".into()), cancellation_generation),
+            &cancellable_command(spam_command("F2"), cancellation_generation),
             &metrics,
         );
 
@@ -993,10 +1237,7 @@ mod tests {
     #[test]
     fn release_after_dispatch_cancels_cycle_before_any_events() {
         let cancellation_generation = Arc::new(AtomicU64::new(1));
-        let pending = cancellable_command(
-            CommandKind::SpamCycle("F2".into()),
-            Arc::clone(&cancellation_generation),
-        );
+        let pending = cancellable_command(spam_command("F2"), Arc::clone(&cancellation_generation));
         cancellation_generation.fetch_add(1, Ordering::AcqRel);
         let mut device = MockDevice::default();
         let mut spam_state = SpamState::default();
@@ -1043,7 +1284,7 @@ mod tests {
             let outcome = execute_command(
                 &mut device,
                 &mut spam_state,
-                &command(CommandKind::SpamCycle(key.into()), None),
+                &command(spam_command(key), None),
                 &metrics,
             );
             assert!(matches!(outcome, CommandOutcome::Completed));
@@ -1088,7 +1329,7 @@ mod tests {
         };
         let metrics = Arc::new(Mutex::new(HashMap::new()));
         let mut expired = command(
-            CommandKind::SpamCycle("F2".into()),
+            spam_command("F2"),
             Some(Instant::now() - Duration::from_millis(1)),
         );
         expired.enqueued = Instant::now() - Duration::from_millis(10);
@@ -1113,7 +1354,7 @@ mod tests {
         let mut device = MockDevice::default();
         let mut spam_state = SpamState::default();
         let metrics = Arc::new(Mutex::new(HashMap::new()));
-        let stale_cycle = command(CommandKind::SpamCycle("F2".into()), None);
+        let stale_cycle = command(spam_command("F2"), None);
         let release = command(CommandKind::ReleaseSpam, None);
 
         let release_outcome = execute_command(&mut device, &mut spam_state, &release, &metrics);
@@ -1126,7 +1367,7 @@ mod tests {
         let fresh_outcome = execute_command(
             &mut device,
             &mut spam_state,
-            &command(CommandKind::SpamCycle("F2".into()), None),
+            &command(spam_command("F2"), None),
             &metrics,
         );
         assert!(matches!(fresh_outcome, CommandOutcome::Completed));
@@ -1139,7 +1380,7 @@ mod tests {
         let mut spam_state = SpamState::default();
         let metrics = Arc::new(Mutex::new(HashMap::new()));
         let older_release = command(CommandKind::ReleaseSpam, None);
-        let stale_cycle = command(CommandKind::SpamCycle("F2".into()), None);
+        let stale_cycle = command(spam_command("F2"), None);
         let newer_release = command(CommandKind::ReleaseSpam, None);
 
         assert!(matches!(
@@ -1165,9 +1406,7 @@ mod tests {
         high_tx
             .send(command(CommandKind::PressKey("F8".into()), None))
             .unwrap();
-        normal_tx
-            .send(command(CommandKind::SpamCycle("F2".into()), None))
-            .unwrap();
+        normal_tx.send(command(spam_command("F2"), None)).unwrap();
         let first = high_rx
             .try_recv()
             .or_else(|_| normal_rx.try_recv())
@@ -1260,11 +1499,11 @@ mod tests {
         let outcome = execute_command(
             &mut device,
             &mut spam_state,
-            &command(CommandKind::SpamCycle("F2".into()), None),
+            &command(spam_command("F2"), None),
             &metrics,
         );
         assert!(matches!(outcome, CommandOutcome::Failed(_)));
-        assert_eq!(device.events.last().unwrap(), "release:Some(\"F2\"):true");
+        assert_eq!(device.events.last().unwrap(), "release:None:true");
         assert_eq!(spam_state.held_key.as_deref(), Some("F2"));
         assert!(spam_state.mouse_left_pressed);
         assert_eq!(
@@ -1338,7 +1577,7 @@ mod tests {
 
         assert!(matches!(outcome, CommandOutcome::Failed(_)));
         assert_eq!(spam_state.held_key.as_deref(), Some("F2"));
-        assert_eq!(device.events.last().unwrap(), "release:Some(\"F2\"):true");
+        assert_eq!(device.events.last().unwrap(), "release:None:true");
     }
 
     #[test]
@@ -1395,7 +1634,7 @@ mod tests {
                 if let Some(remaining) = deadline.checked_duration_since(Instant::now()) {
                     thread::sleep(remaining);
                 }
-                writer.spam_cycle("F12", None).unwrap();
+                writer.spam_cycle("F12", None, None).unwrap();
             }
             let metrics = input.snapshot_metrics(InputSource::Spammer);
             assert!(metrics.period_p95_us <= 44_000, "{metrics:?}");

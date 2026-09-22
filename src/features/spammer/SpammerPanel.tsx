@@ -6,6 +6,7 @@ import { Panel, resolveToolTone } from '../../shared/ui/Panel'
 import { ToggleSwitch } from '../../shared/ui/ToggleSwitch'
 import { formatSpammerKeys } from './spammer.logic'
 import { GearSwitchEditor } from './GearSwitchEditor'
+import { SharpShootingEditor } from './SharpShootingEditor'
 import { SpammerDelayControl } from './SpammerDelayControl'
 import { SpammerKeyboard } from './SpammerKeyboard'
 import { useSpammer } from './useSpammer'
@@ -23,7 +24,10 @@ export function SpammerPanel() {
   const statusLabel = (() => {
     if (!available || !status.armed) return 'Inactivo'
     if (status.spamming && status.key) {
-      return `${status.cycleCount.toLocaleString()} ciclos · ${status.key} + click`
+      const chord = status.shiftActive
+        ? `Shift + ${status.key} + click`
+        : `${status.key} + click`
+      return `${status.cycleCount.toLocaleString()} ciclos · ${chord}`
     }
     return `Standby — ${keysLabel}`
   })()
@@ -95,6 +99,14 @@ export function SpammerPanel() {
           configuredDelayMs={config.delayMs}
           disabled={!server || busy}
           onCommit={(delayMs) => updateField({ delayMs })}
+        />
+
+        <SharpShootingEditor
+          spammerKeys={config.keys}
+          shiftMode={config.shiftMode}
+          shiftActive={status.shiftActive}
+          disabled={!server || busy}
+          onChange={(shiftMode) => void updateField({ shiftMode })}
         />
 
         <GearSwitchEditor

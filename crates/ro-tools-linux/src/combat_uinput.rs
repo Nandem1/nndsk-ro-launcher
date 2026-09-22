@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use evdev::{
     uinput::VirtualDevice, AttributeSet, EventType, InputEvent, KeyCode, RelativeAxisCode,
 };
-use ro_tools_core::ToolsError;
+use ro_tools_core::{SpamModifier, ToolsError};
 
 use crate::keyboard::key_label_to_keycode;
 
@@ -57,6 +57,17 @@ impl CombatUinput {
             key: key.to_string(),
             message: "tecla no soportada por uinput".into(),
         })?;
+        self.keycode_event(code, value)
+    }
+
+    pub fn modifier_event(&mut self, modifier: SpamModifier, value: i32) -> Result<(), ToolsError> {
+        let code = match modifier {
+            SpamModifier::Shift => KeyCode::KEY_LEFTSHIFT,
+        };
+        self.keycode_event(code, value)
+    }
+
+    fn keycode_event(&mut self, code: KeyCode, value: i32) -> Result<(), ToolsError> {
         let result = self
             .device
             .emit(&[InputEvent::new(EventType::KEY.0, code.0, value)])
@@ -174,11 +185,13 @@ fn supported_combat_keys() -> AttributeSet<KeyCode> {
         "4", "5", "6", "7", "8", "9", "0", "Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", "A",
         "S", "D", "F", "G", "H", "J", "K", "L", "Z", "X", "C", "V", "B", "N", "M",
     ];
-    AttributeSet::from_iter(
+    let mut keys = AttributeSet::from_iter(
         LABELS
             .iter()
             .filter_map(|label| key_label_to_keycode(label)),
-    )
+    );
+    keys.insert(KeyCode::KEY_LEFTSHIFT);
+    keys
 }
 
 fn supported_pointer_axes() -> AttributeSet<RelativeAxisCode> {
@@ -200,6 +213,7 @@ mod tests {
             );
         }
         assert!(keys.contains(KeyCode::BTN_LEFT));
+        assert!(keys.contains(KeyCode::KEY_LEFTSHIFT));
         let axes = supported_pointer_axes();
         assert!(axes.contains(RelativeAxisCode::REL_X));
         assert!(axes.contains(RelativeAxisCode::REL_Y));
@@ -245,6 +259,7 @@ mod tests {
         };
         let keys = device.supported_keys().unwrap();
         assert!(keys.contains(KeyCode::KEY_F2));
+        assert!(keys.contains(KeyCode::KEY_LEFTSHIFT));
         assert!(keys.contains(KeyCode::BTN_LEFT));
         let axes = device.supported_relative_axes().unwrap();
         assert!(axes.contains(RelativeAxisCode::REL_X));

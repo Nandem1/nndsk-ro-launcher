@@ -1,5 +1,5 @@
 use crate::error::ToolsError;
-use crate::ports::SpamCycleWriter;
+use crate::ports::{SpamCycleWriter, SpamModifier};
 use crate::spammer::config::SpammerConfig;
 use crate::spammer::keys::is_valid_spammer_key;
 use std::time::Instant;
@@ -53,7 +53,11 @@ impl<I: SpamCycleWriter> SpammerEngine<I> {
             });
         }
 
-        let cycled = self.input.spam_cycle(key, deadline)?;
+        let modifier = self
+            .config
+            .uses_shift_for(key)
+            .then_some(SpamModifier::Shift);
+        let cycled = self.input.spam_cycle(key, modifier, deadline)?;
 
         Ok(SpammerTick { cycled })
     }
@@ -70,8 +74,16 @@ mod tests {
     }
 
     impl SpamCycleWriter for MockInput {
-        fn spam_cycle(&self, key: &str, _deadline: Option<Instant>) -> Result<bool, ToolsError> {
-            self.log.lock().unwrap().push(format!("cycle:{key}"));
+        fn spam_cycle(
+            &self,
+            key: &str,
+            modifier: Option<SpamModifier>,
+            _deadline: Option<Instant>,
+        ) -> Result<bool, ToolsError> {
+            self.log
+                .lock()
+                .unwrap()
+                .push(format!("cycle:{key}:{modifier:?}"));
             Ok(true)
         }
 
@@ -92,6 +104,7 @@ mod tests {
                 enabled: true,
                 delay_ms: 16,
                 keys: vec!["F2".into()],
+                shift_mode: Default::default(),
                 gear_switch: Default::default(),
             },
         );
@@ -101,7 +114,7 @@ mod tests {
         engine.release().unwrap();
 
         let log = engine.input.log.lock().unwrap();
-        assert_eq!(log.as_slice(), &["cycle:F2", "release"]);
+        assert_eq!(log.as_slice(), &["cycle:F2:None", "release"]);
     }
 
     #[test]
@@ -123,6 +136,30 @@ mod tests {
         assert!(engine.tick("Q").unwrap().cycled);
 
         let log = engine.input.log.lock().unwrap();
-        assert_eq!(log.as_slice(), &["cycle:Q"]);
+        assert_eq!(log.as_slice(), &["cycle:Q:None"]);
+    }
+
+    #[test]
+    fn configured_trigger_uses_shift_modifier() {
+        let input = MockInput {
+            log: Mutex::new(vec![]),
+        };
+        let mut engine = SpammerEngine::new(
+            input,
+            SpammerConfig {
+                keys: vec!["F2".into()],
+                shift_mode: crate::spammer::ShiftModeConfig {
+                    enabled: true,
+                    trigger_keys: vec!["F2".into()],
+                },
+                ..Default::default()
+            },
+        );
+
+        assert!(engine.tick("F2").unwrap().cycled);
+        assert_eq!(
+            engine.input.log.lock().unwrap().as_slice(),
+            ["cycle:F2:Some(Shift)"]
+        );
     }
 }

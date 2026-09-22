@@ -15,6 +15,9 @@ pub struct SpammerStatusEvent {
     /// Modo de equipo activo del gear switch: "atk", "def" o None si está desactivado.
     #[serde(default)]
     pub gear_mode: Option<String>,
+    /// Shift sintético retenido por un trigger de Sharp Shooting/FAS.
+    #[serde(default)]
+    pub shift_active: bool,
 }
 
 impl Default for SpammerStatusEvent {
@@ -29,6 +32,7 @@ impl Default for SpammerStatusEvent {
             cycle_count: 0,
             error: None,
             gear_mode: None,
+            shift_active: false,
         }
     }
 }

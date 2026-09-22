@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use ro_tools_core::{SpammerConfig, SpammerTick};
+use ro_tools_core::{SpamModifier, SpammerConfig, SpammerTick};
 use tauri::AppHandle;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::watch;
@@ -192,10 +192,11 @@ fn build_status(
     cycle_count: u64,
     error: Option<String>,
     lifecycle: (bool, bool),
-    gear_mode: Option<&str>,
+    modes: (Option<&str>, bool),
     timing: SpammerTimingPlan,
 ) -> SpammerStatusEvent {
     let (active, armed) = lifecycle;
+    let (gear_mode, shift_active) = modes;
     SpammerStatusEvent {
         active,
         effective_delay_ms: timing.post_delay_ms,
@@ -206,6 +207,7 @@ fn build_status(
         cycle_count,
         error,
         gear_mode: gear_mode.map(str::to_string),
+        shift_active,
     }
 }
 
@@ -241,7 +243,15 @@ pub async fn run(
                 &app,
                 &status_arc,
                 EVENT_SPAMMER_STATUS,
-                build_status(&config, "", 0, Some(msg), (false, false), None, timing),
+                build_status(
+                    &config,
+                    "",
+                    0,
+                    Some(msg),
+                    (false, false),
+                    (None, false),
+                    timing,
+                ),
             );
             return;
         }
@@ -280,6 +290,7 @@ pub async fn run(
     let mut active_key = String::new();
     let mut held_keys: Vec<String> = Vec::new();
     let mut gear_mode: Option<&'static str> = None;
+    let mut shift_active = false;
     let mut ready_received = false;
     let mut terminal_error: Option<String> = None;
     let session_started = Instant::now();
@@ -314,6 +325,7 @@ pub async fn run(
                                 terminal_error = Some(msg);
                                 break 'main;
                             }
+                            shift_active = false;
                             emit_status_if_changed(
                                 &app,
                                 &status_arc,
@@ -324,7 +336,7 @@ pub async fn run(
                                     0,
                                     None,
                                     (true, true),
-                                    gear_mode,
+                                    (gear_mode, shift_active),
                                     timing,
                                 ),
                             );
@@ -377,6 +389,7 @@ pub async fn run(
                                     terminal_error = Some(msg);
                                     break 'main;
                                 }
+                                shift_active = false;
                             }
                             if active_key.is_empty() {
                                 cycle_armed = false;
@@ -418,7 +431,7 @@ pub async fn run(
                                         cycle_count,
                                         None,
                                         (true, true),
-                                        gear_mode,
+                                        (gear_mode, shift_active),
                                         timing,
                                     ),
                                 );
@@ -438,6 +451,7 @@ pub async fn run(
                                         terminal_error = Some(msg);
                                         break 'main;
                                     }
+                                    shift_active = false;
                                     // Keep the existing deadline: Gear must not create an early
                                     // click; this select branch cannot poll it during the await.
 
@@ -501,7 +515,7 @@ pub async fn run(
                                         cycle_count,
                                         None,
                                         (true, true),
-                                        gear_mode,
+                                        (gear_mode, shift_active),
                                         timing,
                                     ),
                                 );
@@ -519,7 +533,7 @@ pub async fn run(
                                     cycle_count,
                                     Some(msg),
                                     (false, false),
-                                    None,
+                                    (None, false),
                                     timing,
                                 ),
                             );
@@ -540,7 +554,7 @@ pub async fn run(
                                 cycle_count,
                                 Some(msg),
                                 (false, false),
-                                None,
+                                (None, false),
                                 timing,
                             ),
                         );
@@ -560,6 +574,9 @@ pub async fn run(
                     let attempt = cycle_attempt;
                     let tick_key = active_key.clone();
                     let log_key = tick_key.clone();
+                    let tick_modifier = config
+                        .uses_shift_for(&tick_key)
+                        .then_some(SpamModifier::Shift);
                     let tick_writer = cycle_writer.clone();
                     let dispatched_at = Instant::now();
                     // Capture cancellation generation and deadline before entering the
@@ -584,7 +601,7 @@ pub async fn run(
                         inflight_stage.store(INFLIGHT_RUNNING_TASK, Ordering::Release);
                         let spawn_wait_us = duration_us(task_started.duration_since(dispatched_at));
                         let tick_result = tick_writer
-                            .spam_cycle_with_ticket(&tick_key, ticket)
+                            .spam_cycle_with_ticket(&tick_key, tick_modifier, ticket)
                             .map(|cycled| SpammerTick { cycled })
                             .map_err(|error| error.to_string());
                         let finished_at = Instant::now();
@@ -616,7 +633,7 @@ pub async fn run(
                                 cycle_count,
                                 Some(err_msg.clone()),
                                 (true, true),
-                                gear_mode,
+                                (gear_mode, shift_active),
                                 timing,
                             ),
                         );
@@ -662,13 +679,17 @@ pub async fn run(
                 match tick_result {
                     Ok(tick) if tick.cycled => {
                         cycle_count += 1;
+                        shift_active = same_key_active && config.uses_shift_for(&log_key);
                         let should_log = cycle_count == 1
                             || cycle_count.saturating_sub(last_log_cycle) >= 100;
                         if should_log {
                             last_log_cycle = cycle_count;
                             emit_tool_log_opt(
                                 Some(&app),
-                                format!("[Spammer] cycle #{cycle_count} {log_key} + click"),
+                                format!(
+                                    "[Spammer] cycle #{cycle_count} {}{log_key} + click",
+                                    if shift_active { "Shift + " } else { "" },
+                                ),
                             );
                         }
                     }
@@ -683,7 +704,7 @@ pub async fn run(
                                 cycle_count,
                                 Some(err_msg.clone()),
                                 (true, true),
-                                gear_mode,
+                                (gear_mode, shift_active),
                                 timing,
                             ),
                         );
@@ -714,7 +735,7 @@ pub async fn run(
                             cycle_count,
                             None,
                             (true, true),
-                            gear_mode,
+                            (gear_mode, shift_active),
                             timing,
                         ),
                     );
@@ -795,7 +816,7 @@ pub async fn run(
                         cycle_count,
                         Some(msg),
                         (false, false),
-                        None,
+                        (None, false),
                         timing,
                     ),
                 );
@@ -809,6 +830,7 @@ pub async fn run(
         emit_tool_log_opt(Some(&app), format!("[Spammer] ERROR input: {msg}"));
         terminal_error.get_or_insert(msg);
     }
+    shift_active = false;
     cycle_tasks.abort_all();
     while cycle_tasks.join_next().await.is_some() {}
 
@@ -842,7 +864,7 @@ pub async fn run(
             cycle_count,
             terminal_error,
             (false, false),
-            None,
+            (None, shift_active),
             timing,
         ),
     );

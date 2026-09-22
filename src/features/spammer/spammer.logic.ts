@@ -1,10 +1,12 @@
 import type {
   GearSwitchConfig,
   GearSwitchRule,
+  ShiftModeConfig,
   SpammerConfig,
 } from '../../shared/types'
 import {
   DEFAULT_GEAR_SWITCH_CONFIG,
+  DEFAULT_SHIFT_MODE_CONFIG,
   DEFAULT_SPAMMER_CONFIG,
   GEAR_SWITCH_MAX_DELAY_MS,
   GEAR_SWITCH_MIN_DELAY_MS,
@@ -25,6 +27,7 @@ export type GearSwitchInput = Partial<GearSwitchConfig> & LegacyGearSwitchConfig
 
 type SpammerConfigInput = Omit<Partial<SpammerConfig>, 'gearSwitch'> & {
   gearSwitch?: GearSwitchInput
+  shiftMode?: Partial<ShiftModeConfig>
 }
 
 const KEY_ORDER = new Map<string, number>(
@@ -108,6 +111,36 @@ export function mergeGearSwitchConfig(
   }
 }
 
+export function mergeShiftModeConfig(
+  config?: Partial<ShiftModeConfig>,
+  allowedTriggers?: string[],
+): ShiftModeConfig {
+  const allowed = allowedTriggers
+    ? new Set(normalizeKeys(allowedTriggers))
+    : null
+  const triggerKeys = normalizeKeys(config?.triggerKeys ?? []).filter(
+    (key) => !allowed || allowed.has(key),
+  )
+  return {
+    enabled: config?.enabled ?? DEFAULT_SHIFT_MODE_CONFIG.enabled,
+    triggerKeys,
+  }
+}
+
+export function toggleShiftModeTrigger(
+  shiftMode: ShiftModeConfig,
+  key: string,
+): ShiftModeConfig {
+  const normalized = key.trim().toUpperCase()
+  if (!SPAMMER_KEY_SET.has(normalized)) return shiftMode
+  return {
+    ...shiftMode,
+    triggerKeys: shiftMode.triggerKeys.includes(normalized)
+      ? shiftMode.triggerKeys.filter((trigger) => trigger !== normalized)
+      : normalizeKeys([...shiftMode.triggerKeys, normalized]),
+  }
+}
+
 export function makeGearRule(trigger: string): GearSwitchRule {
   return { trigger: trigger.toUpperCase(), atkKeys: [], defKeys: [] }
 }
@@ -172,6 +205,7 @@ export function mergeSpammerConfig(config?: SpammerConfigInput): SpammerConfig {
     ...DEFAULT_SPAMMER_CONFIG,
     ...config,
     keys,
+    shiftMode: mergeShiftModeConfig(config?.shiftMode, keys),
     gearSwitch: mergeGearSwitchConfig(config?.gearSwitch, keys),
     enabled: false,
   }

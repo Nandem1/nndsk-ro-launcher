@@ -1,6 +1,11 @@
 use crate::error::ToolsError;
 use std::time::Instant;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpamModifier {
+    Shift,
+}
+
 pub trait MemoryReader: Send + Sync {
     fn read_u32(&self, address: u32) -> Result<u32, ToolsError>;
 
@@ -30,7 +35,12 @@ pub trait SpamCycleWriter: Send + Sync {
     /// Emits one fresh key activation and exactly one click. The backend may keep
     /// the skill key down until the next cycle so the click cannot outlive it.
     /// Returns false when the cycle was deliberately skipped after its deadline.
-    fn spam_cycle(&self, key: &str, deadline: Option<Instant>) -> Result<bool, ToolsError>;
+    fn spam_cycle(
+        &self,
+        key: &str,
+        modifier: Option<SpamModifier>,
+        deadline: Option<Instant>,
+    ) -> Result<bool, ToolsError>;
 
     /// Releases any key retained by the spammer. Must be safe to call repeatedly.
     fn release_spam(&self) -> Result<(), ToolsError>;

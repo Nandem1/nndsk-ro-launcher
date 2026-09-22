@@ -87,6 +87,29 @@ impl GearSwitchConfig {
     }
 }
 
+/// Triggers del spammer que deben mantener Shift durante skill + click.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ShiftModeConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub trigger_keys: Vec<String>,
+}
+
+impl ShiftModeConfig {
+    fn normalized(&self) -> Self {
+        Self {
+            enabled: self.enabled,
+            trigger_keys: normalize_spammer_keys(&self.trigger_keys),
+        }
+    }
+
+    pub fn uses_trigger(&self, key: &str) -> bool {
+        self.enabled && self.trigger_keys.iter().any(|trigger| trigger == key)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct SpammerConfig {
@@ -96,6 +119,8 @@ pub struct SpammerConfig {
     pub delay_ms: u64,
     #[serde(default = "default_spammer_keys")]
     pub keys: Vec<String>,
+    #[serde(default)]
+    pub shift_mode: ShiftModeConfig,
     #[serde(default)]
     pub gear_switch: GearSwitchConfig,
 }
@@ -109,6 +134,8 @@ struct SpammerConfigWire {
     delay_ms: u64,
     #[serde(default = "default_spammer_keys")]
     keys: Vec<String>,
+    #[serde(default)]
+    shift_mode: ShiftModeConfig,
     #[serde(default)]
     gear_switch: GearSwitchConfigWire,
 }
@@ -185,6 +212,7 @@ impl<'de> Deserialize<'de> for SpammerConfig {
             enabled: wire.enabled,
             delay_ms: wire.delay_ms,
             keys: wire.keys,
+            shift_mode: wire.shift_mode,
             gear_switch,
         })
     }
@@ -196,6 +224,7 @@ impl Default for SpammerConfig {
             enabled: false,
             delay_ms: default_spammer_delay_ms(),
             keys: default_spammer_keys(),
+            shift_mode: ShiftModeConfig::default(),
             gear_switch: GearSwitchConfig::default(),
         }
     }
@@ -211,11 +240,19 @@ impl SpammerConfig {
     pub fn normalized(&self) -> Self {
         let mut c = self.clone();
         c.keys = normalize_spammer_keys(&self.keys);
+        c.shift_mode = self.shift_mode.normalized();
+        c.shift_mode
+            .trigger_keys
+            .retain(|trigger| c.keys.contains(trigger));
         c.gear_switch = self.gear_switch.clamped();
         c.gear_switch
             .rules
             .retain(|rule| c.keys.contains(&rule.trigger));
         c
+    }
+
+    pub fn uses_shift_for(&self, key: &str) -> bool {
+        self.shift_mode.uses_trigger(key)
     }
 
     pub fn validate_for_start(&self) -> Result<(), ToolsError> {
@@ -239,6 +276,23 @@ mod tests {
         assert!(!cfg.gear_switch.enabled);
         assert_eq!(cfg.gear_switch.switch_delay_ms, 50);
         assert!(cfg.gear_switch.rules.is_empty());
+        assert!(!cfg.shift_mode.enabled);
+        assert!(cfg.shift_mode.trigger_keys.is_empty());
+    }
+
+    #[test]
+    fn shift_mode_normalizes_and_keeps_active_triggers() {
+        let cfg: SpammerConfig = serde_json::from_str(
+            r#"{
+                "keys":["F3"],
+                "shiftMode":{"enabled":true,"triggerKeys":["f3","F4","SPACE"]}
+            }"#,
+        )
+        .unwrap();
+        let cfg = cfg.normalized();
+        assert!(cfg.uses_shift_for("F3"));
+        assert!(!cfg.uses_shift_for("F4"));
+        assert_eq!(cfg.shift_mode.trigger_keys, vec!["F3"]);
     }
 
     #[test]
@@ -247,6 +301,7 @@ mod tests {
             enabled: true,
             delay_ms: 10,
             keys: vec!["f3".into()],
+            shift_mode: ShiftModeConfig::default(),
             gear_switch: GearSwitchConfig {
                 enabled: true,
                 switch_delay_ms: 5000,
@@ -292,6 +347,7 @@ mod tests {
             enabled: true,
             delay_ms: 10,
             keys: vec!["F3".into()],
+            shift_mode: ShiftModeConfig::default(),
             gear_switch: gear,
         };
         let c = cfg.clamped();

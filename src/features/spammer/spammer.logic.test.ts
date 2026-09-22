@@ -4,9 +4,11 @@ import {
   addGearRule,
   formatSpammerKeys,
   mergeGearSwitchConfig,
+  mergeShiftModeConfig,
   mergeSpammerConfig,
   removeGearRule,
   toggleGearRuleKey,
+  toggleShiftModeTrigger,
   toggleSpammerKey,
   withSpammerPatch,
 } from './spammer.logic'
@@ -43,6 +45,42 @@ describe('toggleSpammerKey', () => {
     const withLetter = toggleSpammerKey(withF2, 'p')
     expect(withLetter.keys).toEqual(['F1', 'F2', 'P'])
     expect(toggleSpammerKey(withLetter, 'F1').keys).toEqual(['F2', 'P'])
+  })
+})
+
+describe('shift mode', () => {
+  it('defaults disabled and without triggers', () => {
+    expect(mergeSpammerConfig({ keys: ['F3'] }).shiftMode).toEqual({
+      enabled: false,
+      triggerKeys: [],
+    })
+  })
+
+  it('normalizes triggers and keeps only active spammer keys', () => {
+    expect(
+      mergeShiftModeConfig(
+        { enabled: true, triggerKeys: ['f3', 'F3', 'F4', 'SPACE'] },
+        ['F3'],
+      ),
+    ).toEqual({ enabled: true, triggerKeys: ['F3'] })
+  })
+
+  it('toggles independent shift triggers', () => {
+    const base = mergeShiftModeConfig({ enabled: true })
+    const withF3 = toggleShiftModeTrigger(base, 'f3')
+    const withF4 = toggleShiftModeTrigger(withF3, 'F4')
+
+    expect(withF4.triggerKeys).toEqual(['F3', 'F4'])
+    expect(toggleShiftModeTrigger(withF4, 'F3').triggerKeys).toEqual(['F4'])
+  })
+
+  it('drops shift triggers removed from the spammer', () => {
+    const next = mergeSpammerConfig({
+      keys: ['F4'],
+      shiftMode: { enabled: true, triggerKeys: ['F3', 'F4'] },
+    })
+
+    expect(next.shiftMode).toEqual({ enabled: true, triggerKeys: ['F4'] })
   })
 })
 

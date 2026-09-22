@@ -22,6 +22,7 @@ const idleStatus = (): SpammerStatusEvent => ({
   cycleCount: 0,
   error: null,
   gearMode: null,
+  shiftActive: false,
 })
 
 export const useSpammerStore = create<SpammerStore>((set) => ({
@@ -51,6 +52,7 @@ function statusEquals(a: SpammerStatusEvent, b: SpammerStatusEvent): boolean {
     a.delayMs === b.delayMs &&
     a.cycleCount === b.cycleCount &&
     a.error === b.error &&
-    a.gearMode === b.gearMode
+    a.gearMode === b.gearMode &&
+    a.shiftActive === b.shiftActive
   )
 }

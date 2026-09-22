@@ -98,10 +98,16 @@ export const DEFAULT_GEAR_SWITCH_CONFIG = {
   rules: [] as import('./types').GearSwitchRule[],
 } as const
 
+export const DEFAULT_SHIFT_MODE_CONFIG = {
+  enabled: false,
+  triggerKeys: [] as string[],
+} as const
+
 export const DEFAULT_SPAMMER_CONFIG = {
   enabled: false,
   delayMs: 16,
   keys: ['F1'],
+  shiftMode: DEFAULT_SHIFT_MODE_CONFIG,
   gearSwitch: DEFAULT_GEAR_SWITCH_CONFIG,
 } as const
 

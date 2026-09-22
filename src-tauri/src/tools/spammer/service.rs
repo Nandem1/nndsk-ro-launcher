@@ -39,6 +39,7 @@ impl SpammerHandle {
         status.active = false;
         status.armed = false;
         status.spamming = false;
+        status.shift_active = false;
         result
     }
 

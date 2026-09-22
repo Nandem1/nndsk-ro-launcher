@@ -16,7 +16,7 @@ pub use autopot::config::AutopotConfig;
 pub use autopot::engine::{AutopotEngine, AutopotTick};
 pub use domain::ClientProfile;
 pub use error::ToolsError;
-pub use ports::{HeldKeyWriter, KeyPressWriter, MemoryReader, SpamCycleWriter};
+pub use ports::{HeldKeyWriter, KeyPressWriter, MemoryReader, SpamCycleWriter, SpamModifier};
 pub use presence::{
     derive_presence_profile, derive_presence_profiles, explicit_presence_profile,
     map_label_matches, map_scan_needles, normalize_map_name, parse_presence_profiles_json,

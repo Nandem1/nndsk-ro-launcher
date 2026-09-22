@@ -123,6 +123,7 @@
       "enabled": false,
       "delayMs": 16,
       "keys": ["F1"],
+      "shiftMode": { "enabled": false, "triggerKeys": [] },
       "gearSwitch": { "enabled": false, "switchDelayMs": 50, "rules": [] }
     },
     "autobuff": { "enabled": false, "delayMs": 300, "rules": [] }
@@ -146,6 +147,7 @@
       "enabled": false,
       "delayMs": 16,
       "keys": ["F3", "F4"],
+      "shiftMode": { "enabled": false, "triggerKeys": [] },
       "gearSwitch": {
         "enabled": true,
         "switchDelayMs": 60,
