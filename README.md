@@ -4,6 +4,20 @@ Launcher de Ragnarok Online para Linux, construido con Tauri, React y Rust. Admi
 WINEPREFIX, dependencias y herramientas por servidor sin depender de la versión de Wine instalada
 por el sistema.
 
+## Play Ragnarok Online on Linux
+
+**nndsk-ro-launcher (RO-Launcher)** is a desktop launcher for **Ragnarok Online on Linux**. It
+manages per-server Wine/Proton runners, isolated WINEPREFIX, DXVK → Vulkan, optional dgVoodoo, plus
+AutoPot/AutoBuff without requiring `ptrace_scope=0`.
+
+1. Add your client `.exe` and pick a server profile.
+2. Prepare the environment (managed Proton-CachyOS + UMU, or portable Wine).
+3. Hit **Play**.
+
+- [Product page](https://nndsk.dev/projects/nndsk-ro-launcher/)
+- [Releases](https://github.com/Nandem1/nndsk-ro-launcher/releases)
+- Build from source: see [**Desarrollo**](#desarrollo) below
+
 ## Funciones principales
 
 - Perfiles aislados por servidor y runner.
