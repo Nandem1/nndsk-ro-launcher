@@ -495,8 +495,7 @@ fn managed_runtime_pending(
     let reset_allowed = ensure_managed_reset_allowed(&location).is_ok();
     let can_reset = health.configured && reset_allowed;
     let can_setup = path_safe && !managed_unclaimed && (!requires_rebuild || reset_allowed);
-    let runtime_warning =
-        "El runtime Ragnarok se descargará y verificará al preparar el entorno".to_string();
+    let runtime_warning = "Runtime administrado pendiente. Al preparar el entorno se comprobarán UMU y Proton; solo se descargará lo que falte o no pase la validación".to_string();
     let prefix_warning = if managed_unclaimed {
         Some(
             "El directorio administrado contiene datos sin un manifiesto válido; no se modificará"

@@ -516,4 +516,44 @@ mod runner_line_tests {
             .contains("STEAM_COMPAT_DATA_PATH"));
         fs::remove_dir_all(owned).unwrap();
     }
+
+    #[test]
+    fn explicit_umu_environment_overrides_inherited_values() {
+        let owned = fs::canonicalize(std::env::temp_dir()).unwrap();
+        let mut base = HashMap::new();
+        base.insert("UMU_RUNTIME_UPDATE".into(), "1".into());
+        base.insert("CURL_CA_BUNDLE".into(), "/etc/ssl/cert.pem".into());
+        base.insert("SSL_CERT_FILE".into(), "/etc/ssl/cert.pem".into());
+        let spec = ProcessSpec {
+            program: "/usr/bin/true".into(),
+            args: vec![],
+            cwd: owned.to_string_lossy().into_owned(),
+            env: [
+                ("WINEPREFIX", owned.to_string_lossy().into_owned()),
+                ("UMU_RUNTIME_UPDATE", "0".into()),
+                (
+                    "CURL_CA_BUNDLE",
+                    "/etc/ssl/certs/ca-certificates.crt".into(),
+                ),
+                ("SSL_CERT_FILE", "/etc/ssl/certs/ca-certificates.crt".into()),
+            ]
+            .map(|(key, value)| EnvironmentChange {
+                key: key.into(),
+                value: Some(value),
+            })
+            .into(),
+        };
+
+        let merged = validate_spec_for_launch(&spec, &owned, &base).unwrap();
+        assert_eq!(
+            merged.get("UMU_RUNTIME_UPDATE").map(String::as_str),
+            Some("0")
+        );
+        for key in ["CURL_CA_BUNDLE", "SSL_CERT_FILE"] {
+            assert_eq!(
+                merged.get(key).map(String::as_str),
+                Some("/etc/ssl/certs/ca-certificates.crt")
+            );
+        }
+    }
 }

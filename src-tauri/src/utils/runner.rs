@@ -15,6 +15,7 @@ use crate::utils::{
 };
 
 const DEFAULT_GAME_ID: &str = "0";
+const PROTON_CA_BUNDLE: &str = "/etc/ssl/certs/ca-certificates.crt";
 
 #[derive(Debug, Clone)]
 pub struct RunnerInvocation {
@@ -616,6 +617,15 @@ impl ResolvedRunner {
         invocation.set_env("PROTONPATH", proton_dir.as_os_str());
         invocation.set_env("GAMEID", DEFAULT_GAME_ID);
         invocation.set_env("PROTON_VERB", verb.as_str());
+        // UMU still installs a missing Steam Runtime, but an update of an existing one must not
+        // delay game startup or every Wine command in a prefix transaction.
+        invocation.set_env("UMU_RUNTIME_UPDATE", "0");
+        // Winetricks runs curl inside pressure-vessel. Its host default /etc/ssl/cert.pem may
+        // not exist there, while this bundle is present in Steam Runtime and on common hosts.
+        if Path::new(PROTON_CA_BUNDLE).is_file() {
+            invocation.set_env("CURL_CA_BUNDLE", PROTON_CA_BUNDLE);
+            invocation.set_env("SSL_CERT_FILE", PROTON_CA_BUNDLE);
+        }
         Ok(invocation)
     }
 }
@@ -1091,6 +1101,9 @@ mod tests {
             env(&command, "WINESERVER"),
             Some("/opt/test-wine/bin/wineserver".into())
         );
+        assert_eq!(env(&command, "UMU_RUNTIME_UPDATE"), None);
+        assert_eq!(env(&command, "CURL_CA_BUNDLE"), None);
+        assert_eq!(env(&command, "SSL_CERT_FILE"), None);
     }
 
     #[test]
@@ -1144,6 +1157,17 @@ mod tests {
             env(&command, "PROTON_VERB"),
             Some("waitforexitandrun".into())
         );
+        assert_eq!(env(&command, "UMU_RUNTIME_UPDATE"), Some("0".into()));
+        if Path::new(PROTON_CA_BUNDLE).is_file() {
+            assert_eq!(
+                env(&command, "CURL_CA_BUNDLE"),
+                Some(PROTON_CA_BUNDLE.into())
+            );
+            assert_eq!(
+                env(&command, "SSL_CERT_FILE"),
+                Some(PROTON_CA_BUNDLE.into())
+            );
+        }
     }
 
     #[test]
@@ -1161,6 +1185,16 @@ mod tests {
             env(&create, "PROTON_VERB"),
             Some("waitforexitandrun".into())
         );
+        for command in [&tool, &builtin, &create] {
+            assert_eq!(env(command, "UMU_RUNTIME_UPDATE"), Some("0".into()));
+            if Path::new(PROTON_CA_BUNDLE).is_file() {
+                assert_eq!(
+                    env(command, "CURL_CA_BUNDLE"),
+                    Some(PROTON_CA_BUNDLE.into())
+                );
+                assert_eq!(env(command, "SSL_CERT_FILE"), Some(PROTON_CA_BUNDLE.into()));
+            }
+        }
     }
 
     #[test]
@@ -1173,6 +1207,17 @@ mod tests {
             ["winetricks", "vcrun2019", "d3dx9"].map(OsString::from)
         );
         assert!(!args(&command).iter().any(|arg| arg == "dxvk"));
+        assert_eq!(env(&command, "UMU_RUNTIME_UPDATE"), Some("0".into()));
+        if Path::new(PROTON_CA_BUNDLE).is_file() {
+            assert_eq!(
+                env(&command, "CURL_CA_BUNDLE"),
+                Some(PROTON_CA_BUNDLE.into())
+            );
+            assert_eq!(
+                env(&command, "SSL_CERT_FILE"),
+                Some(PROTON_CA_BUNDLE.into())
+            );
+        }
     }
 
     #[test]

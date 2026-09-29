@@ -13,10 +13,11 @@ use crate::tools::runtime::{
 use crate::utils::audio;
 use crate::utils::gecko::install_gecko_for_runner;
 use crate::utils::{
-    dxvk_cache_path, dxvk_config_path, dxvk_log_path, emit_log, emit_progress, inspect_prefix,
-    is_v3_managed_prefix_path, resolve_runner, write_prefix_manifest, write_prefix_manifest_v3,
-    OperationGuard, PrefixFingerprintEnvelope, PrefixManifest, PrefixManifestV3, PrefixScope,
-    ResolvedRunner, WineContext, WineSyncMode, PREFIX_SCHEMA_V3, PREFIX_SCHEMA_VERSION,
+    dxvk_cache_path, dxvk_config_path, dxvk_log_path, emit_log, emit_log_opt, emit_progress,
+    inspect_prefix, is_v3_managed_prefix_path, resolve_runner, write_prefix_manifest,
+    write_prefix_manifest_v3, OperationGuard, PrefixFingerprintEnvelope, PrefixManifest,
+    PrefixManifestV3, PrefixScope, ResolvedRunner, WineContext, WineSyncMode, PREFIX_SCHEMA_V3,
+    PREFIX_SCHEMA_VERSION,
 };
 
 pub const MANAGED_DXVK_COMPONENT: &str = "dxvk-2.6.2";
@@ -515,13 +516,23 @@ async fn run_winetricks(
     packages: &[&str],
 ) -> Result<(), String> {
     let ctx = op.ctx();
-    let _ = app;
-    op.run_ok(
-        ctx.resolved
-            .winetricks_invocation(&ctx.prefix, packages.iter().copied())?,
-        "winetricks",
-    )
-    .await
+    let component = packages.join(", ");
+    let invocation = ctx
+        .resolved
+        .winetricks_invocation(&ctx.prefix, packages.iter().copied())?;
+    emit_log_opt(
+        Some(app),
+        format!(
+            "Winetricks: instalando {component} en este entorno; puede usar su caché o descargar el instalador."
+        ),
+    );
+    op.run_ok(invocation, &format!("winetricks ({component})"))
+        .await?;
+    emit_log_opt(
+        Some(app),
+        format!("Winetricks: {component} terminó correctamente."),
+    );
+    Ok(())
 }
 
 fn needs_legacy_webview2_install_mode(is_wine_7_16: bool, sync_mode: WineSyncMode) -> bool {

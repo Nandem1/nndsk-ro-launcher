@@ -633,6 +633,35 @@ mod tests {
         assert!(err.message.contains("WINEPREFIX"));
     }
 
+    #[test]
+    fn serializes_explicit_umu_runtime_and_certificate_environment() {
+        let owned = canonicalize_prefix_path(&std::env::temp_dir()).unwrap();
+        let inv = RunnerInvocation {
+            program: PathBuf::from("/usr/bin/true"),
+            args: vec![],
+            cwd: owned.clone(),
+            env: [
+                ("UMU_RUNTIME_UPDATE", "0"),
+                ("CURL_CA_BUNDLE", "/etc/ssl/certs/ca-certificates.crt"),
+                ("SSL_CERT_FILE", "/etc/ssl/certs/ca-certificates.crt"),
+            ]
+            .map(|(key, value)| (key.into(), Some(value.into())))
+            .into(),
+        };
+
+        let spec = invocation_to_spec(&inv, &owned).unwrap();
+        for (key, value) in [
+            ("UMU_RUNTIME_UPDATE", "0"),
+            ("CURL_CA_BUNDLE", "/etc/ssl/certs/ca-certificates.crt"),
+            ("SSL_CERT_FILE", "/etc/ssl/certs/ca-certificates.crt"),
+        ] {
+            assert!(spec
+                .env
+                .iter()
+                .any(|change| { change.key == key && change.value.as_deref() == Some(value) }));
+        }
+    }
+
     #[tokio::test]
     async fn try_controller_exit_reads_completed_exits_without_wait() {
         use std::process::Stdio;

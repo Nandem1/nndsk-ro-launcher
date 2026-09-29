@@ -13,7 +13,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use tauri::AppHandle;
 
-use crate::utils::{app_data_dir, emit_log, emit_progress, replace_json};
+use crate::utils::{app_data_dir, emit_log, emit_log_opt, emit_progress, replace_json};
 
 #[allow(unused_imports)]
 pub(crate) use descriptor::{
@@ -23,6 +23,29 @@ pub(crate) use descriptor::{
 };
 
 const RUNTIME_DIR: &str = "runtime";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ArtifactCacheState {
+    Ready,
+    Missing,
+    InvalidDirectory,
+    InvalidReceipt,
+    ReceiptMismatch,
+    IncompletePayload,
+}
+
+impl ArtifactCacheState {
+    fn reason(self) -> &'static str {
+        match self {
+            Self::Ready => "listo",
+            Self::Missing => "instalación ausente",
+            Self::InvalidDirectory => "directorio de instalación no válido",
+            Self::InvalidReceipt => "recibo ausente o ilegible",
+            Self::ReceiptMismatch => "recibo distinto del catálogo actual",
+            Self::IncompletePayload => "faltan archivos esenciales",
+        }
+    }
+}
 
 pub(crate) fn runtime_dir() -> PathBuf {
     app_data_dir().join(RUNTIME_DIR)
@@ -34,18 +57,34 @@ pub(crate) fn runtime_artifact_root(descriptor: &ArtifactDescriptor) -> PathBuf 
 
 pub(crate) fn artifact_ready(descriptor: &ArtifactDescriptor) -> bool {
     let root = runtime_artifact_root(descriptor);
-    if root
-        .symlink_metadata()
-        .is_ok_and(|metadata| metadata.file_type().is_symlink())
-    {
-        return false;
+    artifact_cache_state_at(descriptor, &root) == ArtifactCacheState::Ready
+}
+
+fn artifact_cache_state_at(
+    descriptor: &ArtifactDescriptor,
+    root: &std::path::Path,
+) -> ArtifactCacheState {
+    let metadata = match root.symlink_metadata() {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return ArtifactCacheState::Missing;
+        }
+        Err(_) => return ArtifactCacheState::InvalidDirectory,
+    };
+    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+        return ArtifactCacheState::InvalidDirectory;
     }
     let marker_path = root.join(receipt::MARKER_FILE);
-    let parsed = receipt::parse_stored_receipt(&marker_path).ok().flatten();
-    parsed.is_some_and(|stored| {
-        receipt::stored_identity_matches_descriptor(descriptor, &stored)
-            && payload::payload_ready(descriptor, &root)
-    })
+    let Ok(Some(stored)) = receipt::parse_stored_receipt(&marker_path) else {
+        return ArtifactCacheState::InvalidReceipt;
+    };
+    if !receipt::stored_identity_matches_descriptor(descriptor, &stored) {
+        return ArtifactCacheState::ReceiptMismatch;
+    }
+    if !payload::payload_ready(descriptor, root) {
+        return ArtifactCacheState::IncompletePayload;
+    }
+    ArtifactCacheState::Ready
 }
 
 pub(crate) fn try_elevate_marker_v1_to_v2(
@@ -71,7 +110,15 @@ pub(crate) async fn ensure_catalog_artifact(
     progress_start: u32,
     progress_end: u32,
 ) -> Result<(), String> {
-    if artifact_ready(descriptor) {
+    let cache_state = artifact_cache_state_at(descriptor, &runtime_artifact_root(descriptor));
+    if cache_state == ArtifactCacheState::Ready {
+        emit_log_opt(
+            Some(app),
+            format!(
+                "Reutilizando {}: recibo y archivos esenciales válidos; sin descarga.",
+                descriptor.id
+            ),
+        );
         if let Err(error) = try_elevate_marker_v1_to_v2(app, descriptor) {
             emit_log(
                 app,
@@ -97,7 +144,10 @@ pub(crate) async fn ensure_catalog_artifact(
 
     let mut cleanup = install::StagingCleanup::new(download_path.clone(), staging_dir.clone());
     let result = async {
-        emit_log(app, format!("Descargando {}...", descriptor.id))?;
+        emit_log(
+            app,
+            format!("Descargando {}: {}.", descriptor.id, cache_state.reason()),
+        )?;
         fetch::download_verified(
             app,
             descriptor,
@@ -147,7 +197,67 @@ fn unique_suffix() -> u128 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tools::artifacts::payload::DXVK_DLLS;
     use crate::utils::OperationGuard;
+
+    #[test]
+    fn cache_state_explains_why_dxvk_would_be_downloaded() {
+        let descriptor = catalog_descriptor(MANAGED_DXVK_ID).unwrap();
+        let root = std::env::temp_dir().join(format!(
+            "ro-launcher-artifact-cache-state-{}-{}",
+            std::process::id(),
+            unique_suffix()
+        ));
+        assert_eq!(
+            artifact_cache_state_at(descriptor, &root),
+            ArtifactCacheState::Missing
+        );
+
+        std::fs::create_dir_all(&root).unwrap();
+        assert_eq!(
+            artifact_cache_state_at(descriptor, &root),
+            ArtifactCacheState::InvalidReceipt
+        );
+        let marker = root.join(receipt::MARKER_FILE);
+        std::fs::write(&marker, b"{").unwrap();
+        assert_eq!(
+            artifact_cache_state_at(descriptor, &root),
+            ArtifactCacheState::InvalidReceipt
+        );
+        let mut receipt = receipt::receipt_v2_from_descriptor(descriptor);
+        receipt.artifact_id = "outdated".to_string();
+        std::fs::write(&marker, serde_json::to_vec(&receipt).unwrap()).unwrap();
+        assert_eq!(
+            artifact_cache_state_at(descriptor, &root),
+            ArtifactCacheState::ReceiptMismatch
+        );
+
+        receipt.artifact_id = descriptor.id.to_string();
+        std::fs::write(&marker, serde_json::to_vec(&receipt).unwrap()).unwrap();
+        assert_eq!(
+            artifact_cache_state_at(descriptor, &root),
+            ArtifactCacheState::IncompletePayload
+        );
+        for arch in ["x32", "x64"] {
+            let directory = root.join(arch);
+            std::fs::create_dir_all(&directory).unwrap();
+            for dll in DXVK_DLLS {
+                std::fs::write(directory.join(dll), b"dxvk").unwrap();
+            }
+        }
+        assert_eq!(
+            artifact_cache_state_at(descriptor, &root),
+            ArtifactCacheState::Ready
+        );
+        let symlink = root.with_extension("link");
+        std::os::unix::fs::symlink(&root, &symlink).unwrap();
+        assert_eq!(
+            artifact_cache_state_at(descriptor, &symlink),
+            ArtifactCacheState::InvalidDirectory
+        );
+        std::fs::remove_file(symlink).unwrap();
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn concurrent_runtime_lock_rejects_second_writer() {

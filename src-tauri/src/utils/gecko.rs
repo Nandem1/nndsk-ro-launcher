@@ -3,7 +3,7 @@ use tauri::AppHandle;
 use tokio::process::Command;
 
 use crate::tools::runner_sessions::RunnerOperation;
-use crate::utils::{app_data_dir, emit_log};
+use crate::utils::{app_data_dir, emit_log, emit_log_opt};
 
 const GECKO_VERSION: &str = "2.47.4";
 const GECKO_BASE_URL: &str = "https://dl.winehq.org/wine/wine-gecko";
@@ -73,6 +73,10 @@ fn gecko_cache_dir() -> PathBuf {
 async fn ensure_cached_gecko_msis(app: &AppHandle) -> Result<Vec<PathBuf>, String> {
     let system_msis = find_system_gecko_msis();
     if !system_msis.is_empty() {
+        emit_log_opt(
+            Some(app),
+            "Wine Gecko: usando instaladores disponibles en el sistema; sin descarga.",
+        );
         return Ok(system_msis);
     }
 
@@ -91,6 +95,11 @@ async fn ensure_cached_gecko_msis(app: &AppHandle) -> Result<Vec<PathBuf>, Strin
             let url = format!("{GECKO_BASE_URL}/{GECKO_VERSION}/{file}");
             emit_log(app, format!("Descargando Wine Gecko ({file})..."))?;
             download_file(&url, &dest).await?;
+        } else {
+            emit_log_opt(
+                Some(app),
+                format!("Wine Gecko ({file}): archivo encontrado en caché; sin descarga."),
+            );
         }
         msis.push(dest);
     }
@@ -126,6 +135,10 @@ pub async fn install_gecko_for_runner(app: &AppHandle, op: &RunnerOperation) -> 
     }
 
     if check_gecko_installed(prefix_path) {
+        emit_log_opt(
+            Some(app),
+            "Wine Gecko ya está instalado en este entorno; sin descarga.",
+        );
         return Ok(());
     }
 
