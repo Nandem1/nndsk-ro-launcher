@@ -40,9 +40,24 @@ impl<M: MemoryReader, I: KeyPressWriter> AutobuffEngine<M, I> {
 
     pub fn replace_memory(&mut self, memory: M) {
         self.memory = memory;
+        // Cooldowns belong to the old client. A replacement has no knowledge of
+        // whether those key presses reached the new game process.
+        self.last_used.clear();
     }
 
     pub fn tick(&mut self) -> Result<AutobuffTick, ToolsError> {
+        let hp = self.memory.read_u32_slice(self.profile.hp_base, 2)?;
+        let [current_hp, max_hp] = hp.as_slice() else {
+            return Err(ToolsError::Other(format!(
+                "AutoBuff: lectura HP incompleta ({} de 2)",
+                hp.len()
+            )));
+        };
+        // The status buffer can be readable but empty before character login.
+        // Do not spend a rule's cooldown on an input the game cannot use yet.
+        if *current_hp == 0 || *max_hp == 0 || current_hp > max_hp {
+            return Ok(AutobuffTick::default());
+        }
         let statuses = self
             .memory
             .read_u32_slice(self.profile.status_buffer_address(), STATUS_SLOTS)?;
@@ -88,16 +103,33 @@ mod tests {
     use super::*;
     use crate::AutobuffRule;
     use std::sync::Mutex;
-    struct Memory(Vec<u32>);
+    struct Memory {
+        hp: u32,
+        statuses: Vec<u32>,
+    }
+    fn memory(hp: u32, status: u32) -> Memory {
+        Memory {
+            hp,
+            statuses: vec![status; STATUS_SLOTS],
+        }
+    }
     impl MemoryReader for Memory {
         fn read_u32(&self, address: u32) -> Result<u32, ToolsError> {
-            Ok(self.0[((address - 0x1474) / 4) as usize])
+            Ok(match address {
+                0x1000 => self.hp,
+                0x1004 => 100,
+                _ => self.statuses[((address - 0x1474) / 4) as usize],
+            })
         }
         fn read_string(&self, _: u32, _: usize) -> Result<String, ToolsError> {
             Ok(String::new())
         }
-        fn read_u32_slice(&self, _: u32, _: usize) -> Result<Vec<u32>, ToolsError> {
-            Ok(self.0.clone())
+        fn read_u32_slice(&self, address: u32, _: usize) -> Result<Vec<u32>, ToolsError> {
+            match address {
+                0x1000 => Ok(vec![self.hp, 100]),
+                0x1474 => Ok(self.statuses.clone()),
+                _ => Err(ToolsError::Other("unexpected address".into())),
+            }
         }
     }
     struct Input(Mutex<Vec<String>>);
@@ -131,7 +163,7 @@ mod tests {
     fn casts_only_when_missing() {
         let input = Input(Mutex::new(vec![]));
         let mut engine = AutobuffEngine::new(
-            Memory(vec![3; 100]),
+            memory(100, 3),
             input,
             AutobuffConfig {
                 enabled: true,
@@ -146,7 +178,7 @@ mod tests {
     fn treats_overthrust_max_as_overthrust() {
         let input = Input(Mutex::new(vec![]));
         let mut engine = AutobuffEngine::new(
-            Memory(vec![OVERTHRUST_MAX; 100]),
+            memory(100, OVERTHRUST_MAX),
             input,
             AutobuffConfig {
                 enabled: true,
@@ -162,7 +194,7 @@ mod tests {
     fn casts_the_highest_priority_missing_rule() {
         let input = Input(Mutex::new(vec![]));
         let mut engine = AutobuffEngine::new(
-            Memory(vec![0; 100]),
+            memory(100, 0),
             input,
             AutobuffConfig {
                 enabled: true,
@@ -178,7 +210,7 @@ mod tests {
     fn replace_memory_switches_status_reads() {
         let input = Input(Mutex::new(vec![]));
         let mut engine = AutobuffEngine::new(
-            Memory(vec![0; 100]),
+            memory(100, 0),
             input,
             AutobuffConfig {
                 enabled: true,
@@ -188,15 +220,55 @@ mod tests {
             profile(),
         );
         assert_eq!(engine.tick().unwrap().applied_rule.as_deref(), Some("AGI"));
-        engine.replace_memory(Memory(vec![3; 100]));
+        engine.replace_memory(memory(100, 3));
         assert_eq!(engine.tick().unwrap().applied_rule, None);
+    }
+
+    #[test]
+    fn new_client_can_apply_a_rule_used_by_the_previous_client() {
+        let mut rule = rule(3);
+        rule.cooldown_ms = 60_000;
+        let mut engine = AutobuffEngine::new(
+            memory(100, 0),
+            Input(Mutex::new(vec![])),
+            AutobuffConfig {
+                enabled: true,
+                delay_ms: 300,
+                rules: vec![rule],
+            },
+            profile(),
+        );
+        assert_eq!(engine.tick().unwrap().applied_rule.as_deref(), Some("AGI"));
+        assert_eq!(engine.tick().unwrap().applied_rule, None);
+
+        engine.replace_memory(memory(100, 0));
+        assert_eq!(engine.tick().unwrap().applied_rule.as_deref(), Some("AGI"));
+    }
+
+    #[test]
+    fn empty_status_buffer_during_login_does_not_use_a_cooldown() {
+        let mut engine = AutobuffEngine::new(
+            memory(0, 0),
+            Input(Mutex::new(vec![])),
+            AutobuffConfig {
+                enabled: true,
+                delay_ms: 300,
+                rules: vec![rule(3)],
+            },
+            profile(),
+        );
+        assert_eq!(engine.tick().unwrap(), AutobuffTick::default());
+        assert!(engine.input.0.lock().unwrap().is_empty());
+
+        engine.memory.hp = 100;
+        assert_eq!(engine.tick().unwrap().applied_rule.as_deref(), Some("AGI"));
     }
 
     #[test]
     fn quagmire_blocks_incompatible_buffs() {
         let input = Input(Mutex::new(vec![]));
         let mut engine = AutobuffEngine::new(
-            Memory(vec![QUAGMIRE; 100]),
+            memory(100, QUAGMIRE),
             input,
             AutobuffConfig {
                 enabled: true,
