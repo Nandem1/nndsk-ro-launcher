@@ -16,7 +16,9 @@
     "tauri": "tauri",
     "tauri:dev": "cargo build -p ro-inputd -p ro-sessiond && GDK_BACKEND=x11 WEBKIT_DISABLE_DMABUF_RENDERER=1 tauri dev",
     "tauri:build": "cargo build -p ro-inputd -p ro-sessiond --release && tauri build",
-    "tauri:build:appimage": "cargo build -p ro-inputd -p ro-sessiond --release && NO_STRIP=true tauri build --bundles appimage"
+    "tauri:build:appimage": "cargo build -p ro-inputd -p ro-sessiond --release && NO_STRIP=true tauri build --bundles appimage",
+    "version:show": "node scripts/bump-version.mjs --show",
+    "version:bump": "node scripts/bump-version.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

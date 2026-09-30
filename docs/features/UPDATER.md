@@ -16,8 +16,7 @@ La CLI escribe:
 - público: `~/.tauri/nndsk-ro-launcher.key.pub`
 
 Copia el **contenido** del `.pub` a `src-tauri/tauri.conf.json` → `plugins.updater.pubkey`.
-No pongas una ruta de fichero. El valor del repo es una clave local de verificación;
-antes de publicar v0.1.0 genera el par de producción y sustituye el pubkey.
+No pongas una ruta de fichero. El pubkey del repo es el material público de verificación.
 
 `plugins.updater.requireSignedVersion` está en `true`. Hace falta `@tauri-apps/cli`
 2.12 o posterior. Ese CLI escribe `version:` en el comentario de confianza de
@@ -39,10 +38,16 @@ No subas el privado, la contraseña ni un Application Secret / bot token.
 
 ## Ciclo de release
 
-1. Sube la versión en `package.json`, `src-tauri/tauri.conf.json` y `src-tauri/Cargo.toml` (mismo valor).
-2. Confirma invariantes: `node scripts/check-release-invariants.mjs`.
-3. Commit en la rama de entrega.
-4. Crea el tag `vX.Y.Z` (debe coincidir con las tres versiones).
+La versión de la app es un solo `X.Y.Z`. El skill [release-ro-launcher](../../.cursor/skills/release-ro-launcher/SKILL.md) y `npm run version:bump` la escriben en los cinco ficheros. No la edites a mano.
+
+**Primera publicación.** La versión ya es `0.1.0`. No hagas bump. Tag `v0.1.0` sobre `main` limpio con CI verde, espera el workflow `Release`, revisa el draft y publícalo tú.
+
+Cortes siguientes:
+
+1. `npm run version:bump -- patch` (o `minor` / `major` / `X.Y.Z`).
+2. Commit del bump.
+3. Push de `main` y CI de calidad verde.
+4. Tag `vX.Y.Z` (debe coincidir con `npm run version:show`).
 5. Push del tag. Actions corre `.github/workflows/release.yml`.
 6. Revisa el GitHub Release en borrador (`latest.json`, AppImage, `.sig`).
 7. Publica el release cuando el draft esté bien.

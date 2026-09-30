@@ -9,6 +9,7 @@ La documentación se divide por autoridad, no por la fase en que se implementó:
 - [`features/DISCORD_RICH_PRESENCE_PLAN.md`](features/DISCORD_RICH_PRESENCE_PLAN.md): diseño de la
   integración Discord Rich Presence.
 - [`features/UPDATER.md`](features/UPDATER.md): cómo firmar y publicar actualizaciones del AppImage.
+  El corte de versión lo hace `npm run version:bump` y el skill `release-ro-launcher`.
 - [`adr/`](adr/): decisiones arquitectónicas y su justificación.
 
 Los contratos de implementación de las fases 0–8 se retiraron después de completarse. Para una
