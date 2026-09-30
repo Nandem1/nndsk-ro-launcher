@@ -95,6 +95,80 @@ pub(crate) async fn download_verified(
     Ok(())
 }
 
+pub(crate) struct PinnedHttpsFile {
+    pub id: &'static str,
+    pub url: &'static str,
+    pub expected_size: u64,
+    pub digest: ExpectedDigest,
+}
+
+pub(crate) fn pinned_https_url_allowed(file: &PinnedHttpsFile, url: &str) -> bool {
+    url == file.url && url.starts_with("https://")
+}
+
+pub(crate) async fn download_pinned_https(
+    file: &PinnedHttpsFile,
+    destination: &Path,
+) -> Result<(), String> {
+    if !pinned_https_url_allowed(file, file.url) {
+        return Err(format!(
+            "La URL de {} no está permitida por el catálogo",
+            file.id
+        ));
+    }
+
+    let client = reqwest::Client::builder()
+        .user_agent("nndsk-ro-launcher")
+        .build()
+        .map_err(|error| format!("No se pudo preparar HTTP: {error}"))?;
+    let mut response = client
+        .get(file.url)
+        .send()
+        .await
+        .and_then(reqwest::Response::error_for_status)
+        .map_err(|error| format!("No se pudo descargar {}: {error}", file.id))?;
+    let mut dest = tokio::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(destination)
+        .await
+        .map_err(|error| format!("No se pudo crear {}: {error}", destination.display()))?;
+
+    let mut downloaded = 0_u64;
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|error| format!("La descarga de {} se interrumpió: {error}", file.id))?
+    {
+        dest.write_all(&chunk)
+            .await
+            .map_err(|error| format!("No se pudo guardar {}: {error}", file.id))?;
+        downloaded = downloaded.saturating_add(chunk.len() as u64);
+        if downloaded > file.expected_size {
+            return Err(format!(
+                "La descarga de {} supera el tamaño oficial esperado",
+                file.id
+            ));
+        }
+    }
+    dest.flush()
+        .await
+        .map_err(|error| format!("No se pudo finalizar {}: {error}", file.id))?;
+    dest.sync_all()
+        .await
+        .map_err(|error| format!("No se pudo finalizar {}: {error}", file.id))?;
+    drop(dest);
+
+    if downloaded != file.expected_size {
+        return Err(format!(
+            "Descarga incompleta de {}: {} bytes de {}",
+            file.id, downloaded, file.expected_size
+        ));
+    }
+    verify_archive_file(destination, file.expected_size, file.digest)?;
+    Ok(())
+}
+
 pub(crate) fn verify_archive_file(
     path: &Path,
     expected_size: u64,
@@ -210,5 +284,28 @@ mod tests {
         )
         .is_ok());
         std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn pinned_https_url_allowed_is_exact_https_only() {
+        let file = PinnedHttpsFile {
+            id: "gecko-test",
+            url: "https://dl.winehq.org/wine/wine-gecko/2.47.4/wine-gecko-2.47.4-x86_64.msi",
+            expected_size: 1,
+            digest: ExpectedDigest::Sha256("00"),
+        };
+        assert!(pinned_https_url_allowed(&file, file.url));
+        assert!(!pinned_https_url_allowed(
+            &file,
+            "http://dl.winehq.org/wine/wine-gecko/2.47.4/wine-gecko-2.47.4-x86_64.msi"
+        ));
+        assert!(!pinned_https_url_allowed(
+            &file,
+            "https://evil.example/x.msi"
+        ));
+        assert!(!pinned_https_url_allowed(
+            &file,
+            &format!("{}?x=1", file.url)
+        ));
     }
 }

@@ -21,6 +21,9 @@ pub(crate) use descriptor::{
     ExpectedDigest, DXVK_SHA256, MANAGED_DXVK_ID, MANAGED_RUNNER_ID, MANAGED_RUNNER_LABEL,
     PROTON_SHA512, UMU_ID, UMU_SHA256,
 };
+pub(crate) use fetch::{
+    download_pinned_https, pinned_https_url_allowed, verify_archive_file, PinnedHttpsFile,
+};
 
 const RUNTIME_DIR: &str = "runtime";
 

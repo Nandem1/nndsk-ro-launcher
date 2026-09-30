@@ -166,24 +166,7 @@ fn parse_line(line: &str) -> Option<InputdMsg> {
 }
 
 fn find_ro_inputd() -> std::path::PathBuf {
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            let plain = dir.join("ro-inputd");
-            if plain.exists() {
-                return plain;
-            }
-            if let Ok(entries) = std::fs::read_dir(dir) {
-                for entry in entries.flatten() {
-                    let name = entry.file_name();
-                    let name = name.to_string_lossy();
-                    if name == "ro-inputd" || name.starts_with("ro-inputd-") {
-                        return entry.path();
-                    }
-                }
-            }
-        }
-    }
-    std::path::PathBuf::from("ro-inputd")
+    crate::utils::bundled_sidecar_path("ro-inputd")
 }
 
 fn build_status(
@@ -225,6 +208,25 @@ pub async fn run(
     let triggers_arg = config.keys.join(",");
 
     let inputd_path = find_ro_inputd();
+    if !inputd_path.is_absolute() {
+        let msg = format!("[Spammer] ro-inputd sidecar path is not absolute ({inputd_path:?})");
+        emit_tool_log_opt(Some(&app), &msg);
+        emit_status_if_changed(
+            &app,
+            &status_arc,
+            EVENT_SPAMMER_STATUS,
+            build_status(
+                &config,
+                "",
+                0,
+                Some(msg),
+                (false, false),
+                (None, false),
+                timing,
+            ),
+        );
+        return;
+    }
 
     let mut child = match tokio::process::Command::new(&inputd_path)
         .arg("--triggers")

@@ -19,26 +19,12 @@ use tauri::AppHandle;
 
 pub fn find_ro_sessiond(override_path: Option<&Path>) -> PathBuf {
     if let Some(path) = override_path {
-        return path.to_path_buf();
-    }
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            let plain = dir.join("ro-sessiond");
-            if plain.exists() {
-                return plain;
-            }
-            if let Ok(entries) = std::fs::read_dir(dir) {
-                for entry in entries.flatten() {
-                    let name = entry.file_name();
-                    let name = name.to_string_lossy();
-                    if name == "ro-sessiond" || name.starts_with("ro-sessiond-") {
-                        return entry.path();
-                    }
-                }
-            }
+        if path.is_absolute() {
+            return path.to_path_buf();
         }
+        return PathBuf::from("/nonexistent/ro-launcher/ro-sessiond");
     }
-    PathBuf::from("ro-sessiond")
+    crate::utils::bundled_sidecar_path("ro-sessiond")
 }
 
 #[cfg(test)]
@@ -97,6 +83,11 @@ pub async fn spawn_supervisor(
         .ok_or_else(|| SessionError::validation("prefix path could not be canonicalized"))?;
 
     let sessiond_path = find_ro_sessiond(sidecar_override);
+    if !sessiond_path.is_absolute() {
+        return Err(SessionError::internal(
+            "ro-sessiond sidecar path is not absolute",
+        ));
+    }
     let parent_pid = std::process::id().to_string();
 
     let mut cmd = Command::new(&sessiond_path);
@@ -198,4 +189,23 @@ pub async fn spawn_supervisor(
         supervisor_identity,
         redactions,
     })
+}
+
+#[cfg(test)]
+mod path_tests {
+    use super::find_ro_sessiond;
+    use std::path::{Path, PathBuf};
+
+    #[test]
+    fn sessiond_override_rejects_relative_path_names() {
+        let resolved = find_ro_sessiond(Some(Path::new("ro-sessiond")));
+        assert!(resolved.is_absolute());
+        assert_ne!(resolved, PathBuf::from("ro-sessiond"));
+    }
+
+    #[test]
+    fn sessiond_override_keeps_absolute_paths() {
+        let absolute = PathBuf::from("/tmp/ro-sessiond-fixture");
+        assert_eq!(find_ro_sessiond(Some(&absolute)), absolute);
+    }
 }
