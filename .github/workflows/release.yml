@@ -1,0 +1,108 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  appimage:
+    runs-on: ubuntu-24.04
+    environment: release
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Install Linux build dependencies
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev
+          librsvg2-dev patchelf
+
+      - name: Fail closed on release environment
+        env:
+          RO_LAUNCHER_DISCORD_APPLICATION_ID: ${{ vars.RO_LAUNCHER_DISCORD_APPLICATION_ID }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: node scripts/require-release-env.mjs
+
+      - run: node scripts/check-release-invariants.mjs
+      - name: Tag matches version files
+        run: node scripts/check-release-invariants.mjs --tag "${GITHUB_REF_NAME}"
+
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - run: npm run lint
+      - run: npm run format:check
+      - run: cargo fmt --all -- --check
+      - name: Build sidecars
+        run: cargo build -p ro-inputd -p ro-sessiond --release
+      - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+      - run: cargo test --workspace --all-features
+
+      - uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          RO_LAUNCHER_DISCORD_APPLICATION_ID: ${{ vars.RO_LAUNCHER_DISCORD_APPLICATION_ID }}
+          DISCORD_APPLICATION_ID: ''
+          NO_STRIP: 'true'
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'RO-Launcher __VERSION__'
+          releaseDraft: true
+          includeUpdaterJson: true
+          args: '--bundles appimage'
+
+      - name: Human SHA-256 evidence and sidecar layout
+        run: |
+          set -euo pipefail
+          cd target/release/bundle/appimage
+          shopt -s nullglob
+          images=(RO-Launcher_*_amd64.AppImage)
+          if [[ ${#images[@]} -ne 1 ]]; then
+            echo "expected exactly one AppImage, found: ${images[*]:-none}" >&2
+            exit 1
+          fi
+          appimage="${images[0]}"
+          test -s "${appimage}.sig"
+          test -s "$appimage"
+          sha256sum "$appimage" > RO-Launcher_amd64.AppImage.sha256
+          sha256sum -c RO-Launcher_amd64.AppImage.sha256
+          work=$(mktemp -d)
+          trap 'rm -rf "$work"' EXIT
+          cd "$work"
+          "$GITHUB_WORKSPACE/target/release/bundle/appimage/$appimage" --appimage-extract >/dev/null
+          test -x squashfs-root/usr/bin/ro-launcher
+          test -x squashfs-root/usr/bin/ro-inputd
+          test -x squashfs-root/usr/bin/ro-sessiond
+          {
+            echo "appimage=$appimage"
+            echo "sig=${appimage}.sig"
+            ls -la squashfs-root/usr/bin/ro-launcher squashfs-root/usr/bin/ro-inputd squashfs-root/usr/bin/ro-sessiond
+          } > "$GITHUB_WORKSPACE/target/release/bundle/appimage/sidecar-layout.txt"
+
+      - name: Upload SHA-256 evidence
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${GITHUB_REF_NAME}" \
+            target/release/bundle/appimage/RO-Launcher_amd64.AppImage.sha256 \
+            target/release/bundle/appimage/sidecar-layout.txt \
+            --clobber

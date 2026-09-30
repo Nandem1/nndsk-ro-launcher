@@ -15,3 +15,4 @@ pub mod servers;
 pub mod settings;
 pub mod spammer;
 pub mod storage;
+pub mod updater;

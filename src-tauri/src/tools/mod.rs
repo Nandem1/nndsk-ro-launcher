@@ -29,3 +29,4 @@ pub(crate) mod runtime;
 pub mod server_tools;
 pub mod session;
 pub mod spammer;
+pub mod updater;

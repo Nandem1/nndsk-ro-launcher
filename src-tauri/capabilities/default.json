@@ -5,6 +5,10 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
-    "dialog:default"
+    "dialog:default",
+    "updater:deny-check",
+    "updater:deny-download",
+    "updater:deny-download-and-install",
+    "updater:deny-install"
   ]
 }

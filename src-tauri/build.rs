@@ -54,6 +54,18 @@ fn main() {
     println!("cargo:rerun-if-env-changed=RO_LAUNCHER_DISCORD_APPLICATION_ID");
     println!("cargo:rerun-if-env-changed=DISCORD_APPLICATION_ID");
 
+    for name in [
+        "RO_LAUNCHER_DISCORD_APPLICATION_ID",
+        "DISCORD_APPLICATION_ID",
+    ] {
+        if let Ok(value) = env::var(name) {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                println!("cargo:rustc-env={name}={trimmed}");
+            }
+        }
+    }
+
     // No invocar `cargo build` aquí: bloquea el lock del build padre.
     // Los sidecars se compilan con `cargo build -p ro-inputd -p ro-sessiond` (ver npm scripts).
     copy_sidecar(workspace, &manifest_dir, &target, &profile, "ro-inputd");

@@ -8,6 +8,7 @@ La documentación se divide por autoridad, no por la fase en que se implementó:
   `ro-sessiond`, memoria y lifecycle supervisado.
 - [`features/DISCORD_RICH_PRESENCE_PLAN.md`](features/DISCORD_RICH_PRESENCE_PLAN.md): diseño de la
   integración Discord Rich Presence.
+- [`features/UPDATER.md`](features/UPDATER.md): cómo firmar y publicar actualizaciones del AppImage.
 - [`adr/`](adr/): decisiones arquitectónicas y su justificación.
 
 Los contratos de implementación de las fases 0–8 se retiraron después de completarse. Para una
@@ -23,3 +24,4 @@ investigación histórica deben consultarse mediante Git, no copiarse a document
 | [004](adr/ADR-004-runtime-compatibility-catalog.md) | Compatibilidad exacta basada en evidencia  |
 | [005](adr/ADR-005-runtime-d7vk-deployment.md)       | D7VK `no-go`                               |
 | [006](adr/ADR-006-runtime-benchmark-protocol.md)    | Protocolo reproducible de benchmark A/B    |
+| [007](adr/ADR-007-official-tauri-updater.md)        | Updater oficial Tauri con lease en el host |

@@ -7,6 +7,7 @@ export const LAUNCHER_EVENTS = {
   AUTOPOT_STATUS: 'ro-launcher://autopot-status',
   AUTOBUFF_STATUS: 'ro-launcher://autobuff-status',
   SPAMMER_STATUS: 'ro-launcher://spammer-status',
+  UPDATE: 'ro-launcher://update',
 } as const
 
 /** Debe coincidir con MANAGED_RUNNER_ID en el backend. */

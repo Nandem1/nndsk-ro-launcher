@@ -15,7 +15,8 @@ AutoPot/AutoBuff without requiring `ptrace_scope=0`.
 3. Hit **Play**.
 
 - [Product page](https://nndsk.dev/projects/nndsk-ro-launcher/)
-- [Releases](https://github.com/Nandem1/nndsk-ro-launcher/releases)
+- [Releases](https://github.com/Nandem1/nndsk-ro-launcher/releases) (AppImage firmado; updater en
+  [`docs/features/UPDATER.md`](docs/features/UPDATER.md))
 - Build from source: see [**Desarrollo**](#desarrollo) below
 
 ## Funciones principales

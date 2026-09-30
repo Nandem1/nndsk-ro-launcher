@@ -1,4 +1,8 @@
+import { getVersion } from '@tauri-apps/api/app'
+import { useEffect, useState } from 'react'
 import { useLauncherStore } from '../features/launcher/launcher.store'
+import { useUpdaterStore } from '../features/updater/updater.store'
+import { updateCopy } from '../features/updater/updater.logic'
 import { StatusDot } from '../shared/ui/StatusDot'
 import { useUiModeStore } from './uiMode.store'
 
@@ -20,6 +24,36 @@ function IngameStatusChip() {
   )
 }
 
+function VersionChip() {
+  const snapshot = useUpdaterStore((s) => s.snapshot)
+  const [fallbackVersion, setFallbackVersion] = useState<string | null>(null)
+  const copy = updateCopy(snapshot)
+
+  useEffect(() => {
+    let cancelled = false
+    void getVersion()
+      .then((version) => {
+        if (!cancelled) setFallbackVersion(version)
+      })
+      .catch(() => {
+        if (!cancelled) setFallbackVersion(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const version = snapshot?.currentVersion ?? fallbackVersion
+  if (!version) return null
+
+  return (
+    <div className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-white/[0.06] bg-zinc-900/50">
+      <StatusDot status={copy.dot} pulse={copy.dot === 'warning'} />
+      <span className="text-[11px] text-zinc-400 font-medium">v{version}</span>
+    </div>
+  )
+}
+
 export function AppHeader() {
   const ingame = useUiModeStore((s) => s.mode === 'ingame')
 
@@ -32,13 +66,17 @@ export function AppHeader() {
         </h1>
         <p className="text-xs text-zinc-500 mt-0.5">Ragnarok Online · Linux</p>
       </div>
-      {ingame ? (
-        <IngameStatusChip />
-      ) : (
-        <p className="text-[11px] text-zinc-600 tracking-wide">
-          Developed by: <span className="text-zinc-400 font-medium">nndsk</span>
-        </p>
-      )}
+      <div className="flex items-center gap-2">
+        <VersionChip />
+        {ingame ? (
+          <IngameStatusChip />
+        ) : (
+          <p className="text-[11px] text-zinc-600 tracking-wide">
+            Developed by:{' '}
+            <span className="text-zinc-400 font-medium">nndsk</span>
+          </p>
+        )}
+      </div>
     </header>
   )
 }

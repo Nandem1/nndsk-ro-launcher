@@ -18,3 +18,13 @@ src-tauri/binaries/
 
 # Cache local del spike D7VK (no commitear el zip)
 /d7vk-spike-cache/
+
+# Notas locales de auditoría y evidencia de builds (no el producto)
+.audit/
+
+# Claves privadas del updater. El pubkey va en tauri.conf.json.
+*.key
+
+# Artefactos AppImage copiados al árbol por error
+*.AppImage
+*.AppImage.sig

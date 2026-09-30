@@ -16,6 +16,12 @@ import { AdvancedSettings } from '../features/settings/AdvancedSettings'
 import { RunnerSelector } from '../features/settings/RunnerSelector'
 import { PrefixResetButton } from '../features/settings/PrefixResetButton'
 import { DiscordPresenceToggle } from '../features/settings/DiscordPresenceToggle'
+import { UpdatePanel } from '../features/updater/UpdatePanel'
+import { UpdateBanner } from '../features/updater/UpdateBanner'
+import {
+  useUpdateBootstrap,
+  useUpdateEvents,
+} from '../features/updater/useUpdateBootstrap'
 import { useLauncherEvents } from '../features/launcher/useLauncherEvents'
 import { IconButton } from '../shared/ui/Button'
 import { ToolViewTabs } from './ToolViewTabs'
@@ -33,6 +39,8 @@ export function App() {
   const { phase, errors, notices, retrying, retry, dismissNotices } =
     useAppInit()
   useLauncherEvents()
+  useUpdateEvents()
+  useUpdateBootstrap(phase !== 'loading')
   useUiModeTransition()
   useSelectedRuntimeStatus()
 
@@ -62,6 +70,7 @@ export function App() {
         />
       )}
       <MaintenanceNotice notices={notices} onDismiss={dismissNotices} />
+      <UpdateBanner />
 
       <main
         style={{ gridTemplateColumns: `${railWidth}px 1fr` }}
@@ -91,6 +100,7 @@ export function App() {
                 <RunnerSelector />
                 <AdvancedSettings />
                 <DiscordPresenceToggle />
+                <UpdatePanel />
               </div>
               <div className="shrink-0 pb-2.5">
                 <PrefixResetButton />

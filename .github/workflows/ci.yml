@@ -29,6 +29,7 @@ jobs:
           librsvg2-dev patchelf
 
       - run: npm ci
+      - run: node scripts/check-release-invariants.mjs
       - run: npm test
       - run: npm run build
       - run: npm run lint

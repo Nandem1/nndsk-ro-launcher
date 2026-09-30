@@ -13,3 +13,4 @@ pub mod settings;
 pub mod spammer;
 pub mod storage;
 pub mod tool_kind;
+pub mod update;

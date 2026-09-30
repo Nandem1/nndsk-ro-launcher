@@ -25,6 +25,7 @@ import type {
   StorageNotice,
   ToolKind,
   UninstallDgVoodooResult,
+  UpdateSnapshot,
 } from './types'
 import {
   validateAppSettings,
@@ -259,4 +260,9 @@ export const api = {
     invoke<void>('update_spammer_config', { config }),
 
   getSpammerStatus: () => invoke<SpammerStatusEvent>('get_spammer_status'),
+
+  getUpdateSnapshot: () => invoke<UpdateSnapshot>('get_update_snapshot'),
+  checkForUpdate: () => invoke<UpdateSnapshot>('check_for_update'),
+  installCheckedUpdate: () => invoke<UpdateSnapshot>('install_checked_update'),
+  relaunchUpdatedApp: () => invoke<void>('relaunch_updated_app'),
 } as const

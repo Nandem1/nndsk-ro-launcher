@@ -32,11 +32,18 @@ use commands::{
     settings::{load_settings, save_settings},
     spammer::{get_spammer_status, start_spammer, stop_spammer, update_spammer_config},
     storage::take_storage_notices,
+    updater::{
+        check_for_update, get_update_snapshot, install_checked_update, relaunch_updated_app,
+    },
 };
 use state::{GameState, ServerRepository, SettingsRepository, StorageNotices};
 use tools::{
-    autobuff::AutobuffHandle, autopot::AutopotHandle, input::InputGateway,
-    presence::PresenceHandle, spammer::SpammerHandle,
+    autobuff::AutobuffHandle,
+    autopot::AutopotHandle,
+    input::InputGateway,
+    presence::PresenceHandle,
+    spammer::SpammerHandle,
+    updater::{OfficialUpdaterBackend, UpdateLease},
 };
 use utils::configure_linux_webview_env;
 
@@ -54,6 +61,7 @@ pub fn run() {
     let memory = tools::memory_sessions::MemorySessionRegistry::new();
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(GameState {
             game: state::GameProcessHandle::new(),
             tool_lifecycle: tokio::sync::Mutex::new(()),
@@ -68,6 +76,11 @@ pub fn run() {
         .manage(ServerRepository::default())
         .manage(SettingsRepository)
         .manage(StorageNotices::default())
+        .manage(UpdateLease::new(env!("CARGO_PKG_VERSION")))
+        .setup(|app| {
+            app.manage(OfficialUpdaterBackend::new(app.handle().clone()));
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             show_main_window,
             check_dependencies,
@@ -121,22 +134,19 @@ pub fn run() {
             export_runtime_benchmarks,
             export_runtime_benchmark_comparison,
             delete_runtime_benchmarks,
+            get_update_snapshot,
+            check_for_update,
+            install_checked_update,
+            relaunch_updated_app,
         ])
         .build(tauri::generate_context!())
         .expect("error al iniciar la aplicación")
         .run(|app, event| {
             if let RunEvent::Exit = event {
                 if let Some(state) = app.try_state::<GameState>() {
-                    state.presence.shutdown();
                     tauri::async_runtime::block_on(async {
-                        let _ = tokio::join!(
-                            state.autopot.stop(),
-                            state.autobuff.stop(),
-                            state.spammer.stop()
-                        );
-                        let _ = state.sessions.shutdown_all().await;
+                        tools::updater::shutdown_launcher_services(&state).await;
                     });
-                    state.input.shutdown();
                 }
             }
         });

@@ -34,9 +34,22 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "externalBin": ["binaries/ro-inputd", "binaries/ro-sessiond"],
+    "externalBin": [
+      "binaries/ro-inputd",
+      "binaries/ro-sessiond"
+    ],
     "resources": {
       "resources/dgvoodoo/": "dgvoodoo/"
+    },
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDJFODc3OTI5NTEzN0NBMzQKUldRMHlqZFJLWG1ITGdzcGpoNXhLM2FsbU1WcWgrTllVRHJZMEJzS2dJcDBJL2U1ZUQ0aDJudTMK",
+      "endpoints": [
+        "https://github.com/Nandem1/nndsk-ro-launcher/releases/latest/download/latest.json"
+      ],
+      "requireSignedVersion": true
     }
   }
 }

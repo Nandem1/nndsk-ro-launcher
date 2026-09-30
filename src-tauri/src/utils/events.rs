@@ -9,6 +9,7 @@ pub const EVENT_GAME_CLIENT: &str = "ro-launcher://game-client";
 pub const EVENT_AUTOPOT_STATUS: &str = "ro-launcher://autopot-status";
 pub const EVENT_AUTOBUFF_STATUS: &str = "ro-launcher://autobuff-status";
 pub const EVENT_SPAMMER_STATUS: &str = "ro-launcher://spammer-status";
+pub const EVENT_UPDATE: &str = "ro-launcher://update";
 
 #[derive(Clone, Serialize)]
 pub struct LogEvent {

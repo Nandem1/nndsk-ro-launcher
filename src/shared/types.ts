@@ -483,3 +483,34 @@ export type ToolKind = (typeof TOOL_KINDS)[number]
 export function isToolKind(value: string | null): value is ToolKind {
   return TOOL_KINDS.includes(value as ToolKind)
 }
+
+export type UpdateFailureClass =
+  'unauthentic' | 'unreachable' | 'install' | 'clientsActive' | 'noPending'
+
+export type UpdateUnavailableReason = 'notPackaged' | 'unsupportedOs'
+
+export interface ReleaseSummary {
+  version: string
+  publishedAt: string | null
+  notes: string | null
+}
+
+export type UpdatePhase =
+  | { kind: 'idle' }
+  | { kind: 'checking' }
+  | { kind: 'current' }
+  | { kind: 'available'; release: ReleaseSummary }
+  | {
+      kind: 'downloading'
+      release: ReleaseSummary
+      downloadedBytes: number
+      contentLength: number | null
+    }
+  | { kind: 'readyToRestart'; installedVersion: string }
+  | { kind: 'failed'; class: UpdateFailureClass; message: string }
+  | { kind: 'unavailable'; reason: UpdateUnavailableReason }
+
+export interface UpdateSnapshot {
+  currentVersion: string
+  phase: UpdatePhase
+}
