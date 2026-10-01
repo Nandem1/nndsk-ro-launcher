@@ -69,7 +69,7 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: 'RO-Launcher __VERSION__'
           releaseDraft: true
-          includeUpdaterJson: true
+          uploadUpdaterJson: true
           args: '--bundles appimage'
 
       - name: Human SHA-256 evidence and sidecar layout

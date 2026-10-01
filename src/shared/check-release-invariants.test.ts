@@ -35,5 +35,7 @@ describe('sidecarOrderError', () => {
       'utf8',
     )
     expect(sidecarOrderError(yaml)).toBeNull()
+    expect(yaml).toMatch(/uploadUpdaterJson:\s*true/)
+    expect(yaml).not.toMatch(/includeUpdaterJson/)
   })
 })

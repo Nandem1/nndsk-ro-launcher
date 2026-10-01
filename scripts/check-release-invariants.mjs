@@ -24,7 +24,13 @@ function cargoPackageVersion(toml) {
 }
 
 function walkFiles(dir, out = []) {
-  const skipDirs = new Set(['target', 'binaries', 'gen', 'icons', 'node_modules'])
+  const skipDirs = new Set([
+    'target',
+    'binaries',
+    'gen',
+    'icons',
+    'node_modules',
+  ])
   for (const entry of readdirSync(dir)) {
     if (skipDirs.has(entry)) continue
     const path = join(dir, entry)
@@ -85,15 +91,25 @@ if (updater.allowDowngrades === true) {
 }
 
 const endpoints = updater.endpoints
-if (!Array.isArray(endpoints) || endpoints.length !== 1 || endpoints[0] !== EXPECTED_ENDPOINT) {
-  fail(`plugins.updater.endpoints must be exactly [${JSON.stringify(EXPECTED_ENDPOINT)}]`)
+if (
+  !Array.isArray(endpoints) ||
+  endpoints.length !== 1 ||
+  endpoints[0] !== EXPECTED_ENDPOINT
+) {
+  fail(
+    `plugins.updater.endpoints must be exactly [${JSON.stringify(EXPECTED_ENDPOINT)}]`,
+  )
 }
 
 const pubkey = updater.pubkey
 if (typeof pubkey !== 'string' || pubkey.trim() === '') {
   fail('plugins.updater.pubkey must be non-empty contents')
 }
-if (pubkey.includes('/') || pubkey.endsWith('.pem') || pubkey.endsWith('.key')) {
+if (
+  pubkey.includes('/') ||
+  pubkey.endsWith('.pem') ||
+  pubkey.endsWith('.key')
+) {
   fail('plugins.updater.pubkey looks like a path; paste key contents')
 }
 
@@ -101,13 +117,18 @@ const deps = {
   ...(packageJson.dependencies ?? {}),
   ...(packageJson.devDependencies ?? {}),
 }
-for (const name of ['@tauri-apps/plugin-updater', '@tauri-apps/plugin-process']) {
+for (const name of [
+  '@tauri-apps/plugin-updater',
+  '@tauri-apps/plugin-process',
+]) {
   if (name in deps) fail(`${name} must not be in package.json`)
 }
 
 const cliRange = packageJson.devDependencies?.['@tauri-apps/cli']
 if (typeof cliRange !== 'string' || !/^\^2\.(1[2-9]|[2-9]\d)/.test(cliRange)) {
-  fail('@tauri-apps/cli must be ^2.12.0 or later so signatures include version:')
+  fail(
+    '@tauri-apps/cli must be ^2.12.0 or later so signatures include version:',
+  )
 }
 
 const capabilityFiles = walkFiles(join(root, 'src-tauri', 'capabilities'))
@@ -147,9 +168,20 @@ for (const rel of scanRoots) {
   }
 }
 
-const releaseYaml = readFileSync(join(root, '.github', 'workflows', 'release.yml'), 'utf8')
+const releaseYaml = readFileSync(
+  join(root, '.github', 'workflows', 'release.yml'),
+  'utf8',
+)
 const sidecarError = sidecarOrderError(releaseYaml)
 if (sidecarError) fail(sidecarError)
+if (releaseYaml.includes('includeUpdaterJson')) {
+  fail('release.yml must use uploadUpdaterJson, not includeUpdaterJson')
+}
+if (!releaseYaml.includes('uploadUpdaterJson: true')) {
+  fail(
+    'release.yml must set uploadUpdaterJson: true so latest.json is attached',
+  )
+}
 
 console.log(
   `check-release-invariants: ok (version ${packageJson.version}${tag ? `, tag ${tag}` : ''})`,
