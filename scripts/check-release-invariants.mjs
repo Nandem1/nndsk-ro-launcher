@@ -3,6 +3,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { sidecarOrderError } from './release-sidecar-order.mjs'
+import { qualityCiTriggerError } from './quality-ci-trigger.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const EXPECTED_ENDPOINT =
@@ -180,6 +181,40 @@ if (releaseYaml.includes('includeUpdaterJson')) {
 if (!releaseYaml.includes('uploadUpdaterJson: true')) {
   fail(
     'release.yml must set uploadUpdaterJson: true so latest.json is attached',
+  )
+}
+
+const ciYaml = readFileSync(join(root, '.github', 'workflows', 'ci.yml'), 'utf8')
+const ciTriggerError = qualityCiTriggerError(ciYaml)
+if (ciTriggerError) fail(ciTriggerError)
+
+const mainWindow = tauriConf.app?.windows?.[0]
+if (!mainWindow || mainWindow.decorations !== false) {
+  fail(
+    'app.windows[0].decorations must be false so GTK CSD does not duplicate the in-app title',
+  )
+}
+const capabilities = readFileSync(
+  join(root, 'src-tauri', 'capabilities', 'default.json'),
+  'utf8',
+)
+for (const perm of [
+  'core:window:allow-close',
+  'core:window:allow-minimize',
+  'core:window:allow-start-dragging',
+]) {
+  if (!capabilities.includes(perm)) {
+    fail(`undecorated window requires ${perm} in capabilities/default.json`)
+  }
+}
+
+const webviewRs = readFileSync(
+  join(root, 'src-tauri', 'src', 'utils', 'webview.rs'),
+  'utf8',
+)
+if (!webviewRs.includes('set_titlebar(None')) {
+  fail(
+    'webview.rs must clear the GTK titlebar; tao Wayland ignores decorations:false',
   )
 }
 

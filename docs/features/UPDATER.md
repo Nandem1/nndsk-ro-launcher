@@ -40,20 +40,24 @@ No subas el privado, la contraseña ni un Application Secret / bot token.
 
 La versión de la app es un solo `X.Y.Z`. El skill [release-ro-launcher](../../.cursor/skills/release-ro-launcher/SKILL.md) y `npm run version:bump` la escriben en los cinco ficheros. No la edites a mano.
 
-**Primera publicación.** La versión ya es `0.1.0`. No hagas bump. Tag `v0.1.0` sobre `main` limpio con CI verde, espera el workflow `Release`, revisa el draft y publícalo tú.
+`v0.1.0` ya está publicado. El siguiente corte es un bump. No muevas ese tag.
 
 Cortes siguientes:
 
 1. `npm run version:bump -- patch` (o `minor` / `major` / `X.Y.Z`).
 2. Commit del bump.
-3. Push de `main` y CI de calidad verde.
+3. Push de `main` y CI de calidad verde. `ci.yml` no corre en tags `v*.*.*`.
 4. Tag `vX.Y.Z` (debe coincidir con `npm run version:show`).
 5. Push del tag. Actions corre `.github/workflows/release.yml`.
 6. Revisa el GitHub Release en borrador (`latest.json`, AppImage, `.sig`).
-7. Publica el release cuando el draft esté bien.
+7. Escribe las notas que verá el updater en `latest.json` (`notes`).
+8. Publica el release cuando el draft esté bien.
 
 El job limpia `DISCORD_APPLICATION_ID` heredado, exige el ID numérico y la clave de firma,
 compila sidecars en release, firma el AppImage y comprueba `ro-inputd` / `ro-sessiond` en `usr/bin`.
+Publicar el draft es lo que hace visible
+`https://github.com/Nandem1/nndsk-ro-launcher/releases/latest/download/latest.json`
+para los AppImage instalados.
 
 ## Rotación de pubkey
 

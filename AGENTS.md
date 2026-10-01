@@ -57,6 +57,35 @@ Rich Presence. A fix is acceptable only if it keeps these contracts:
 - `src-tauri/resources/`: bundled runtime resources; dgVoodoo assets stay under `dgvoodoo/`.
 - `scripts/install-nndsk.mjs`: local AppImage installation workflow.
 - `target/release/bundle/`: generated production artifacts; never commit them.
+- `.cursor/skills/release-ro-launcher/SKILL.md`: how to bump, tag, and inspect a draft GitHub Release.
+
+## Release and updater
+
+App version is one X.Y.Z written to five files. Do not edit those files by hand. Follow
+[`.cursor/skills/release-ro-launcher/SKILL.md`](.cursor/skills/release-ro-launcher/SKILL.md)
+and [`docs/features/UPDATER.md`](docs/features/UPDATER.md).
+
+```bash
+npm run version:show
+npm run version:bump -- patch
+node scripts/check-release-invariants.mjs --tag vX.Y.Z
+```
+
+`v0.1.0` is already published. A later cut bumps, commits only the five version files, waits for
+quality CI on `main`, tags `vX.Y.Z`, and watches `.github/workflows/release.yml`. That workflow
+creates a draft. Publishing the draft is the step that makes
+`https://github.com/Nandem1/nndsk-ro-launcher/releases/latest/download/latest.json` visible to
+installed AppImages. Do not publish the draft. Do not run `npm version`. Do not bump sidecar crate
+versions. Do not move a published tag.
+
+Quality CI (`.github/workflows/ci.yml`) runs on `main` and pull requests. It must not run on
+`v*.*.*` tags. `release.yml` repeats quality in the same job as the AppImage so `target/` stays
+warm for the signed bundle.
+
+The guest webview must not receive `updater:default` or `updater:allow-*`.
+`scripts/check-release-invariants.mjs` is the gate for version drift, the updater endpoint, the
+pubkey shape, sidecar build order, `uploadUpdaterJson`, quality CI triggers, and the undecorated
+Linux window.
 
 Keep feature logic in its domain. Move code to `shared` or `utils` only when at least two domains
 truly share the abstraction. Do not put business logic in React components or Tauri command

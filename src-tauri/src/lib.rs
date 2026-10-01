@@ -79,6 +79,10 @@ pub fn run() {
         .manage(UpdateLease::new(env!("CARGO_PKG_VERSION")))
         .setup(|app| {
             app.manage(OfficialUpdaterBackend::new(app.handle().clone()));
+            #[cfg(target_os = "linux")]
+            if let Some(window) = app.get_webview_window("main") {
+                utils::hide_native_titlebar(&window);
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

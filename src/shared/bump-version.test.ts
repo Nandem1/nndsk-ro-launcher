@@ -41,42 +41,51 @@ describe('nextVersion', () => {
 
 describe('readAppVersion', () => {
   it('reads one version from the real tree', () => {
-    expect(readAppVersion(loadFiles())).toBe('0.1.0')
+    const version = readAppVersion(loadFiles())
+    expect(parseSemver(version)).not.toBeNull()
   })
 })
 
 describe('applyVersion', () => {
   it('rewrites every tracked source without touching dependency versions', () => {
-    const next = applyVersion(loadFiles(), '0.1.0', '0.1.1')
-    expect(next.packageJson.version).toBe('0.1.1')
-    expect(next.tauriConf.version).toBe('0.1.1')
-    expect(next.cargoToml).toMatch(/^version = "0.1.1"$/m)
-    expect(next.cargoToml).toContain('tauri-build = { version = "2"')
-    expect(next.cargoLock).toContain('name = "ro-launcher"\nversion = "0.1.1"')
-    expect(next.packageLock).toContain('"version": "0.1.1"')
-    expect(next.packageLock).not.toContain(
-      '"name": "ro-launcher",\n  "version": "0.1.0"',
+    const current = readAppVersion(loadFiles())
+    const next = nextVersion(current, 'patch')
+    const files = applyVersion(loadFiles(), current, next)
+    expect(files.packageJson.version).toBe(next)
+    expect(files.tauriConf.version).toBe(next)
+    expect(files.cargoToml).toMatch(new RegExp(`^version = "${next}"$`, 'm'))
+    expect(files.cargoToml).toContain('tauri-build = { version = "2"')
+    expect(files.cargoLock).toContain(
+      `name = "ro-launcher"\nversion = "${next}"`,
+    )
+    expect(files.packageLock).toContain(`"version": "${next}"`)
+    expect(files.packageLock).not.toContain(
+      `"name": "ro-launcher",\n  "version": "${current}"`,
     )
   })
 })
 
 describe('bump-version CLI', () => {
   it('prints the current version and dry-runs a patch without writing', () => {
+    const current = readAppVersion(loadFiles())
+    const next = nextVersion(current, 'patch')
     const show = spawnSync(process.execPath, [script, '--show'], {
       cwd: root,
       encoding: 'utf8',
     })
     expect(show.status).toBe(0)
-    expect(show.stdout.trim()).toBe('0.1.0')
+    expect(show.stdout.trim()).toBe(current)
 
     const dry = spawnSync(process.execPath, [script, '--dry-run', 'patch'], {
       cwd: root,
       encoding: 'utf8',
     })
     expect(dry.status).toBe(0)
-    expect(dry.stdout.trim()).toBe('bump-version: dry-run 0.1.0 -> 0.1.1')
+    expect(dry.stdout.trim()).toBe(
+      `bump-version: dry-run ${current} -> ${next}`,
+    )
     expect(
       JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version,
-    ).toBe('0.1.0')
+    ).toBe(current)
   })
 })

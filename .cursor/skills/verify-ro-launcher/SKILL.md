@@ -5,7 +5,7 @@ description: Drive the RO-Launcher Tauri desktop app through an isolated dev web
 
 # Verify RO-Launcher
 
-RO-Launcher is a Linux Tauri desktop app. The user-facing surface is the window titled `RO-Launcher`. During verification that window loads the Vite dev server at `http://localhost:5173` inside WebKitGTK. There is no separate user CLI.
+RO-Launcher is a Linux Tauri desktop app. The user-facing surface is the window titled `RO-Launcher`. Native GTK decorations are off. The in-app heading and the Minimizar / Cerrar buttons are the chrome. During verification that window loads the Vite dev server at `http://localhost:5173` inside WebKitGTK. There is no separate user CLI.
 
 The installed AppImage may already be open. It uses the same window title and the real data directory `~/.local/share/ro-launcher`. Never drive it, never match it by title, and never kill a process named `ro-launcher`. This skill starts a second, isolated `tauri dev` and talks only to the WebKit inspector it owns.
 

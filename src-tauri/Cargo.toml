@@ -35,6 +35,9 @@ ro-session-protocol = { path = "../crates/ro-session-protocol" }
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
 
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = { version = "0.18", features = ["v3_24"] }
+
 [dev-dependencies]
 tokio = { version = "1", features = ["test-util"] }
 zip = "2.2"

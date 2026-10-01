@@ -5,6 +5,7 @@ import { useUpdaterStore } from '../features/updater/updater.store'
 import { updateCopy } from '../features/updater/updater.logic'
 import { StatusDot } from '../shared/ui/StatusDot'
 import { useUiModeStore } from './uiMode.store'
+import { WindowControls } from './WindowControls'
 
 function IngameStatusChip() {
   const launching = useLauncherStore((s) => s.status === 'launching')
@@ -59,14 +60,14 @@ export function AppHeader() {
 
   return (
     <header className="shrink-0 flex items-end justify-between px-4 py-2.5 border-b border-white/[0.06] bg-zinc-950/60 backdrop-blur-sm">
-      <div>
+      <div className="min-w-0 flex-1" data-tauri-drag-region>
         <h1 className="text-xl font-bold tracking-tight">
           <span className="text-amber-400">RO</span>
           <span className="text-zinc-100">-Launcher</span>
         </h1>
         <p className="text-xs text-zinc-500 mt-0.5">Ragnarok Online · Linux</p>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2" data-tauri-drag-region="false">
         <VersionChip />
         {ingame ? (
           <IngameStatusChip />
@@ -76,6 +77,7 @@ export function AppHeader() {
             <span className="text-zinc-400 font-medium">nndsk</span>
           </p>
         )}
+        <WindowControls />
       </div>
     </header>
   )

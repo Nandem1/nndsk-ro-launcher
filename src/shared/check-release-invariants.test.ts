@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { sidecarOrderError } from '../../scripts/release-sidecar-order.mjs'
+import { qualityCiTriggerError } from '../../scripts/quality-ci-trigger.mjs'
 
 const root = process.cwd()
 const script = join(root, 'scripts/check-release-invariants.mjs')
@@ -37,5 +38,44 @@ describe('sidecarOrderError', () => {
     expect(sidecarOrderError(yaml)).toBeNull()
     expect(yaml).toMatch(/uploadUpdaterJson:\s*true/)
     expect(yaml).not.toMatch(/includeUpdaterJson/)
+  })
+})
+
+describe('qualityCiTriggerError', () => {
+  it('rejects a bare push trigger that also fires on tags', () => {
+    const unrestricted = `
+on:
+  push:
+  pull_request:
+`
+    expect(qualityCiTriggerError(unrestricted)).toMatch(/tag pushes/)
+  })
+
+  it('accepts the current ci.yml trigger', () => {
+    const yaml = readFileSync(join(root, '.github/workflows/ci.yml'), 'utf8')
+    expect(qualityCiTriggerError(yaml)).toBeNull()
+    expect(yaml).toMatch(/branches:\s*\[main\]/)
+  })
+})
+
+describe('undecorated window chrome', () => {
+  it('keeps decorations false and guest window controls', () => {
+    const tauriConf = JSON.parse(
+      readFileSync(join(root, 'src-tauri/tauri.conf.json'), 'utf8'),
+    )
+    const capabilities = readFileSync(
+      join(root, 'src-tauri/capabilities/default.json'),
+      'utf8',
+    )
+    expect(tauriConf.app.windows[0].decorations).toBe(false)
+    expect(tauriConf.app.windows[0].title).toBe('RO-Launcher')
+    expect(capabilities).toMatch(/core:window:allow-close/)
+    expect(capabilities).toMatch(/core:window:allow-minimize/)
+    expect(capabilities).toMatch(/core:window:allow-start-dragging/)
+    const webviewRs = readFileSync(
+      join(root, 'src-tauri/src/utils/webview.rs'),
+      'utf8',
+    )
+    expect(webviewRs).toMatch(/set_titlebar\(None/)
   })
 })

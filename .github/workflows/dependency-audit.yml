@@ -27,5 +27,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: cargo-audit
+          cache-on-failure: true
       - run: cargo install cargo-audit --locked
       - run: cargo audit

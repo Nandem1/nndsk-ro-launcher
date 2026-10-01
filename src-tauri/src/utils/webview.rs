@@ -14,5 +14,15 @@ pub fn configure_linux_webview_env() {
     }
 }
 
+/// tao 0.35 always installs a GTK HeaderBar on Wayland, even when
+/// `decorations` is false. Clear it so the in-app chrome is the only title.
+#[cfg(target_os = "linux")]
+pub fn hide_native_titlebar(window: &tauri::WebviewWindow) {
+    use gtk::prelude::GtkWindowExt;
+    if let Ok(gtk_window) = window.gtk_window() {
+        gtk_window.set_titlebar(None::<&gtk::Widget>);
+    }
+}
+
 #[cfg(not(target_os = "linux"))]
 pub fn configure_linux_webview_env() {}

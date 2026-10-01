@@ -2992,6 +2992,7 @@ dependencies = [
  "chrono",
  "crossbeam-channel",
  "flate2",
+ "gtk",
  "libc",
  "reqwest 0.12.28",
  "ro-session-protocol",
