@@ -51,9 +51,11 @@ jobs:
       - run: npm run format:check
       - run: cargo fmt --all -- --check
       - name: Build sidecars
-        run: cargo build -p ro-inputd -p ro-sessiond --release
+        run: cargo build -p ro-inputd -p ro-sessiond
       - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
       - run: cargo test --workspace --all-features
+      - name: Build release sidecars
+        run: cargo build -p ro-inputd -p ro-sessiond --release
 
       - uses: tauri-apps/tauri-action@v1
         env:
