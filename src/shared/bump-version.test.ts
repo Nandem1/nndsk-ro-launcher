@@ -75,8 +75,8 @@ describe('bump-version CLI', () => {
     })
     expect(dry.status).toBe(0)
     expect(dry.stdout.trim()).toBe('bump-version: dry-run 0.1.0 -> 0.1.1')
-    expect(JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version).toBe(
-      '0.1.0',
-    )
+    expect(
+      JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version,
+    ).toBe('0.1.0')
   })
 })
