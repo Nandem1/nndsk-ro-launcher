@@ -2,6 +2,7 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { sidecarOrderError } from './release-sidecar-order.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const EXPECTED_ENDPOINT =
@@ -145,6 +146,10 @@ for (const rel of scanRoots) {
     }
   }
 }
+
+const releaseYaml = readFileSync(join(root, '.github', 'workflows', 'release.yml'), 'utf8')
+const sidecarError = sidecarOrderError(releaseYaml)
+if (sidecarError) fail(sidecarError)
 
 console.log(
   `check-release-invariants: ok (version ${packageJson.version}${tag ? `, tag ${tag}` : ''})`,
