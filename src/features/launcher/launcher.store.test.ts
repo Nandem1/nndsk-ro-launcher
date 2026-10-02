@@ -1,6 +1,10 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import type { GameClientSnapshot } from '../../shared/types'
-import { isSoleRunningClientForServer } from './launcher.store'
+import {
+  clearSettledLaunchFeedback,
+  isSoleRunningClientForServer,
+  useLauncherStore,
+} from './launcher.store'
 
 function client(clientId: string, serverId = 'sakura'): GameClientSnapshot {
   return {
@@ -37,5 +41,33 @@ describe('multi-client tool availability', () => {
         'sakura',
       ),
     ).toBe(false)
+  })
+})
+
+describe('clearSettledLaunchFeedback', () => {
+  afterEach(() => {
+    useLauncherStore.setState({
+      status: 'idle',
+      error: null,
+      setupProgress: null,
+    })
+  })
+
+  it('returns a cancelled launch to idle', () => {
+    useLauncherStore.setState({
+      status: 'error',
+      error: 'El lanzamiento fue cancelado por el usuario',
+    })
+    clearSettledLaunchFeedback()
+    expect(useLauncherStore.getState()).toMatchObject({
+      status: 'idle',
+      error: null,
+    })
+  })
+
+  it('leaves an in-flight launch running', () => {
+    useLauncherStore.setState({ status: 'launching', error: null })
+    clearSettledLaunchFeedback()
+    expect(useLauncherStore.getState().status).toBe('launching')
   })
 })

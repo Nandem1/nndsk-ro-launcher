@@ -261,11 +261,63 @@ describe('useLaunchGame', () => {
     const pending = deferred<DependencyStatus>()
     checkMock.mockReturnValueOnce(pending.promise)
     fireEvent.click(screen.getByRole('button', { name: 'Jugar' }))
+    await screen.findByRole('button', { name: 'Comprobando...' })
     act(() => useServersStore.getState().selectServer(other.id))
+    expect(
+      screen.getByRole('button', { name: 'Comprobando...' }),
+    ).toBeInTheDocument()
     await act(async () => pending.resolve(readyStatus()))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(launchMock).not.toHaveBeenCalled()
     expect(setupMock).not.toHaveBeenCalled()
+  })
+
+  it('clears a cancelled launch when another server is selected', async () => {
+    const other: ServerConfig = { ...server, id: 'honey', name: 'HoneyRO' }
+    useServersStore.setState({ servers: [server, other] })
+    render(<Launcher />)
+    await screen.findByRole('button', { name: 'Jugar' })
+
+    act(() => {
+      useLauncherStore.setState({
+        status: 'error',
+        error: 'El lanzamiento fue cancelado por el usuario',
+      })
+    })
+    expect(
+      screen.getByRole('button', { name: 'Reintentar' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText('El lanzamiento fue cancelado por el usuario'),
+    ).toBeInTheDocument()
+
+    act(() => useServersStore.getState().selectServer(other.id))
+    await screen.findByRole('button', { name: 'Jugar' })
+    expect(
+      screen.queryByText('El lanzamiento fue cancelado por el usuario'),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Reintentar' }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('keeps a cancelled launch after remounting on the same server', async () => {
+    const { unmount } = render(<Launcher />)
+    await screen.findByRole('button', { name: 'Jugar' })
+    act(() => {
+      useLauncherStore.setState({
+        status: 'error',
+        error: 'El lanzamiento fue cancelado por el usuario',
+      })
+    })
+    unmount()
+    render(<Launcher />)
+    expect(
+      screen.getByRole('button', { name: 'Reintentar' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText('El lanzamiento fue cancelado por el usuario'),
+    ).toBeInTheDocument()
   })
 
   it('coalesces a double launch before dependency preflight completes', async () => {

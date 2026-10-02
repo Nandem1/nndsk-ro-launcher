@@ -8,7 +8,7 @@ import type {
 } from '../../shared/types'
 import { useSettingsStore } from '../settings/settings.store'
 import { useServersStore } from '../servers/servers.store'
-import { useLauncherStore } from './launcher.store'
+import { clearSettledLaunchFeedback, useLauncherStore } from './launcher.store'
 import { useLauncherTask } from './useLauncherTask'
 import { refreshGameClients } from './refreshGameClients'
 
@@ -28,12 +28,20 @@ export function useLaunchGame(server: ServerConfig | null) {
   const preparePromiseRef = useRef<Promise<EnvironmentPreparation> | null>(null)
   const launchInFlightRef = useRef(false)
   const mounted = useRef(true)
+  const previousServerId = useRef<string | null | undefined>(undefined)
   useEffect(() => {
     mounted.current = true
     return () => {
       mounted.current = false
     }
   }, [])
+  useEffect(() => {
+    const currentId = server?.id ?? null
+    const previousId = previousServerId.current
+    previousServerId.current = currentId
+    if (previousId === undefined || previousId === currentId) return
+    clearSettledLaunchFeedback()
+  }, [server?.id])
   const selectedRunner = useSettingsStore((s) => s.selectedRunner)
   const {
     status,

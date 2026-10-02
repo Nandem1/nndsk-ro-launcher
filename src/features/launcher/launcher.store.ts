@@ -79,6 +79,22 @@ export function isLauncherBusy(status: LaunchStatus): boolean {
   )
 }
 
+export function clearSettledLaunchFeedback() {
+  const state = useLauncherStore.getState()
+  if (isLauncherBusy(state.status)) return
+  if (
+    state.status === 'idle' &&
+    state.error === null &&
+    state.setupProgress === null
+  )
+    return
+  useLauncherStore.setState({
+    status: 'idle',
+    error: null,
+    setupProgress: null,
+  })
+}
+
 export function isSoleRunningClientForServer(
   state: Pick<LauncherState, 'clients'>,
   serverId: string | null | undefined,
