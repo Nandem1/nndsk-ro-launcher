@@ -6,18 +6,16 @@ por el sistema.
 
 ## Play Ragnarok Online on Linux
 
-**nndsk-ro-launcher (RO-Launcher)** is a desktop launcher for **Ragnarok Online on Linux**. It
-manages per-server Wine/Proton runners, isolated WINEPREFIX, DXVK → Vulkan, optional dgVoodoo, plus
-AutoPot/AutoBuff without requiring `ptrace_scope=0`.
+Download [RO-Launcher v0.1.1 AppImage (Linux x64)](https://github.com/Nandem1/nndsk-ro-launcher/releases/download/v0.1.1/RO-Launcher_0.1.1_amd64.AppImage).
 
-1. Add your client `.exe` and pick a server profile.
-2. Prepare the environment (managed Proton-CachyOS + UMU, or portable Wine).
-3. Hit **Play**.
+Product page: https://nndsk.dev/projects/nndsk-ro-launcher/
 
-- [Product page](https://nndsk.dev/projects/nndsk-ro-launcher/)
-- [Releases](https://github.com/Nandem1/nndsk-ro-launcher/releases) (AppImage firmado; updater en
-  [`docs/features/UPDATER.md`](docs/features/UPDATER.md))
-- Build from source: see [**Desarrollo**](#desarrollo) below
+```bash
+chmod +x RO-Launcher_0.1.1_amd64.AppImage
+./RO-Launcher_0.1.1_amd64.AppImage
+```
+
+amd64 only. Optional [SHA-256](https://github.com/Nandem1/nndsk-ro-launcher/releases/download/v0.1.1/RO-Launcher_amd64.AppImage.sha256).
 
 ## Funciones principales
 
