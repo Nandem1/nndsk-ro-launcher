@@ -10,12 +10,12 @@ por el sistema.
 manages per-server Wine/Proton runners, isolated WINEPREFIX, DXVK → Vulkan, optional dgVoodoo, plus
 AutoPot/AutoBuff without requiring `ptrace_scope=0`.
 
-1. Download the [AppImage (Linux x64, v0.1.2)](https://github.com/Nandem1/nndsk-ro-launcher/releases/download/v0.1.2/RO-Launcher_0.1.2_amd64.AppImage).
+1. Download the [latest AppImage (Linux x64)](https://github.com/Nandem1/nndsk-ro-launcher/releases/latest).
 2. Make it executable and run it:
 
 ```bash
-chmod +x RO-Launcher_0.1.2_amd64.AppImage
-./RO-Launcher_0.1.2_amd64.AppImage
+chmod +x RO-Launcher_*_amd64.AppImage
+./RO-Launcher_*_amd64.AppImage
 ```
 
 3. Add your client `.exe` and pick a server profile.
@@ -25,7 +25,7 @@ chmod +x RO-Launcher_0.1.2_amd64.AppImage
 - [Product page](https://nndsk.dev/projects/nndsk-ro-launcher/)
 - [Releases](https://github.com/Nandem1/nndsk-ro-launcher/releases) (signed AppImage; updater in
   [`docs/features/UPDATER.md`](docs/features/UPDATER.md))
-- Optional [SHA-256](https://github.com/Nandem1/nndsk-ro-launcher/releases/download/v0.1.2/RO-Launcher_amd64.AppImage.sha256)
+- Optional [SHA-256](https://github.com/Nandem1/nndsk-ro-launcher/releases/latest/download/RO-Launcher_amd64.AppImage.sha256)
 - Build from source: see [**Desarrollo**](#desarrollo) below
 
 amd64 only.
