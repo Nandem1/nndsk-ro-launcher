@@ -190,3 +190,12 @@ ocho threads sobre 10.000 requests y comprueba saturación y reutilización del 
 Se repitieron todos los gates locales: 171 tests frontend y 498 unitarios Rust pasan,
 cuatro ignorados, además de la integración real del supervisor. Las brechas anteriores
 continúan abiertas; preparar una release no las convierte en validación.
+
+El primer CI del commit auditado (`1be2782`, run `37057381956`) pasó clippy con Rust
+1.99, pero expuso interferencia entre fixtures unitarias de `ro-sessiond`: un supervisor
+recogía mediante `waitpid(-1)` el hijo de otro thread antes de capturar su identidad.
+Se reprodujo el mismo error localmente con ocho threads. El fixture ahora retiene ownership
+exclusivo de la tabla de hijos y espera ECHILD/join antes de liberarlo; el código productivo
+no cambió, pues cada supervisor real ya vive en un proceso separado. La nueva prueba comprueba
+reap al destruir el fixture. Pasaron 100 ejecuciones con ocho threads, los gates frontend
+completos y los gates Rust completos (499 unitarios, cuatro ignorados, más integración real).

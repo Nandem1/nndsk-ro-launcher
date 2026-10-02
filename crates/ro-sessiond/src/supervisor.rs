@@ -402,7 +402,49 @@ mod tests {
         EnvironmentChange, ProcessSpec, MAX_IN_FLIGHT_LAUNCHES, PROTOCOL_VERSION,
     };
     use std::fs;
+    use std::ops::{Deref, DerefMut};
     use std::path::{Path, PathBuf};
+    use std::sync::MutexGuard;
+
+    // Unit-test supervisors share a process; waitpid(-1) and descendant signals are process-wide.
+    // Production supervisors are isolated sidecar processes, as covered by orphan_reparent.
+    static TEST_PROCESS_OWNER: Mutex<()> = Mutex::new(());
+
+    struct TestSupervisor {
+        inner: Supervisor,
+        _process_owner: MutexGuard<'static, ()>,
+    }
+
+    impl Deref for TestSupervisor {
+        type Target = Supervisor;
+
+        fn deref(&self) -> &Self::Target {
+            &self.inner
+        }
+    }
+
+    impl DerefMut for TestSupervisor {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            &mut self.inner
+        }
+    }
+
+    impl Drop for TestSupervisor {
+        fn drop(&mut self) {
+            // All unit fixtures execute /usr/bin/true. Reap them before another fixture can own
+            // the process-wide child table, including children that outlive the final WNOHANG.
+            let deadline = Instant::now() + Duration::from_secs(2);
+            loop {
+                self.inner.drain_reap_events();
+                if self.inner.last_wait_echild {
+                    self.inner.join_all_pending_streams();
+                    return;
+                }
+                assert!(Instant::now() < deadline, "unit fixture left live children");
+                std::thread::yield_now();
+            }
+        }
+    }
 
     fn parse_events(lines: &[String]) -> Vec<SessionEvent> {
         lines
@@ -411,7 +453,8 @@ mod tests {
             .collect()
     }
 
-    fn test_supervisor(prefix: PathBuf) -> (Supervisor, Arc<Mutex<Vec<String>>>) {
+    fn test_supervisor(prefix: PathBuf) -> (TestSupervisor, Arc<Mutex<Vec<String>>>) {
+        let process_owner = TEST_PROCESS_OWNER.lock().unwrap();
         let stderr = fs::OpenOptions::new()
             .write(true)
             .open("/dev/null")
@@ -424,7 +467,13 @@ mod tests {
             Arc::new(Mutex::new(stderr)),
             writer,
         );
-        (sup, lines)
+        (
+            TestSupervisor {
+                inner: sup,
+                _process_owner: process_owner,
+            },
+            lines,
+        )
     }
 
     fn true_spec(prefix: &Path) -> ProcessSpec {
@@ -437,6 +486,34 @@ mod tests {
                 value: Some(prefix.display().to_string()),
             }],
         }
+    }
+
+    #[test]
+    fn test_fixture_reaps_children_before_releasing_process_ownership() {
+        let prefix = fs::canonicalize(std::env::temp_dir()).unwrap();
+        let (mut sup, lines) = test_supervisor(prefix.clone());
+        let launch = serde_json::to_string(&SessionRequest::Launch {
+            request_id: "550e8400-e29b-41d4-a716-446655440098".into(),
+            spec: true_spec(&prefix),
+        })
+        .unwrap();
+        sup.handle_line(&launch).unwrap();
+        let identity = parse_events(&lines.lock().unwrap())
+            .iter()
+            .find_map(|event| match event {
+                SessionEvent::LaunchAccepted {
+                    controller_pid,
+                    controller_start_time,
+                    ..
+                } => Some(ro_tools_linux::ProcessIdentity {
+                    pid: *controller_pid,
+                    start_time: *controller_start_time,
+                }),
+                _ => None,
+            })
+            .unwrap();
+        drop(sup);
+        assert!(!ro_tools_linux::verify_process_identity(&identity));
     }
 
     #[test]
