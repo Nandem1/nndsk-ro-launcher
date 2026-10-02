@@ -182,10 +182,8 @@ where
     }
 
     for key in APPIMAGE_FILE_ENV {
-        if current_var(key).is_some_and(|value| {
-            let path = Path::new(&value);
-            path == app_dir || path.starts_with(app_dir)
-        }) {
+        if current_var(key).is_some_and(|value| is_appimage_mount_path(Path::new(&value), app_dir))
+        {
             cmd.env_remove(key);
         }
     }
@@ -203,7 +201,7 @@ fn sanitize_path_value(value: &OsStr, app_dir: &Path) -> OsString {
 fn filter_appimage_paths(value: &OsStr, app_dir: &Path) -> Option<OsString> {
     let paths = std::env::split_paths(value)
         .filter(|path| !path.as_os_str().is_empty())
-        .filter(|path| path != app_dir && !path.starts_with(app_dir))
+        .filter(|path| !is_appimage_mount_path(path, app_dir))
         .collect::<Vec<_>>();
 
     if paths.is_empty() {
@@ -211,6 +209,22 @@ fn filter_appimage_paths(value: &OsStr, app_dir: &Path) -> Option<OsString> {
     } else {
         std::env::join_paths(paths).ok()
     }
+}
+
+fn is_appimage_mount_path(path: &Path, app_dir: &Path) -> bool {
+    path == app_dir || path.starts_with(app_dir) || is_appimage_fuse_mount_path(path)
+}
+
+fn is_appimage_fuse_mount_path(path: &Path) -> bool {
+    let mut components = path.components();
+    matches!(
+        (components.next(), components.next(), components.next()),
+        (
+            Some(std::path::Component::RootDir),
+            Some(std::path::Component::Normal(tmp)),
+            Some(std::path::Component::Normal(mount)),
+        ) if tmp == "tmp" && mount.as_encoded_bytes().starts_with(b".mount_")
+    )
 }
 
 #[cfg(test)]
@@ -289,6 +303,46 @@ mod tests {
             ),
             Some("/usr/bin".into())
         );
+    }
+
+    #[test]
+    fn appimage_launcher_nested_mount_does_not_keep_parent_libcrypto() {
+        let app_dir = Path::new("/tmp/.mount_ro-lauIdEBMD");
+        let values = HashMap::from([
+            (
+                "PATH",
+                OsString::from(
+                    "/tmp/.mount_ro-lauIdEBMD/usr/bin/:/tmp/.mount_ro-lauGEifFj/usr/bin/:/usr/bin",
+                ),
+            ),
+            (
+                "LD_LIBRARY_PATH",
+                OsString::from(
+                    "/tmp/.mount_ro-lauIdEBMD/usr/lib/:/tmp/.mount_ro-lauGEifFj/usr/lib/:/opt/runner/lib",
+                ),
+            ),
+            (
+                "PYTHONPATH",
+                OsString::from(
+                    "/tmp/.mount_ro-lauIdEBMD/usr/share/pyshared/:/tmp/.mount_ro-lauGEifFj/usr/share/pyshared/",
+                ),
+            ),
+            (
+                "PYTHONHOME",
+                OsString::from("/tmp/.mount_ro-lauGEifFj/usr/"),
+            ),
+        ]);
+        let mut command = Command::new("/usr/bin/true");
+
+        sanitize_appimage_env_with(&mut command, app_dir, |key| values.get(key).cloned());
+
+        assert_eq!(command_env(&command, "PATH"), Some(Some("/usr/bin".into())));
+        assert_eq!(
+            command_env(&command, "LD_LIBRARY_PATH"),
+            Some(Some("/opt/runner/lib".into()))
+        );
+        assert_eq!(command_env(&command, "PYTHONPATH"), Some(None));
+        assert_eq!(command_env(&command, "PYTHONHOME"), Some(None));
     }
 
     #[test]
