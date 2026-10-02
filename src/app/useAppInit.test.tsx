@@ -100,4 +100,46 @@ describe('useAppInit', () => {
     act(() => result.current.dismissNotices())
     expect(result.current.notices).toEqual([])
   })
+
+  it('does not let an older retry overwrite a newer successful initialization', async () => {
+    vi.mocked(invoke).mockImplementation(async (command) =>
+      command === 'take_storage_notices' ? [] : undefined,
+    )
+    const load = vi
+      .spyOn(useServersStore.getState(), 'loadServers')
+      .mockResolvedValue(true)
+    vi.spyOn(useSettingsStore.getState(), 'init').mockResolvedValue(true)
+    const hook = renderHook(useAppInit)
+    await waitFor(() => expect(hook.result.current.phase).toBe('ready'))
+    const older = deferred<boolean>()
+    load.mockReturnValueOnce(older.promise).mockResolvedValueOnce(true)
+    let oldRetry!: Promise<void>
+    act(() => {
+      oldRetry = hook.result.current.retry()
+    })
+    await act(async () => {
+      await hook.result.current.retry()
+    })
+    await act(async () => {
+      older.resolve(false)
+      await oldRetry
+    })
+    expect(hook.result.current.phase).toBe('ready')
+    expect(hook.result.current.errors).toEqual([])
+    hook.unmount()
+  })
+
+  it('does not show a window or consume notices after its initialization owner unmounts', async () => {
+    const pending = deferred<boolean>()
+    vi.spyOn(useServersStore.getState(), 'loadServers').mockReturnValueOnce(
+      pending.promise,
+    )
+    vi.spyOn(useSettingsStore.getState(), 'init').mockResolvedValue(true)
+    const hook = renderHook(useAppInit)
+    hook.unmount()
+    await act(async () => {
+      pending.resolve(true)
+    })
+    expect(invoke).not.toHaveBeenCalled()
+  })
 })

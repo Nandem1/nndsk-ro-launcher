@@ -8,6 +8,7 @@ mod diagnostics;
 mod exec;
 mod protocol;
 mod registry;
+pub(crate) use exec::wait_for_prefix_programs;
 
 pub fn session_supervisor_enabled() -> bool {
     session_supervisor_enabled_from(

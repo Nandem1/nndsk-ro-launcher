@@ -310,6 +310,11 @@ pub async fn launch_tool(
             SpawnedRunner::Supervised(_) => {}
         }
         let code = spawned.wait().await.unwrap_or(-1);
+        crate::tools::runner_sessions::wait_for_prefix_programs(
+            &_operation.ctx().prefix,
+            _operation.lease().map(|lease| lease.supervisor_identity()),
+        )
+        .await;
         emit_log_opt(
             Some(&app),
             format!("[Tool:{tool_label}] finalizó con código {code}"),

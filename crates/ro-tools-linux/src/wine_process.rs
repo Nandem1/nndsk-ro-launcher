@@ -3,6 +3,7 @@ use std::{fs, io};
 #[derive(Debug, Clone)]
 pub struct GameProcessCandidate {
     pub pid: u32,
+    pub identity: ProcessIdentity,
     pub reason: String,
 }
 
@@ -70,13 +71,14 @@ pub fn find_prefix_processes(wine_prefix: &str) -> Vec<ProcessIdentity> {
         else {
             continue;
         };
+        let Some(identity) = capture_process_identity(pid) else {
+            continue;
+        };
         let Some(environment) = read_proc_nul_fields(pid, "environ") else {
             continue;
         };
-        if prefix_matches(&environment, &prefix_norm) {
-            if let Some(identity) = capture_process_identity(pid) {
-                identities.push(identity);
-            }
+        if prefix_matches(&environment, &prefix_norm) && verify_process_identity(&identity) {
+            identities.push(identity);
         }
     }
     identities.sort_by_key(|identity| identity.pid);
@@ -101,11 +103,10 @@ pub fn find_game_processes(
 
     let mut candidates = Vec::new();
 
-    if let Some(reason) = match_process(launcher_pid, exe_name, &prefix_norm, launcher_pid) {
-        candidates.push(GameProcessCandidate {
-            pid: launcher_pid,
-            reason,
-        });
+    if let Some(candidate) =
+        match_stable_process(launcher_pid, exe_name, &prefix_norm, launcher_pid)
+    {
+        candidates.push(candidate);
     }
 
     if let Ok(proc_dir) = fs::read_dir("/proc") {
@@ -123,8 +124,9 @@ pub fn find_game_processes(
             if pid == launcher_pid {
                 continue;
             }
-            if let Some(reason) = match_process(pid, exe_name, &prefix_norm, launcher_pid) {
-                candidates.push(GameProcessCandidate { pid, reason });
+            if let Some(candidate) = match_stable_process(pid, exe_name, &prefix_norm, launcher_pid)
+            {
+                candidates.push(candidate);
             }
         }
     }
@@ -150,7 +152,13 @@ fn score_candidate(candidate: &GameProcessCandidate, launcher_pid: u32) -> u32 {
     u32::MAX - score
 }
 
-fn match_process(pid: u32, exe_name: &str, prefix_norm: &str, launcher_pid: u32) -> Option<String> {
+fn match_stable_process(
+    pid: u32,
+    exe_name: &str,
+    prefix_norm: &str,
+    launcher_pid: u32,
+) -> Option<GameProcessCandidate> {
+    let identity = capture_process_identity(pid)?;
     let cmdline = read_proc_nul_fields(pid, "cmdline")?;
     if !process_matches_exe(pid, &cmdline, exe_name) {
         return None;
@@ -159,7 +167,12 @@ fn match_process(pid: u32, exe_name: &str, prefix_norm: &str, launcher_pid: u32)
     let environ = read_proc_nul_fields(pid, "environ").unwrap_or_default();
     let is_launcher = pid == launcher_pid;
     let is_child = !is_launcher && is_descendant_of(pid, launcher_pid);
-    match_process_fields(&cmdline, &environ, prefix_norm, is_launcher, is_child)
+    let reason = match_process_fields(&cmdline, &environ, prefix_norm, is_launcher, is_child)?;
+    verify_process_identity(&identity).then_some(GameProcessCandidate {
+        pid,
+        identity,
+        reason,
+    })
 }
 
 fn match_process_fields(

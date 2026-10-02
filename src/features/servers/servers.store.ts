@@ -34,6 +34,8 @@ interface ServersState {
 const persistence = new LatestSnapshotWriter<ServerConfig[]>((servers) =>
   api.saveServers(servers),
 )
+let loadGeneration = 0
+let editGeneration = 0
 
 function applyUpdate(
   server: ServerConfig,
@@ -51,12 +53,23 @@ export const useServersStore = create<ServersState>((set, get) => ({
   error: null,
 
   loadServers: async () => {
+    const generation = ++loadGeneration
+    const edits = editGeneration
     set({ loading: true, error: null })
     const result = await runSafely(() => api.listServers())
+    if (generation !== loadGeneration) return result.ok
+    if (edits !== editGeneration) {
+      set({ loading: false })
+      return result.ok
+    }
     if (result.ok) {
       set({
         servers: result.value,
-        selectedId: firstServerId(result.value),
+        selectedId: result.value.some(
+          (server) => server.id === get().selectedId,
+        )
+          ? get().selectedId
+          : firstServerId(result.value),
         loading: false,
       })
       return true
@@ -68,22 +81,27 @@ export const useServersStore = create<ServersState>((set, get) => ({
   selectServer: (id) => set({ selectedId: id }),
 
   addServer: async (server) => {
+    const generation = ++editGeneration
+    const selection = get().selectedId
     const previous = get().servers
     const updated = [...previous, server]
     set({ servers: updated, error: null })
     try {
       await persistence.write(updated)
-      set({ selectedId: server.id })
+      if (generation === editGeneration && get().selectedId === selection)
+        set({ selectedId: server.id })
     } catch (error) {
       set((state) => ({
         servers: state.servers.filter((item) => item.id !== server.id),
-        error: toErrorMessage(error),
+        error:
+          generation === editGeneration ? toErrorMessage(error) : state.error,
       }))
       throw error
     }
   },
 
   removeServer: async (id) => {
+    const generation = ++editGeneration
     const { servers, selectedId } = get()
     const updated = servers.filter((s) => s.id !== id)
     set({
@@ -94,11 +112,13 @@ export const useServersStore = create<ServersState>((set, get) => ({
     try {
       await persistence.write(updated)
     } catch (error) {
-      set({ servers, selectedId, error: toErrorMessage(error) })
+      if (generation === editGeneration)
+        set({ servers, selectedId, error: toErrorMessage(error) })
     }
   },
 
   updateServer: async (id, update) => {
+    const generation = ++editGeneration
     let nextServer: ServerConfig | null = null
     const updated = get().servers.map((server) => {
       if (server.id !== id) return server
@@ -112,7 +132,7 @@ export const useServersStore = create<ServersState>((set, get) => ({
       await persistence.write(updated)
       return nextServer
     } catch (error) {
-      set({ error: toErrorMessage(error) })
+      if (generation === editGeneration) set({ error: toErrorMessage(error) })
       return null
     }
   },

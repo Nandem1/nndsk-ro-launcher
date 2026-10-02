@@ -22,6 +22,18 @@ pub struct LaunchReservation {
     generation: u64,
 }
 
+pub struct PendingLaunchGuard {
+    game: GameProcessHandle,
+    reservation: LaunchReservation,
+}
+
+impl Drop for PendingLaunchGuard {
+    fn drop(&mut self) {
+        // cancel_launch only removes this generation while it is still Launching.
+        self.game.cancel_launch(self.reservation);
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ClientMetadata {
     client_id: String,
@@ -253,6 +265,13 @@ impl GameProcessHandle {
             ) {
                 state.clients.remove(&reservation.generation);
             }
+        }
+    }
+
+    pub fn guard_pending_launch(&self, reservation: LaunchReservation) -> PendingLaunchGuard {
+        PendingLaunchGuard {
+            game: self.clone(),
+            reservation,
         }
     }
 
@@ -679,6 +698,47 @@ mod tests {
             )
             .unwrap();
         assert_eq!(process.snapshots().unwrap()[0].client_id, "second");
+    }
+
+    #[tokio::test]
+    async fn cancelled_task_releases_only_its_pending_reservation() {
+        let game = GameProcessHandle::new();
+        let running = launch(&game, "running");
+        game.mark_running(running, identity(84), direct_runtime(), "plan".into(), None)
+            .unwrap();
+        let pending = launch(&game, "pending");
+        let guard = game.guard_pending_launch(pending);
+        let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
+        let task = tokio::spawn(async move {
+            let _guard = guard;
+            let _ = ready_tx.send(());
+            std::future::pending::<()>().await;
+        });
+        ready_rx.await.unwrap();
+        task.abort();
+        assert!(task.await.unwrap_err().is_cancelled());
+        assert_eq!(game.snapshots().unwrap()[0].client_id, "running");
+        assert_eq!(game.active_count().unwrap(), 1);
+        let retry = launch(&game, "retry");
+        drop(game.guard_pending_launch(retry));
+        assert_eq!(game.active_count().unwrap(), 1);
+    }
+
+    #[test]
+    fn pending_guard_does_not_remove_a_promoted_running_client() {
+        let game = GameProcessHandle::new();
+        let reservation = launch(&game, "running");
+        let guard = game.guard_pending_launch(reservation);
+        game.mark_running(
+            reservation,
+            identity(84),
+            direct_runtime(),
+            "plan".into(),
+            None,
+        )
+        .unwrap();
+        drop(guard);
+        assert_eq!(game.active_count().unwrap(), 1);
     }
 
     #[test]

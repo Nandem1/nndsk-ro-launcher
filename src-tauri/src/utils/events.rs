@@ -1,5 +1,10 @@
+use crate::models::progress::ProgressEvent;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
+
+tokio::task_local! {
+    pub(crate) static PROGRESS_OPERATION_ID: Option<String>;
+}
 
 pub const EVENT_LOG: &str = "ro-launcher://log";
 pub const EVENT_TOOL_LOG: &str = "ro-launcher://tool-log";
@@ -14,12 +19,6 @@ pub const EVENT_UPDATE: &str = "ro-launcher://update";
 #[derive(Clone, Serialize)]
 pub struct LogEvent {
     pub line: String,
-}
-
-#[derive(Clone, Serialize)]
-pub struct ProgressEvent {
-    pub step: String,
-    pub percent: u32,
 }
 
 #[derive(Clone, Serialize)]
@@ -57,6 +56,7 @@ pub fn emit_progress(app: &AppHandle, step: &str, percent: u32) -> Result<(), St
         ProgressEvent {
             step: step.to_string(),
             percent,
+            operation_id: PROGRESS_OPERATION_ID.try_with(Clone::clone).ok().flatten(),
         },
     )
     .map_err(|e| e.to_string())

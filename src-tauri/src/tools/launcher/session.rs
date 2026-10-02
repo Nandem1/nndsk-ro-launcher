@@ -2,8 +2,8 @@ use std::collections::HashSet;
 use std::time::Duration;
 
 use ro_tools_linux::{
-    capture_process_identity, find_game_processes, read_ppid, signal_process_identity,
-    verify_process_identity, ProcessIdentity,
+    find_game_processes, read_ppid, signal_process_identity, verify_process_identity,
+    ProcessIdentity,
 };
 use tauri::{AppHandle, Emitter};
 use tokio::time::{sleep, Instant};
@@ -69,6 +69,7 @@ const PROCESS_POLL_INTERVAL: Duration = Duration::from_millis(250);
 const PROCESS_HANDOFF_GRACE: Duration = Duration::from_secs(5);
 
 pub struct LaunchTools<'a> {
+    pub tool_lifecycle: &'a std::sync::Arc<tokio::sync::Mutex<()>>,
     pub autopot: &'a AutopotHandle,
     pub autobuff: &'a AutobuffHandle,
     pub spammer: &'a SpammerHandle,
@@ -76,6 +77,21 @@ pub struct LaunchTools<'a> {
     pub presence: &'a PresenceHandle,
     pub sessions: &'a RunnerSessionRegistry,
     pub memory: &'a MemorySessionRegistry,
+}
+
+struct PendingGameProcess {
+    identity: Option<ProcessIdentity>,
+    app: Option<AppHandle>,
+}
+
+impl Drop for PendingGameProcess {
+    fn drop(&mut self) {
+        if let Some(identity) = self.identity.take() {
+            for error in terminate_processes(vec![identity]) {
+                emit_tool_log_opt(self.app.as_ref(), format!("[Launch cleanup] {error}"));
+            }
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -90,6 +106,7 @@ pub async fn launch_game(
     launch_values: LaunchValues,
 ) -> Result<GameClientSnapshot, String> {
     let LaunchTools {
+        tool_lifecycle,
         autopot,
         autobuff,
         spammer,
@@ -127,7 +144,7 @@ pub async fn launch_game(
     let game_exe = server.executable_path.clone();
     let baseline: HashSet<ProcessIdentity> = find_game_processes(0, &game_exe, &ctx.prefix)
         .into_iter()
-        .filter_map(|candidate| capture_process_identity(candidate.pid))
+        .map(|candidate| candidate.identity)
         .collect();
 
     let devices = input
@@ -312,7 +329,7 @@ pub async fn launch_game(
     let controller_pid = spawned
         .controller_pid()
         .ok_or_else(|| "El runner no informó su PID".to_string())?;
-    let Some(controller_identity) = capture_process_identity(controller_pid) else {
+    let Some(controller_identity) = spawned.controller_identity() else {
         let _ = spawned.terminate().await;
         enqueue_unreached_observation(
             observation_id.clone(),
@@ -419,6 +436,12 @@ pub async fn launch_game(
         }
     };
 
+    // Detection and promotion are separate: cancellation or a failed registration must not
+    // leave the Windows client alive just because its UMU controller has already exited.
+    let mut pending_game = PendingGameProcess {
+        identity: Some(identity),
+        app: Some(app.clone()),
+    };
     let memory_ancestor = match op.lease() {
         Some(lease) => MemoryAncestor::Supervisor(lease.supervisor_identity()),
         None => launcher_memory_ancestor(),
@@ -552,6 +575,7 @@ pub async fn launch_game(
     };
     spawn_exit_task(
         app,
+        std::sync::Arc::clone(tool_lifecycle),
         game,
         reservation,
         prefix_operation,
@@ -575,6 +599,7 @@ pub async fn launch_game(
         observation_started_task,
         controller_identity,
     );
+    pending_game.identity = None;
 
     Ok(launch_snapshot)
 }
@@ -652,6 +677,7 @@ impl ControllerHandle<'_> {
 #[allow(clippy::too_many_arguments)]
 fn spawn_exit_task(
     app: AppHandle,
+    tool_lifecycle: std::sync::Arc<tokio::sync::Mutex<()>>,
     game: GameProcessHandle,
     reservation: LaunchReservation,
     prefix_operation: OperationGuard,
@@ -794,6 +820,8 @@ fn spawn_exit_task(
             let _ = task.await;
         }
 
+        // Keep last-client cleanup atomic with admission of a new client or combat tool.
+        let _tool_lifecycle = tool_lifecycle.lock().await;
         if let Some(finished) = game.finish(reservation) {
             presence.unregister(&finished.client_id);
             if finished.remaining_clients == 0 {
@@ -809,6 +837,8 @@ fn spawn_exit_task(
                     "[Launch] Último cliente terminado; herramientas de combate detenidas",
                 );
             }
+            drop(_prefix_operation);
+            drop(_dgvoodoo_operation);
             let _ = app_for_exit.emit(
                 EVENT_GAME_EXIT,
                 ExitEvent {
@@ -851,7 +881,8 @@ async fn wait_for_game_process(
             if search.exclude_controller && candidate.pid == search.controller_pid {
                 continue;
             }
-            if let Some(identity) = capture_process_identity(candidate.pid) {
+            let identity = candidate.identity;
+            if verify_process_identity(&identity) {
                 if search.baseline.contains(&identity) {
                     continue;
                 }
@@ -895,9 +926,10 @@ async fn wait_for_process_handoff(
             return None;
         }
         for candidate in find_game_processes(controller_pid, exe_path, prefix) {
-            let Some(identity) = capture_process_identity(candidate.pid) else {
+            let identity = candidate.identity;
+            if !verify_process_identity(&identity) {
                 continue;
-            };
+            }
             if !seen.contains(&identity)
                 && game.candidate_available_for_handoff(reservation, identity)
             {
@@ -948,8 +980,26 @@ async fn stop_combat_tools(state: &GameState) -> Vec<String> {
 fn terminate_processes(identities: Vec<ProcessIdentity>) -> Vec<String> {
     let mut process_errors = Vec::new();
     for identity in identities {
-        if let Err(error) = signal_process_identity(&identity, libc::SIGTERM) {
-            process_errors.push(format!("No se pudo enviar TERM al proceso: {error}"));
+        match signal_process_identity(&identity, libc::SIGTERM) {
+            Err(error) => {
+                process_errors.push(format!("No se pudo enviar TERM al proceso: {error}"))
+            }
+            Ok(false) => {}
+            Ok(true) => {
+                // A client that ignores TERM must not retain its leases forever. The deadline
+                // applies to this captured instance only, independent of the IPC caller.
+                tokio::spawn(async move {
+                    let ended = tokio::time::timeout(Duration::from_secs(2), async {
+                        while verify_process_identity(&identity) {
+                            sleep(Duration::from_millis(50)).await;
+                        }
+                    })
+                    .await;
+                    if ended.is_err() {
+                        let _ = signal_process_identity(&identity, libc::SIGKILL);
+                    }
+                });
+            }
         }
     }
     process_errors
@@ -975,6 +1025,73 @@ mod tests {
     use std::process::Stdio;
     use std::time::Duration;
     use tokio::time::Instant;
+
+    #[tokio::test]
+    async fn cancelled_registration_terminates_only_the_detected_client() {
+        let mut detected = tokio::process::Command::new("/bin/sleep")
+            .arg("30")
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        let identity = ro_tools_linux::capture_process_identity(detected.id().unwrap()).unwrap();
+        let mut other = tokio::process::Command::new("/bin/sleep")
+            .arg("30")
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        let other_identity = ro_tools_linux::capture_process_identity(other.id().unwrap()).unwrap();
+        let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
+        let task = tokio::spawn(async move {
+            let _pending = PendingGameProcess {
+                identity: Some(identity),
+                app: None,
+            };
+            let _ = ready_tx.send(());
+            std::future::pending::<()>().await;
+        });
+        ready_rx.await.unwrap();
+        task.abort();
+        assert!(task.await.unwrap_err().is_cancelled());
+        tokio::time::timeout(Duration::from_secs(3), detected.wait())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(verify_process_identity(&other_identity));
+        other.kill().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn stopping_term_resistant_client_does_not_signal_another_client_or_reused_pid() {
+        use tokio::io::AsyncBufReadExt;
+        let mut first = tokio::process::Command::new("/bin/sh")
+            .args(["-c", "trap '' TERM; echo ready; exec sleep 30"])
+            .stdout(Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        let mut ready = tokio::io::BufReader::new(first.stdout.take().unwrap()).lines();
+        assert_eq!(ready.next_line().await.unwrap().as_deref(), Some("ready"));
+        let first_identity = ro_tools_linux::capture_process_identity(first.id().unwrap()).unwrap();
+        let mut other = tokio::process::Command::new("/bin/sleep")
+            .arg("30")
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        let other_identity = ro_tools_linux::capture_process_identity(other.id().unwrap()).unwrap();
+        let stale = ProcessIdentity {
+            start_time: other_identity.start_time + 1,
+            ..other_identity
+        };
+        assert!(terminate_processes(vec![first_identity, stale]).is_empty());
+        let exit = tokio::time::timeout(Duration::from_secs(4), first.wait())
+            .await
+            .unwrap()
+            .unwrap();
+        use std::os::unix::process::ExitStatusExt;
+        assert_eq!(exit.signal(), Some(libc::SIGKILL));
+        assert!(verify_process_identity(&other_identity));
+        other.kill().await.unwrap();
+    }
 
     #[tokio::test]
     async fn wait_for_game_process_shortens_deadline_after_controller_exits() {

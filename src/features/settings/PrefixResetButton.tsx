@@ -9,7 +9,7 @@ import { useSettingsStore } from './settings.store'
 import { useCurrentAdvancedStatus } from './useSelectedRuntimeStatus'
 
 export function PrefixResetButton() {
-  const { setStatus, setProgress, setError, addGameLog, runTask, isBusy } =
+  const { setStatus, setProgress, addGameLog, runTask, isBusy } =
     useLauncherTask()
   const selectedRunner = useSettingsStore((s) => s.selectedRunner)
   const savingRunner = useSettingsStore((s) => s.savingRunner)
@@ -58,27 +58,32 @@ export function PrefixResetButton() {
     const serverSnapshot = currentServer
     const runnerSnapshot = currentSettings.selectedRunner
 
-    setError(null)
-    setStatus('setting-up')
-    addGameLog(
-      canReset ? 'Rearmando entorno...' : 'Reparando entorno externo...',
-    )
-
     await runTask(async () => {
+      const operationId = useLauncherStore.getState().operationId
+      setStatus('setting-up')
+      addGameLog(
+        canReset ? 'Rearmando entorno...' : 'Reparando entorno externo...',
+      )
       if (canReset) {
-        await api.resetPrefix(serverSnapshot, runnerSnapshot || null)
+        await api.resetPrefix(
+          serverSnapshot,
+          runnerSnapshot || null,
+          operationId,
+        )
       } else {
-        await api.setupPrefix(serverSnapshot, runnerSnapshot || null)
+        await api.setupPrefix(
+          serverSnapshot,
+          runnerSnapshot || null,
+          operationId,
+        )
       }
       setProgress(null)
-      setStatus('idle')
       addGameLog(
         canReset
           ? 'Entorno rearmado correctamente.'
           : 'Entorno externo reparado correctamente.',
       )
       if (
-        runnerSnapshot &&
         useServersStore
           .getState()
           .servers.some(

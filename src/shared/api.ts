@@ -43,11 +43,17 @@ export const api = {
     runner: string | null = null,
   ) => invoke<DependencyStatus>('check_dependencies', { server, runner }),
 
-  setupPrefix: (server: ServerConfig | null, runner: string | null = null) =>
-    invoke<void>('setup_prefix', { server, runner }),
+  setupPrefix: (
+    server: ServerConfig | null,
+    runner: string | null = null,
+    operationId: string | null = null,
+  ) => invoke<void>('setup_prefix', { server, runner, operationId }),
 
-  resetPrefix: (server: ServerConfig | null, runner: string | null = null) =>
-    invoke<void>('reset_prefix', { server, runner }),
+  resetPrefix: (
+    server: ServerConfig | null,
+    runner: string | null = null,
+    operationId: string | null = null,
+  ) => invoke<void>('reset_prefix', { server, runner, operationId }),
 
   launchGame: (
     clientId: string,

@@ -14,6 +14,7 @@ use tokio::sync::{oneshot, Mutex, Notify};
 
 use super::SessionError;
 use crate::utils::RunnerInvocation;
+use ro_tools_linux::ProcessIdentity;
 
 pub fn invocation_to_spec(
     invocation: &RunnerInvocation,
@@ -125,7 +126,8 @@ pub struct ReadyInfo {
 #[allow(clippy::type_complexity)]
 pub struct SessionProtocol {
     stdin: Arc<Mutex<ChildStdin>>,
-    launch_waiters: Arc<StdMutex<HashMap<String, oneshot::Sender<Result<u32, SessionError>>>>>,
+    launch_waiters:
+        Arc<StdMutex<HashMap<String, oneshot::Sender<Result<ProcessIdentity, SessionError>>>>>,
     exit_waiters:
         Arc<StdMutex<HashMap<String, oneshot::Sender<Result<ControllerExit, SessionError>>>>>,
     completed_exits: Arc<StdMutex<HashMap<String, ControllerExit>>>,
@@ -245,19 +247,24 @@ impl SessionProtocol {
             SessionEvent::LaunchAccepted {
                 request_id,
                 controller_pid,
+                controller_start_time,
             } => {
+                // Ownership must be visible before a waiter can drop its operation lease.
+                if let Ok(cb) = self.on_launch_accepted.lock() {
+                    if let Some(cb) = cb.as_ref() {
+                        cb();
+                    }
+                }
                 if let Some(tx) = self
                     .launch_waiters
                     .lock()
                     .ok()
                     .and_then(|mut m| m.remove(&request_id))
                 {
-                    let _ = tx.send(Ok(controller_pid));
-                }
-                if let Ok(cb) = self.on_launch_accepted.lock() {
-                    if let Some(cb) = cb.as_ref() {
-                        cb();
-                    }
+                    let _ = tx.send(Ok(ProcessIdentity {
+                        pid: controller_pid,
+                        start_time: controller_start_time,
+                    }));
                 }
             }
             SessionEvent::ControllerExited {
@@ -266,6 +273,12 @@ impl SessionProtocol {
                 signal,
                 ..
             } => {
+                // A completed wait must also mean the request no longer owns the prefix.
+                if let Ok(cb) = self.on_controller_exited.lock() {
+                    if let Some(cb) = cb.as_ref() {
+                        cb(&request_id);
+                    }
+                }
                 let exit = ControllerExit { exit_code, signal };
                 if let Ok(mut completed) = self.completed_exits.lock() {
                     completed.insert(request_id.clone(), exit.clone());
@@ -276,15 +289,9 @@ impl SessionProtocol {
                     .ok()
                     .and_then(|mut m| m.remove(&request_id))
                 {
-                    if let Ok(mut completed) = self.completed_exits.lock() {
-                        completed.remove(&request_id);
-                    }
+                    // Keep the result until the receiver consumes it. A timeout/cancellation
+                    // may have dropped that receiver just before this dispatch.
                     let _ = tx.send(Ok(exit));
-                }
-                if let Ok(cb) = self.on_controller_exited.lock() {
-                    if let Some(cb) = cb.as_ref() {
-                        cb(&request_id);
-                    }
                 }
             }
             SessionEvent::ShutdownAccepted { request_id } => {
@@ -385,26 +392,47 @@ impl SessionProtocol {
         }
     }
 
-    pub async fn send_request(&self, request: &SessionRequest) -> Result<(), SessionError> {
-        let line = serde_json::to_string(request)
+    pub async fn send_request(
+        self: &Arc<Self>,
+        request: &SessionRequest,
+    ) -> Result<(), SessionError> {
+        let mut line = serde_json::to_vec(request)
             .map_err(|e| SessionError::internal(format!("serialize request: {e}")))?;
-        let mut stdin = self.stdin.lock().await;
-        stdin
-            .write_all(line.as_bytes())
+        if line.len() > MAX_MESSAGE_BYTES {
+            return Err(SessionError::validation(
+                "request exceeds MAX_MESSAGE_BYTES",
+            ));
+        }
+        line.push(b'\n');
+        let protocol = Arc::clone(self);
+        // Cancellation cannot leave half a JSON frame in the pipe for the next writer.
+        tokio::spawn(async move {
+            let result = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+                let mut stdin = protocol.stdin.lock().await;
+                if let Some(error) = protocol.try_fatal() {
+                    return Err(error);
+                }
+                stdin
+                    .write_all(&line)
+                    .await
+                    .map_err(|e| SessionError::protocol(format!("write stdin: {e}")))?;
+                stdin
+                    .flush()
+                    .await
+                    .map_err(|e| SessionError::protocol(format!("flush stdin: {e}")))
+            })
             .await
-            .map_err(|e| SessionError::internal(format!("write stdin: {e}")))?;
-        stdin
-            .write_all(b"\n")
-            .await
-            .map_err(|e| SessionError::internal(format!("write newline: {e}")))?;
-        stdin
-            .flush()
-            .await
-            .map_err(|e| SessionError::internal(format!("flush stdin: {e}")))?;
-        Ok(())
+            .unwrap_or_else(|_| Err(SessionError::protocol("request write timed out")));
+            if let Err(error) = &result {
+                protocol.set_fatal(error.clone());
+            }
+            result
+        })
+        .await
+        .map_err(|error| SessionError::internal(format!("request writer task failed: {error}")))?
     }
 
-    pub async fn handshake(&self) -> Result<ReadyInfo, SessionError> {
+    pub async fn handshake(self: &Arc<Self>) -> Result<ReadyInfo, SessionError> {
         let (tx, rx) = oneshot::channel();
         *self.ready_waiter.lock().unwrap() = Some(tx);
         if let Err(e) = self
@@ -423,7 +451,11 @@ impl SessionProtocol {
         }
     }
 
-    pub async fn launch(&self, request_id: String, spec: ProcessSpec) -> Result<u32, SessionError> {
+    pub async fn launch(
+        self: &Arc<Self>,
+        request_id: String,
+        spec: ProcessSpec,
+    ) -> Result<ProcessIdentity, SessionError> {
         let rid = request_id.clone();
         let (tx, rx) = oneshot::channel();
         self.launch_waiters.lock().unwrap().insert(rid.clone(), tx);
@@ -492,13 +524,18 @@ impl SessionProtocol {
             Ok(None) => {}
         }
         match rx.await {
-            Ok(result) => result,
+            Ok(result) => {
+                if result.is_ok() {
+                    self.completed_exits.lock().unwrap().remove(&request_id);
+                }
+                result
+            }
             Err(_) => Err(SessionError::internal("exit waiter dropped")),
         }
     }
 
     pub async fn shutdown(
-        &self,
+        self: &Arc<Self>,
         request_id: String,
         shutdown_spec: ProcessSpec,
         grace_ms: u64,
@@ -569,16 +606,8 @@ async fn read_bounded_line(
         }
         buf.push(one[0]);
     }
-    while reader
-        .read(&mut one)
-        .await
-        .map_err(|e| SessionError::protocol(format!("drain stdout: {e}")))?
-        > 0
-    {
-        if one[0] == b'\n' {
-            break;
-        }
-    }
+    // This reader fails the session; waiting for a newline would leave every waiter blocked
+    // if a broken sidecar stops writing immediately after exceeding the limit.
     Err(SessionError::protocol(
         "event line exceeds MAX_MESSAGE_BYTES",
     ))
@@ -590,6 +619,115 @@ mod tests {
     use ro_session_protocol::SessionRequest;
     #[cfg(unix)]
     use std::os::unix::ffi::OsStringExt;
+
+    #[tokio::test]
+    async fn cancelled_exit_receiver_does_not_lose_the_completed_exit() {
+        let mut child = tokio::process::Command::new("/bin/cat")
+            .stdin(std::process::Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        let protocol = SessionProtocol::new(child.stdin.take().unwrap());
+        let (tx, rx) = oneshot::channel();
+        protocol
+            .exit_waiters
+            .lock()
+            .unwrap()
+            .insert("cancelled".into(), tx);
+        drop(rx);
+        protocol.dispatch(SessionEvent::ControllerExited {
+            request_id: "cancelled".into(),
+            controller_pid: 1,
+            exit_code: Some(7),
+            signal: None,
+        });
+        let exit = tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            protocol.wait_controller_exit("cancelled".into()),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(exit.exit_code, Some(7));
+        child.kill().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn request_after_fatal_returns_without_registering_an_abandoned_waiter() {
+        let mut child = tokio::process::Command::new("/bin/cat")
+            .stdin(std::process::Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        let protocol = SessionProtocol::new(child.stdin.take().unwrap());
+        protocol.set_fatal(SessionError::protocol("closed"));
+        let result = tokio::time::timeout(std::time::Duration::from_secs(1), protocol.handshake())
+            .await
+            .unwrap();
+        assert_eq!(result.unwrap_err().message, "closed");
+        assert!(protocol.ready_waiter.lock().unwrap().is_none());
+        child.kill().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn cancelled_partial_write_completes_before_the_next_frame() {
+        use tokio::io::AsyncBufReadExt;
+        let mut child = tokio::process::Command::new("/bin/cat")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        let identity = ro_tools_linux::capture_process_identity(child.id().unwrap()).unwrap();
+        ro_tools_linux::signal_process_identity(&identity, libc::SIGSTOP).unwrap();
+        let protocol = SessionProtocol::new(child.stdin.take().unwrap());
+        let request = SessionRequest::Launch {
+            request_id: "large".into(),
+            spec: ProcessSpec {
+                program: "/bin/true".into(),
+                args: vec!["x".repeat(128 * 1024)],
+                cwd: "/tmp".into(),
+                env: vec![],
+            },
+        };
+        let writer = tokio::spawn({
+            let protocol = Arc::clone(&protocol);
+            async move { protocol.send_request(&request).await }
+        });
+        tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            while protocol.stdin.try_lock().is_ok() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        writer.abort();
+        let _ = writer.await;
+        ro_tools_linux::signal_process_identity(&identity, libc::SIGCONT).unwrap();
+        let read = tokio::spawn(async move {
+            let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
+            let first: SessionRequest =
+                serde_json::from_str(&lines.next_line().await.unwrap().unwrap()).unwrap();
+            let second: SessionRequest =
+                serde_json::from_str(&lines.next_line().await.unwrap().unwrap()).unwrap();
+            child.kill().await.unwrap();
+            (first, second)
+        });
+        protocol
+            .send_request(&SessionRequest::Hello {
+                protocol_version: PROTOCOL_VERSION,
+            })
+            .await
+            .unwrap();
+        let (first, second) = tokio::time::timeout(std::time::Duration::from_secs(2), read)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            matches!(first, SessionRequest::Launch { request_id, .. } if request_id == "large")
+        );
+        assert!(matches!(second, SessionRequest::Hello { .. }));
+    }
 
     #[test]
     fn canonical_hello_json() {
@@ -660,6 +798,67 @@ mod tests {
                 .iter()
                 .any(|change| { change.key == key && change.value.as_deref() == Some(value) }));
         }
+    }
+
+    #[tokio::test]
+    async fn ownership_hooks_run_before_launch_and_exit_become_observable() {
+        use std::process::Stdio;
+
+        let mut child = tokio::process::Command::new("/bin/cat")
+            .stdin(Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        let protocol = SessionProtocol::new(child.stdin.take().unwrap());
+        let (launch_tx, launch_rx) = oneshot::channel();
+        let launch_rx = Arc::new(StdMutex::new(launch_rx));
+        protocol
+            .launch_waiters
+            .lock()
+            .unwrap()
+            .insert("req".into(), launch_tx);
+        protocol.set_launch_accepted_hook(Arc::new({
+            let launch_rx = Arc::clone(&launch_rx);
+            move || {
+                assert!(
+                    launch_rx.lock().unwrap().try_recv().is_err(),
+                    "ownership must be updated before launch is visible"
+                )
+            }
+        }));
+        protocol.dispatch(SessionEvent::LaunchAccepted {
+            request_id: "req".into(),
+            controller_pid: 123,
+            controller_start_time: 456,
+        });
+        assert_eq!(
+            launch_rx.lock().unwrap().try_recv().unwrap().unwrap(),
+            ProcessIdentity {
+                pid: 123,
+                start_time: 456
+            }
+        );
+
+        protocol.set_controller_exited_hook(Arc::new({
+            let weak = Arc::downgrade(&protocol);
+            move |id| {
+                assert!(
+                    weak.upgrade().unwrap().try_controller_exit(id).is_none(),
+                    "ownership must be released before exit is visible"
+                )
+            }
+        }));
+        protocol.dispatch(SessionEvent::ControllerExited {
+            request_id: "req".into(),
+            controller_pid: 123,
+            exit_code: Some(0),
+            signal: None,
+        });
+        assert_eq!(
+            protocol.try_controller_exit("req").unwrap().exit_code,
+            Some(0)
+        );
+        child.kill().await.unwrap();
     }
 
     #[tokio::test]

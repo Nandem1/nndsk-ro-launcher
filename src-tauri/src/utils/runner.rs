@@ -41,8 +41,13 @@ impl ProcessEnv for RunnerInvocation {
 
 impl RunnerInvocation {
     pub fn into_command(self) -> Command {
+        self.into_command_with_sanitizer(sanitize_appimage_env)
+    }
+
+    fn into_command_with_sanitizer(self, sanitize: impl FnOnce(&mut Command)) -> Command {
         let mut cmd = Command::new(&self.program);
         cmd.args(self.args).current_dir(self.cwd);
+        sanitize(&mut cmd);
         cmd.env_remove("WINEPREFIX");
         cmd.env_remove("STEAM_COMPAT_DATA_PATH");
         for (key, value) in self.env {
@@ -55,7 +60,6 @@ impl RunnerInvocation {
                 }
             }
         }
-        sanitize_appimage_env(&mut cmd);
         cmd
     }
 }
@@ -987,6 +991,31 @@ mod tests {
             .as_std()
             .get_envs()
             .any(|(key, value)| key == OsStr::new("STEAM_COMPAT_DATA_PATH") && value.is_none()));
+    }
+
+    #[test]
+    fn appimage_sanitation_precedes_explicit_runner_environment() {
+        let invocation = RunnerInvocation {
+            program: PathBuf::from("/usr/bin/true"),
+            args: vec![],
+            cwd: PathBuf::from("/tmp"),
+            env: vec![(
+                OsString::from("PATH"),
+                Some(OsString::from("/portable-wine/bin:/usr/bin")),
+            )],
+        };
+        let command = invocation.into_command_with_sanitizer(|cmd| {
+            cmd.env("PATH", "/usr/bin");
+            cmd.env_remove("PYTHONHOME");
+        });
+        assert_eq!(
+            env(&command, "PATH"),
+            Some("/portable-wine/bin:/usr/bin".into())
+        );
+        assert!(command
+            .as_std()
+            .get_envs()
+            .any(|(key, value)| key == "PYTHONHOME" && value.is_none()));
     }
 
     #[test]

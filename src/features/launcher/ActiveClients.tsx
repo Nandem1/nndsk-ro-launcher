@@ -6,6 +6,7 @@ import { Panel } from '../../shared/ui/Panel'
 import { StatusDot } from '../../shared/ui/StatusDot'
 import { useLogsStore } from '../logs/logs.store'
 import { useLauncherStore } from './launcher.store'
+import { refreshGameClients } from './refreshGameClients'
 
 const statusLabels = {
   launching: 'Iniciando',
@@ -15,7 +16,6 @@ const statusLabels = {
 
 export function ActiveClients() {
   const clients = useLauncherStore((s) => s.clients)
-  const setClients = useLauncherStore((s) => s.setClients)
   const setClientStatus = useLauncherStore((s) => s.setClientStatus)
   const setError = useLauncherStore((s) => s.setError)
   const addGameLog = useLogsStore((s) => s.addGameLog)
@@ -24,7 +24,7 @@ export function ActiveClients() {
 
   const refresh = async () => {
     try {
-      setClients(await api.listGameClients())
+      await refreshGameClients()
     } catch {
       addGameLog('No se pudo actualizar la lista de clientes')
     }

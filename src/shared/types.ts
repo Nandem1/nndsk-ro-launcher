@@ -1,6 +1,7 @@
 export interface ProgressPayload {
   step: string
   percent: number
+  operationId?: string | null
 }
 
 export interface LogEventPayload {

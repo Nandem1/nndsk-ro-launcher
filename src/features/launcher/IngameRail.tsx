@@ -5,12 +5,12 @@ import { useUiModeStore } from '../../app/uiMode.store'
 import { useLauncherStore } from './launcher.store'
 import { api } from '../../shared/api'
 import { toErrorMessage } from '../../shared/errors'
+import { refreshGameClients } from './refreshGameClients'
 
 export function IngameRail() {
   const clients = useLauncherStore((s) => s.clients)
   const launching = useLauncherStore((s) => s.status === 'launching')
   const setError = useLauncherStore((s) => s.setError)
-  const setClients = useLauncherStore((s) => s.setClients)
   const setClientStatus = useLauncherStore((s) => s.setClientStatus)
   const toggleRailPeek = useUiModeStore((s) => s.toggleRailPeek)
 
@@ -36,7 +36,7 @@ export function IngameRail() {
     } catch (error) {
       setError(toErrorMessage(error))
       try {
-        setClients(await api.listGameClients())
+        await refreshGameClients()
       } catch {
         // El evento de salida o la próxima apertura volverán a sincronizar.
       }

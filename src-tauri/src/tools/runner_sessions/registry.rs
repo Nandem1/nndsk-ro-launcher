@@ -1,11 +1,12 @@
 use crate::state::GameProcessHandle;
 use ro_session_protocol::{clamp_grace_ms, ProcessSpec};
 use ro_tools_linux::{
-    capture_process_identity, signal_process_identity, verify_process_identity, ProcessIdentity,
+    capture_process_identity, is_descendant_of, signal_process_identity, verify_process_identity,
+    ProcessIdentity,
 };
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
 use tauri::AppHandle;
@@ -24,6 +25,7 @@ use super::protocol::{canonicalize_prefix_path, invocation_to_spec, SessionProto
 
 const RUNNER_CONFLICT_MSG: &str =
     "El prefix ya está activo con otro runner; ciérralo antes de cambiarlo.";
+const PLAN_CONFLICT_MSG: &str = "El entorno todavía está en uso con otra configuración. Espera a que termine la preparación o cierra el juego y las herramientas de ese servidor.";
 
 const IDLE_SHUTDOWN_SECS: u64 = 2;
 const SHUTDOWN_DEFAULT_GRACE_MS: u64 = 5_000;
@@ -149,6 +151,10 @@ impl SupervisedProcess {
         self.controller_identity.pid
     }
 
+    pub fn controller_identity(&self) -> ProcessIdentity {
+        self.controller_identity
+    }
+
     pub fn try_exit(&self) -> Option<ProcessExit> {
         if let Ok(guard) = self.exit.lock() {
             if let Some(exit) = guard.clone() {
@@ -237,6 +243,7 @@ enum SessionState {
 #[derive(Debug, Clone, Copy)]
 enum ShutdownCause {
     Idle { generation: u64 },
+    Quiescent,
     Forced,
 }
 
@@ -264,6 +271,12 @@ struct RunnerSessionInner {
 }
 
 impl RunnerSessionInner {
+    fn is_quiet(&self) -> bool {
+        self.operation_leases.load(Ordering::SeqCst) == 0
+            && self.client_leases.load(Ordering::SeqCst) == 0
+            && self.active_requests.load(Ordering::SeqCst) == 0
+    }
+
     fn runner_kind_label(&self) -> &'static str {
         match self.runner.kind {
             RunnerKind::Wine => "wine",
@@ -312,12 +325,20 @@ impl RunnerSessionInner {
     }
 
     fn on_controller_exited(self: &Arc<Self>) {
-        let _ = self
-            .active_requests
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |count| {
-                Some(count.saturating_sub(1))
-            });
+        saturating_decrement(&self.active_requests);
         self.schedule_idle_shutdown();
+    }
+}
+
+fn saturating_decrement(counter: &AtomicU32) {
+    // Keep the saturating transition atomic without depending on fetch_update/try_update,
+    // whose availability and deprecation differ between supported Rust toolchains.
+    let mut count = counter.load(Ordering::SeqCst);
+    while count != 0 {
+        match counter.compare_exchange_weak(count, count - 1, Ordering::SeqCst, Ordering::SeqCst) {
+            Ok(_) => return,
+            Err(current) => count = current,
+        }
     }
 }
 
@@ -325,6 +346,7 @@ struct RunnerSessionRegistryInner {
     sessions: Mutex<HashMap<String, Arc<RunnerSessionInner>>>,
     startup_locks: Mutex<HashMap<String, Arc<AsyncMutex<()>>>>,
     sidecar_override: Mutex<Option<PathBuf>>,
+    closing: AtomicBool,
 }
 
 #[derive(Clone)]
@@ -345,6 +367,7 @@ impl RunnerSessionRegistry {
                 sessions: Mutex::new(HashMap::new()),
                 startup_locks: Mutex::new(HashMap::new()),
                 sidecar_override: Mutex::new(None),
+                closing: AtomicBool::new(false),
             }),
         }
     }
@@ -390,78 +413,116 @@ impl RunnerSessionRegistry {
         let prefix_key = prefix.to_string_lossy().to_string();
         let runner = runner_anchor(ctx)?;
 
-        let lock = self.startup_lock(&prefix_key);
-        let _guard = lock.lock().await;
+        loop {
+            let lock = self.startup_lock(&prefix_key);
+            let guard = lock.lock().await;
+            if self.inner.closing.load(Ordering::SeqCst) {
+                return Err(SessionError::validation("El launcher se está cerrando"));
+            }
 
-        if let Some(existing) = self.get_session(&prefix_key) {
-            let state = *existing.state.lock().unwrap();
-            match state {
-                SessionState::Ready => {
-                    if existing.runner != runner {
-                        return Err(SessionError::validation(RUNNER_CONFLICT_MSG));
+            if let Some(existing) = self.get_session(&prefix_key) {
+                let shutdown = {
+                    let state = existing.state.lock().unwrap();
+                    match *state {
+                        SessionState::Ready => {
+                            if existing.runner != runner {
+                                return Err(SessionError::validation(RUNNER_CONFLICT_MSG));
+                            }
+                            if existing.plan_id != anchor.plan_id {
+                                if !existing.is_quiet() {
+                                    return Err(SessionError::validation(PLAN_CONFLICT_MSG));
+                                }
+                                Some(ShutdownCause::Idle {
+                                    generation: existing.idle_generation.load(Ordering::SeqCst),
+                                })
+                            } else {
+                                existing.bump_idle_generation();
+                                existing.operation_leases.fetch_add(1, Ordering::SeqCst);
+                                return Ok(OperationLease {
+                                    session: Arc::clone(&existing),
+                                });
+                            }
+                        }
+                        SessionState::Stopping => Some(ShutdownCause::Forced),
+                        SessionState::Starting => {
+                            return Err(SessionError::internal(
+                                "El entorno todavía se está preparando",
+                            ));
+                        }
+                        SessionState::Stopped | SessionState::Failed => {
+                            self.remove_session_if_same(&prefix_key, &existing);
+                            None
+                        }
                     }
-                    if existing.plan_id != anchor.plan_id {
-                        return Err(SessionError::validation(
-                            "El prefix ya está activo con otro runtime plan; ciérralo antes de cambiarlo.",
-                        ));
-                    }
-                    existing.bump_idle_generation();
-                    existing.operation_leases.fetch_add(1, Ordering::SeqCst);
-                    return Ok(OperationLease { session: existing });
-                }
-                SessionState::Starting | SessionState::Stopping => {
-                    return Err(SessionError::internal("session is not ready"));
-                }
-                SessionState::Stopped | SessionState::Failed => {
-                    self.remove_session(&prefix_key);
+                };
+                if let Some(cause) = shutdown {
+                    drop(guard);
+                    emit_session_line(
+                        app,
+                        "Esperando el cierre de la sesión anterior del entorno...",
+                    );
+                    self.shutdown_session(&prefix_key, &existing, None, cause)
+                        .await?;
+                    continue;
                 }
             }
-        }
 
-        bootstrap_prefix_for_supervisor(ctx, game).await?;
+            bootstrap_prefix_for_supervisor(ctx, game).await?;
 
-        let shutdown_invocation = ctx
-            .resolved
-            .shutdown_invocation(&ctx.prefix)
-            .map_err(SessionError::validation)?;
-        let shutdown_spec = invocation_to_spec(&shutdown_invocation, &prefix)?;
+            let shutdown_invocation = ctx
+                .resolved
+                .shutdown_invocation(&ctx.prefix)
+                .map_err(SessionError::validation)?;
+            let shutdown_spec = invocation_to_spec(&shutdown_invocation, &prefix)?;
 
-        let override_path = self.sidecar_override();
-        let spawned = spawn_supervisor(app, &prefix, override_path.as_deref()).await?;
+            let override_path = self.sidecar_override();
+            let spawned = spawn_supervisor(app, &prefix, override_path.as_deref()).await?;
 
-        let supervisor_identity = spawned.supervisor_identity;
+            let supervisor_identity = spawned.supervisor_identity;
 
-        let session = Arc::new(RunnerSessionInner {
-            prefix: prefix.clone(),
-            runner,
-            plan_id: anchor.plan_id.clone(),
-            shutdown_spec,
-            state: Mutex::new(SessionState::Ready),
-            protocol: Arc::clone(&spawned.protocol),
-            supervisor_identity,
-            child: Mutex::new(Some(spawned.child)),
-            redactions: spawned.redactions,
-            active_requests: AtomicU32::new(0),
-            operation_leases: AtomicU32::new(1),
-            client_leases: AtomicU32::new(0),
-            idle_generation: AtomicU64::new(0),
-            registry: Arc::downgrade(&self.inner),
-        });
+            let session = Arc::new(RunnerSessionInner {
+                prefix: prefix.clone(),
+                runner,
+                plan_id: anchor.plan_id.clone(),
+                shutdown_spec,
+                state: Mutex::new(SessionState::Ready),
+                protocol: Arc::clone(&spawned.protocol),
+                supervisor_identity,
+                child: Mutex::new(Some(spawned.child)),
+                redactions: spawned.redactions,
+                active_requests: AtomicU32::new(0),
+                operation_leases: AtomicU32::new(1),
+                client_leases: AtomicU32::new(0),
+                idle_generation: AtomicU64::new(0),
+                registry: Arc::downgrade(&self.inner),
+            });
 
-        let session_for_hook = Arc::clone(&session);
-        spawned.protocol.set_launch_accepted_hook(Arc::new({
-            let session_for_hook = Arc::clone(&session_for_hook);
-            move || session_for_hook.on_launch_accepted()
-        }));
-        spawned
-            .protocol
-            .set_controller_exited_hook(Arc::new(move |_| {
-                session_for_hook.on_controller_exited();
+            let session_for_hook = Arc::downgrade(&session);
+            spawned.protocol.set_launch_accepted_hook(Arc::new({
+                let session_for_hook = session_for_hook.clone();
+                move || {
+                    if let Some(session) = session_for_hook.upgrade() {
+                        session.on_launch_accepted();
+                    }
+                }
             }));
+            spawned
+                .protocol
+                .set_controller_exited_hook(Arc::new(move |_| {
+                    if let Some(session) = session_for_hook.upgrade() {
+                        session.on_controller_exited();
+                    }
+                }));
 
-        self.insert_session(prefix_key, Arc::clone(&session));
+            if self.inner.closing.load(Ordering::SeqCst) {
+                self.shutdown_session_locked(&prefix_key, &session, None, ShutdownCause::Forced)
+                    .await?;
+                return Err(SessionError::validation("El launcher se está cerrando"));
+            }
+            self.insert_session(prefix_key, Arc::clone(&session));
 
-        Ok(OperationLease { session })
+            return Ok(OperationLease { session });
+        }
     }
 
     pub async fn launch(
@@ -495,10 +556,8 @@ impl RunnerSessionRegistry {
             ),
         );
 
-        let controller_pid = session.protocol.launch(request_id.clone(), spec).await?;
-
-        let controller_identity = capture_process_identity(controller_pid)
-            .ok_or_else(|| SessionError::internal("failed to capture controller identity"))?;
+        let controller_identity = session.protocol.launch(request_id.clone(), spec).await?;
+        let controller_pid = controller_identity.pid;
 
         emit_session_line(
             app,
@@ -535,22 +594,29 @@ impl RunnerSessionRegistry {
             .get_session(&prefix_key)
             .ok_or_else(|| SessionError::validation("no active session for prefix"))?;
 
-        if session.operation_leases.load(Ordering::SeqCst) > 0
-            || session.client_leases.load(Ordering::SeqCst) > 0
-            || session.active_requests.load(Ordering::SeqCst) > 0
-        {
-            return Err(SessionError::validation(
-                "cannot shutdown prefix while leases or requests are active",
-            ));
-        }
-
-        self.shutdown_session(&prefix_key, &session, None, ShutdownCause::Forced)
+        self.shutdown_session(&prefix_key, &session, None, ShutdownCause::Quiescent)
             .await
     }
 
     pub async fn shutdown_all(&self) -> Vec<SessionError> {
+        let registry = self.clone();
+        // Admission closes synchronously; cleanup has an owner even if its caller disappears.
+        self.inner.closing.store(true, Ordering::SeqCst);
+        tokio::spawn(async move { registry.shutdown_all_owned().await })
+            .await
+            .unwrap_or_else(|error| {
+                vec![SessionError::internal(format!(
+                    "shutdown_all task failed: {error}"
+                ))]
+            })
+    }
+
+    async fn shutdown_all_owned(&self) -> Vec<SessionError> {
+        // Close admission before taking the census. Include startups still holding their lock:
+        // they may not have inserted a session yet.
+        self.inner.closing.store(true, Ordering::SeqCst);
         let keys: Vec<String> = {
-            let map = self.inner.sessions.lock().unwrap();
+            let map = self.inner.startup_locks.lock().unwrap();
             map.keys().cloned().collect()
         };
         if keys.is_empty() {
@@ -560,21 +626,31 @@ impl RunnerSessionRegistry {
         let result = tokio::time::timeout(SHUTDOWN_ALL_GLOBAL_TIMEOUT, async {
             let mut shutdowns = tokio::task::JoinSet::new();
             for key in keys {
-                let Some(session) = self.get_session(&key) else {
-                    continue;
-                };
                 let registry = self.clone();
                 shutdowns.spawn(async move {
-                    match tokio::time::timeout(
-                        SHUTDOWN_ALL_SESSION_TIMEOUT,
-                        registry.shutdown_session(&key, &session, None, ShutdownCause::Forced),
-                    )
-                    .await
-                    {
+                    let shutdown = async {
+                        let lock = registry.startup_lock(&key);
+                        let _guard = lock.lock().await;
+                        if let Some(session) = registry.get_session(&key) {
+                            registry
+                                .shutdown_session_locked(
+                                    &key,
+                                    &session,
+                                    None,
+                                    ShutdownCause::Forced,
+                                )
+                                .await
+                        } else {
+                            Ok(())
+                        }
+                    };
+                    match tokio::time::timeout(SHUTDOWN_ALL_SESSION_TIMEOUT, shutdown).await {
                         Ok(Ok(())) => None,
                         Ok(Err(error)) => Some(error),
                         Err(_) => {
-                            registry.force_kill_session(&key, &session).await;
+                            if let Some(session) = registry.get_session(&key) {
+                                registry.force_kill_session(&key, &session).await;
+                            }
                             Some(SessionError::internal("session shutdown timed out"))
                         }
                     }
@@ -603,11 +679,16 @@ impl RunnerSessionRegistry {
                     let map = self.inner.sessions.lock().unwrap();
                     map.keys().cloned().collect()
                 };
+                let mut cleanup = tokio::task::JoinSet::new();
                 for key in remaining {
                     if let Some(session) = self.get_session(&key) {
-                        self.force_kill_session(&key, &session).await;
+                        let registry = self.clone();
+                        cleanup.spawn(async move {
+                            registry.force_kill_session(&key, &session).await;
+                        });
                     }
                 }
+                while cleanup.join_next().await.is_some() {}
                 errors
             }
         }
@@ -637,8 +718,14 @@ impl RunnerSessionRegistry {
             .insert(prefix_key, session);
     }
 
-    fn remove_session(&self, prefix_key: &str) {
-        self.inner.sessions.lock().unwrap().remove(prefix_key);
+    fn remove_session_if_same(&self, prefix_key: &str, session: &Arc<RunnerSessionInner>) {
+        let mut sessions = self.inner.sessions.lock().unwrap();
+        if sessions
+            .get(prefix_key)
+            .is_some_and(|active| Arc::ptr_eq(active, session))
+        {
+            sessions.remove(prefix_key);
+        }
     }
 
     async fn shutdown_session(
@@ -648,17 +735,49 @@ impl RunnerSessionRegistry {
         grace_ms: Option<u64>,
         cause: ShutdownCause,
     ) -> Result<(), SessionError> {
+        // Own shutdown independently of its caller: cancellation must not leave a half-closed
+        // supervisor. The same per-prefix lock serializes shutdown, lease acquisition and startup.
+        let registry = self.clone();
+        let key = prefix_key.to_string();
+        let session = Arc::clone(session);
+        tokio::spawn(async move {
+            let lock = registry.startup_lock(&key);
+            let _guard = lock.lock().await;
+            if !registry
+                .get_session(&key)
+                .is_some_and(|active| Arc::ptr_eq(&active, &session))
+            {
+                return Ok(());
+            }
+            registry
+                .shutdown_session_locked(&key, &session, grace_ms, cause)
+                .await
+        })
+        .await
+        .map_err(|error| SessionError::internal(format!("session shutdown task failed: {error}")))?
+    }
+
+    async fn shutdown_session_locked(
+        &self,
+        prefix_key: &str,
+        session: &Arc<RunnerSessionInner>,
+        grace_ms: Option<u64>,
+        cause: ShutdownCause,
+    ) -> Result<(), SessionError> {
         let skip_shutdown_request = {
             let mut state = session.state.lock().unwrap();
+            if matches!(cause, ShutdownCause::Quiescent) && !session.is_quiet() {
+                return Err(SessionError::validation(
+                    "cannot shutdown prefix while leases or requests are active",
+                ));
+            }
             match *state {
                 SessionState::Stopped | SessionState::Failed => return Ok(()),
                 SessionState::Stopping => true,
                 SessionState::Ready | SessionState::Starting => {
                     if let ShutdownCause::Idle { generation } = cause {
                         if session.idle_generation.load(Ordering::SeqCst) != generation
-                            || session.operation_leases.load(Ordering::SeqCst) > 0
-                            || session.client_leases.load(Ordering::SeqCst) > 0
-                            || session.active_requests.load(Ordering::SeqCst) > 0
+                            || !session.is_quiet()
                             || *state != SessionState::Ready
                         {
                             return Ok(());
@@ -670,27 +789,39 @@ impl RunnerSessionRegistry {
             }
         };
 
-        if !skip_shutdown_request {
-            let spec = session.shutdown_spec.clone();
-            let request_id = Uuid::new_v4().to_string();
-            let grace = clamp_grace_ms(grace_ms.unwrap_or(SHUTDOWN_DEFAULT_GRACE_MS));
+        let stopped = tokio::time::timeout(Duration::from_secs(20), async {
+            if !skip_shutdown_request {
+                let spec = session.shutdown_spec.clone();
+                let request_id = Uuid::new_v4().to_string();
+                let grace = clamp_grace_ms(grace_ms.unwrap_or(SHUTDOWN_DEFAULT_GRACE_MS));
 
-            if let Err(e) = session.protocol.shutdown(request_id, spec, grace).await {
-                return self.fail_session(prefix_key, session, e).await;
+                session.protocol.shutdown(request_id, spec, grace).await?;
             }
-        }
-
-        let stopped =
-            tokio::time::timeout(Duration::from_secs(20), session.protocol.wait_stopped()).await;
+            session.protocol.wait_stopped().await
+        })
+        .await;
 
         match stopped {
             Ok(Ok(())) => {
-                *session.state.lock().unwrap() = SessionState::Stopped;
                 let taken = session.child.lock().unwrap().take();
                 if let Some(mut child) = taken {
-                    let _ = tokio::time::timeout(Duration::from_secs(3), child.wait()).await;
+                    if !matches!(
+                        tokio::time::timeout(Duration::from_secs(3), child.wait()).await,
+                        Ok(Ok(_))
+                    ) {
+                        let _ =
+                            kill_child_by_identity(&mut child, &session.supervisor_identity).await;
+                        return self
+                            .fail_session(
+                                prefix_key,
+                                session,
+                                SessionError::internal("supervisor did not exit after Stopped"),
+                            )
+                            .await;
+                    }
                 }
-                self.remove_session(prefix_key);
+                *session.state.lock().unwrap() = SessionState::Stopped;
+                self.remove_session_if_same(prefix_key, session);
                 emit_session_line(None, "prefix idle; supervisor stopped cleanly; zombies=0");
                 Ok(())
             }
@@ -722,13 +853,23 @@ impl RunnerSessionRegistry {
         session: &Arc<RunnerSessionInner>,
         err: SessionError,
     ) -> Result<(), SessionError> {
-        *session.state.lock().unwrap() = SessionState::Failed;
-        kill_supervisor_identity(&session.supervisor_identity);
+        // A broken protocol or timeout must not orphan a live runner tree. Keep its subreaper
+        // alive long enough to reap the killed descendants before terminating the supervisor.
+        kill_owned_descendants(&session.supervisor_identity);
         let taken = session.child.lock().unwrap().take();
         if let Some(mut child) = taken {
+            let _ = signal_process_identity(&session.supervisor_identity, libc::SIGTERM);
+            let _ = signal_process_identity(&session.supervisor_identity, libc::SIGCONT);
+            if tokio::time::timeout(Duration::from_secs(3), child.wait())
+                .await
+                .is_err()
+            {
+                kill_supervisor_identity(&session.supervisor_identity);
+            }
             let _ = kill_child_by_identity(&mut child, &session.supervisor_identity).await;
         }
-        self.remove_session(prefix_key);
+        *session.state.lock().unwrap() = SessionState::Failed;
+        self.remove_session_if_same(prefix_key, session);
         Err(err)
     }
 
@@ -786,6 +927,31 @@ fn kill_supervisor_identity(identity: &ProcessIdentity) {
     let _ = signal_process_identity(identity, libc::SIGKILL);
 }
 
+fn kill_owned_descendants(supervisor: &ProcessIdentity) {
+    let Ok(entries) = std::fs::read_dir("/proc") else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let Some(pid) = entry
+            .file_name()
+            .to_str()
+            .and_then(|name| name.parse::<u32>().ok())
+        else {
+            continue;
+        };
+        let Some(identity) = capture_process_identity(pid) else {
+            continue;
+        };
+        if pid != supervisor.pid
+            && verify_process_identity(supervisor)
+            && is_descendant_of(pid, supervisor.pid)
+            && verify_process_identity(&identity)
+        {
+            let _ = signal_process_identity(&identity, libc::SIGKILL);
+        }
+    }
+}
+
 #[cfg(test)]
 mod integration {
     use super::*;
@@ -824,6 +990,25 @@ mod integration {
             &["second-secret".to_string(), "first-secret".to_string()],
         );
         assert_eq!(current, ["first-secret", "second-secret"]);
+    }
+
+    #[test]
+    fn active_requests_decrement_saturates_under_concurrent_exits() {
+        let counter = AtomicU32::new(10_000);
+        std::thread::scope(|scope| {
+            for _ in 0..8 {
+                scope.spawn(|| {
+                    for _ in 0..2_000 {
+                        saturating_decrement(&counter);
+                    }
+                });
+            }
+        });
+        assert_eq!(counter.load(Ordering::SeqCst), 0);
+        counter.store(1, Ordering::SeqCst);
+        saturating_decrement(&counter);
+        saturating_decrement(&counter);
+        assert_eq!(counter.load(Ordering::SeqCst), 0);
     }
 
     #[tokio::test]
@@ -972,6 +1157,207 @@ mod integration {
         crate::tools::runtime::session_anchor_from_context(
             &test_wine_context(&std::env::temp_dir()),
         )
+    }
+
+    #[tokio::test]
+    async fn shutdown_closes_admission_and_waits_for_startup_lock() {
+        let prefix = test_prefix();
+        let registry =
+            RunnerSessionRegistry::with_sidecar_for_test(workspace_debug_sessiond().unwrap());
+        let ctx = test_wine_context(&prefix);
+        let key = prefix.to_string_lossy().to_string();
+        let lock = registry.startup_lock(&key);
+        let guard = lock.lock().await;
+        let shutdown = tokio::spawn({
+            let registry = registry.clone();
+            async move { registry.shutdown_all().await }
+        });
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while !registry.inner.closing.load(Ordering::SeqCst) {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        assert!(
+            !shutdown.is_finished(),
+            "shutdown must include pending startup"
+        );
+        drop(guard);
+        assert!(shutdown.await.unwrap().is_empty());
+        assert!(registry
+            .begin_operation_opt(None, &ctx, &GameProcessHandle::new(), &placeholder_anchor())
+            .await
+            .err()
+            .unwrap()
+            .message
+            .contains("cerrando"));
+    }
+
+    #[tokio::test]
+    async fn tool_descendant_keeps_its_prefix_guard_after_controller_exit() {
+        let prefix = test_prefix();
+        let registry =
+            RunnerSessionRegistry::with_sidecar_for_test(workspace_debug_sessiond().unwrap());
+        let ctx = test_wine_context(&prefix);
+        let game = GameProcessHandle::new();
+        let op = crate::tools::runner_sessions::RunnerOperation::begin(
+            None,
+            &registry,
+            &game,
+            &ctx,
+            &placeholder_anchor(),
+        )
+        .await
+        .unwrap();
+        let guard = crate::utils::OperationGuard::acquire("prefix", &prefix).unwrap();
+        let mut process = op
+            .spawn(
+                test_invocation(
+                    &prefix,
+                    "/bin/sh",
+                    &["-c", "env -u WINEPREFIX sleep 1 & exit 0"],
+                ),
+                &[],
+            )
+            .await
+            .unwrap();
+        process.wait().await.unwrap();
+        let supervisor = op.lease().unwrap().supervisor_identity();
+        let observed: Vec<_> = std::fs::read_dir("/proc")
+            .unwrap()
+            .flatten()
+            .filter_map(|entry| entry.file_name().to_str()?.parse::<u32>().ok())
+            .filter(|pid| *pid != supervisor.pid && is_descendant_of(*pid, supervisor.pid))
+            .filter_map(capture_process_identity)
+            .collect();
+        assert!(!observed.is_empty(), "descendant outlives its controller");
+        assert!(tokio::time::timeout(
+            Duration::from_millis(50),
+            crate::tools::runner_sessions::wait_for_prefix_programs(&ctx.prefix, Some(supervisor))
+        )
+        .await
+        .is_err());
+        assert!(crate::utils::OperationGuard::acquire("prefix", &prefix).is_err());
+        tokio::time::timeout(
+            Duration::from_secs(3),
+            crate::tools::runner_sessions::wait_for_prefix_programs(&ctx.prefix, Some(supervisor)),
+        )
+        .await
+        .unwrap();
+        drop(guard);
+        drop(op);
+        assert!(registry.shutdown_all().await.is_empty());
+        for identity in observed {
+            assert!(!verify_process_identity(&identity));
+        }
+    }
+
+    #[tokio::test]
+    async fn repeated_quiesce_cannot_kill_another_operation() {
+        let prefix = test_prefix();
+        let registry =
+            RunnerSessionRegistry::with_sidecar_for_test(workspace_debug_sessiond().unwrap());
+        let ctx = test_wine_context(&prefix);
+        let game = GameProcessHandle::new();
+        let anchor = placeholder_anchor();
+        let mut first = crate::tools::runner_sessions::RunnerOperation::begin(
+            None, &registry, &game, &ctx, &anchor,
+        )
+        .await
+        .unwrap();
+        let other = registry
+            .begin_operation_opt(None, &ctx, &game, &anchor)
+            .await
+            .unwrap();
+        let mut process = registry
+            .launch(
+                None,
+                &other,
+                test_invocation(&prefix, "/bin/sleep", &["1"]),
+                &[],
+            )
+            .await
+            .unwrap();
+        assert!(first.quiesce().await.is_err());
+        assert!(first.quiesce().await.is_err());
+        assert!(verify_process_identity(&process.controller_identity()));
+        assert!(verify_process_identity(&other.supervisor_identity()));
+        process.wait().await.unwrap();
+        drop(other);
+        assert!(registry.shutdown_all().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn successful_shutdown_controller_is_not_proof_that_prefix_is_clear() {
+        let prefix = test_prefix();
+        let registry =
+            RunnerSessionRegistry::with_sidecar_for_test(workspace_debug_sessiond().unwrap());
+        let ctx = test_wine_context(&prefix);
+        let op = crate::tools::runner_sessions::RunnerOperation::begin(
+            None,
+            &registry,
+            &GameProcessHandle::new(),
+            &ctx,
+            &placeholder_anchor(),
+        )
+        .await
+        .unwrap();
+        op.run_shutdown_ok(
+            test_invocation(&prefix, "/bin/sh", &["-c", "sleep 1 & exit 0"]),
+            "shutdown fixture",
+        )
+        .await
+        .unwrap();
+        assert!(ro_tools_linux::find_prefix_processes(&ctx.prefix).is_empty());
+        drop(op);
+        assert!(registry.shutdown_all().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn failed_session_cleans_its_descendants_and_preserves_another_prefix() {
+        let registry =
+            RunnerSessionRegistry::with_sidecar_for_test(workspace_debug_sessiond().unwrap());
+        let first_prefix = test_prefix();
+        let second_prefix = test_prefix();
+        let first = registry
+            .begin_operation_opt(
+                None,
+                &test_wine_context(&first_prefix),
+                &GameProcessHandle::new(),
+                &placeholder_anchor(),
+            )
+            .await
+            .unwrap();
+        let second = registry
+            .begin_operation_opt(
+                None,
+                &test_wine_context(&second_prefix),
+                &GameProcessHandle::new(),
+                &placeholder_anchor(),
+            )
+            .await
+            .unwrap();
+        let mut process = registry
+            .launch(
+                None,
+                &first,
+                test_invocation(&first_prefix, "/bin/sh", &["-c", "sleep 60 & wait"]),
+                &[],
+            )
+            .await
+            .unwrap();
+        let key = first_prefix.to_string_lossy().to_string();
+        let session = registry.get_session(&key).unwrap();
+        let identity = process.controller_identity();
+        registry.force_kill_session(&key, &session).await;
+        assert!(!verify_process_identity(&identity));
+        assert!(!verify_process_identity(&first.supervisor_identity()));
+        assert!(verify_process_identity(&second.supervisor_identity()));
+        let _ = process.wait().await;
+        drop(first);
+        drop(second);
+        assert!(registry.shutdown_all().await.is_empty());
     }
 
     fn golden_plan_anchor(case: &str) -> crate::tools::runtime::SessionAnchorV2 {
@@ -1232,9 +1618,226 @@ mod integration {
             Ok(_) => panic!("plan mismatch should fail"),
             Err(error) => error,
         };
-        assert!(err.message.contains("runtime plan"));
+        assert_eq!(err.message, PLAN_CONFLICT_MSG);
         drop(lease);
         registry.shutdown_all().await;
+    }
+
+    #[tokio::test]
+    #[cfg(target_os = "linux")]
+    async fn quiet_plan_change_reaps_old_supervisor_before_starting_new_session() {
+        let prefix = test_prefix();
+        let registry = RunnerSessionRegistry::with_sidecar_for_test(
+            workspace_debug_sessiond().expect("build ro-sessiond first"),
+        );
+        let ctx = test_wine_context(&prefix);
+        let game = GameProcessHandle::new();
+        let first = golden_plan_anchor("wine716ManagedDxvk");
+        let second = golden_plan_anchor("wine716DgVoodooDxvk");
+        let lease = registry
+            .begin_operation_opt(None, &ctx, &game, &first)
+            .await
+            .unwrap();
+        let old_identity = lease.supervisor_identity();
+        let old_session = Arc::downgrade(
+            &registry
+                .get_session(prefix.to_string_lossy().as_ref())
+                .unwrap(),
+        );
+        let mut child = registry
+            .launch(
+                None,
+                &lease,
+                test_invocation(&prefix, "/usr/bin/sleep", &["0.02"]),
+                &[],
+            )
+            .await
+            .unwrap();
+        child.wait().await.unwrap();
+        drop(child);
+        drop(lease);
+
+        let next = registry
+            .begin_operation_opt(None, &ctx, &game, &second)
+            .await
+            .unwrap();
+        assert_ne!(next.supervisor_identity(), old_identity);
+        assert!(
+            !verify_process_identity(&old_identity),
+            "old supervisor must be reaped"
+        );
+        assert_eq!(registry.plan_id_for_prefix(&prefix), Some(second.plan_id));
+        assert!(
+            old_session.upgrade().is_none(),
+            "closed sessions must not retain an ownership cycle"
+        );
+        drop(next);
+        assert!(registry.shutdown_all().await.is_empty());
+    }
+
+    #[tokio::test]
+    #[cfg(target_os = "linux")]
+    async fn preparation_quiesces_before_next_operation_with_another_graphics_plan() {
+        let prefix = test_prefix();
+        let registry = RunnerSessionRegistry::with_sidecar_for_test(
+            workspace_debug_sessiond().expect("build ro-sessiond first"),
+        );
+        let ctx = test_wine_context(&prefix);
+        let game = GameProcessHandle::new();
+        let first = golden_plan_anchor("wine716ManagedDxvk");
+        let second = golden_plan_anchor("wine716DgVoodooDxvk");
+        let mut op = crate::tools::runner_sessions::RunnerOperation::begin(
+            None, &registry, &game, &ctx, &first,
+        )
+        .await
+        .unwrap();
+        let identity = op.lease().unwrap().supervisor_identity();
+        op.run_ok(
+            test_invocation(&prefix, "/usr/bin/sleep", &["0.1"]),
+            "preparation",
+        )
+        .await
+        .unwrap();
+        op.quiesce().await.unwrap();
+        assert!(op.lease().is_none());
+        assert!(!verify_process_identity(&identity));
+        assert!(!registry.has_session(prefix.to_string_lossy().as_ref()));
+        let next = registry
+            .begin_operation_opt(None, &ctx, &game, &second)
+            .await
+            .unwrap();
+        drop(next);
+        assert!(registry.shutdown_all().await.is_empty());
+    }
+
+    #[tokio::test]
+    #[cfg(target_os = "linux")]
+    async fn plan_change_preserves_requests_and_each_client_lease() {
+        let prefix = test_prefix();
+        let registry = RunnerSessionRegistry::with_sidecar_for_test(
+            workspace_debug_sessiond().expect("build ro-sessiond first"),
+        );
+        let ctx = test_wine_context(&prefix);
+        let game = GameProcessHandle::new();
+        let first = golden_plan_anchor("wine716ManagedDxvk");
+        let second = golden_plan_anchor("wine716DgVoodooDxvk");
+        let lease = registry
+            .begin_operation_opt(None, &ctx, &game, &first)
+            .await
+            .unwrap();
+        let old_identity = lease.supervisor_identity();
+        let mut child = registry
+            .launch(
+                None,
+                &lease,
+                test_invocation(&prefix, "/usr/bin/sleep", &["0.3"]),
+                &[],
+            )
+            .await
+            .unwrap();
+        drop(lease);
+        assert!(registry
+            .begin_operation_opt(None, &ctx, &game, &second)
+            .await
+            .is_err());
+        assert!(verify_process_identity(&old_identity));
+        child.wait().await.unwrap();
+
+        let lease = registry
+            .begin_operation_opt(None, &ctx, &game, &first)
+            .await
+            .unwrap();
+        let client_a = registry.attach_client(&lease, "client-a").unwrap();
+        let client_b = registry.attach_client(&lease, "client-b").unwrap();
+        drop(lease);
+        drop(client_a);
+        assert!(registry
+            .begin_operation_opt(None, &ctx, &game, &second)
+            .await
+            .is_err());
+        let same = registry
+            .begin_operation_opt(None, &ctx, &game, &first)
+            .await
+            .unwrap();
+        assert_eq!(same.supervisor_identity(), old_identity);
+        drop(same);
+        drop(client_b);
+
+        let next = registry
+            .begin_operation_opt(None, &ctx, &game, &second)
+            .await
+            .unwrap();
+        assert!(!verify_process_identity(&old_identity));
+        drop(next);
+        assert!(registry.shutdown_all().await.is_empty());
+    }
+
+    #[tokio::test]
+    #[cfg(target_os = "linux")]
+    async fn immediate_retry_waits_for_shutdown_even_if_caller_is_cancelled() {
+        let prefix = test_prefix();
+        let registry = RunnerSessionRegistry::with_sidecar_for_test(
+            workspace_debug_sessiond().expect("build ro-sessiond first"),
+        );
+        let ctx = test_wine_context(&prefix);
+        std::fs::write(
+            ctx.resolved
+                .runner_path()
+                .parent()
+                .unwrap()
+                .join("wineserver"),
+            b"#!/bin/sh\nsleep 0.3\nexit 0\n",
+        )
+        .unwrap();
+        let game = GameProcessHandle::new();
+        let anchor = placeholder_anchor();
+        let key = prefix.to_string_lossy().to_string();
+        for _ in 0..3 {
+            let lease = registry
+                .begin_operation_opt(None, &ctx, &game, &anchor)
+                .await
+                .unwrap();
+            let old = registry.get_session(&key).unwrap();
+            let old_identity = lease.supervisor_identity();
+            drop(lease);
+            let shutdown = tokio::spawn({
+                let registry = registry.clone();
+                let ctx = ctx.clone();
+                async move { registry.shutdown_prefix(&ctx).await }
+            });
+            tokio::time::timeout(Duration::from_secs(2), async {
+                while *old.state.lock().unwrap() != SessionState::Stopping {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+            })
+            .await
+            .expect("shutdown must start");
+            shutdown.abort();
+            let _ = shutdown.await;
+
+            let next = tokio::time::timeout(
+                Duration::from_secs(5),
+                registry.begin_operation_opt(None, &ctx, &game, &anchor),
+            )
+            .await
+            .expect("retry must complete")
+            .expect("retry must wait instead of failing");
+            assert!(!verify_process_identity(&old_identity));
+            let new_identity = next.supervisor_identity();
+            assert_ne!(new_identity, old_identity);
+            registry.remove_session_if_same(&key, &old);
+            registry
+                .shutdown_session(&key, &old, None, ShutdownCause::Forced)
+                .await
+                .unwrap();
+            assert!(
+                registry.has_session(&key),
+                "stale cleanup must preserve the new session"
+            );
+            assert!(verify_process_identity(&new_identity));
+            drop(next);
+        }
+        assert!(registry.shutdown_all().await.is_empty());
     }
 
     #[tokio::test]

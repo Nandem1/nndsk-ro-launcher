@@ -84,4 +84,32 @@ describe('servers store', () => {
       runner: '/usr/bin/wine',
     })
   })
+
+  it('discards an older server read and preserves the current selection', async () => {
+    const older = deferred<ServerConfig[]>()
+    vi.spyOn(api, 'listServers')
+      .mockReturnValueOnce(older.promise)
+      .mockResolvedValueOnce([server, { ...server, id: 'second' }])
+    const first = useServersStore.getState().loadServers()
+    useServersStore.getState().selectServer('second')
+    await useServersStore.getState().loadServers()
+    older.resolve([])
+    await first
+    expect(useServersStore.getState()).toMatchObject({
+      selectedId: 'second',
+      loading: false,
+    })
+    expect(useServersStore.getState().servers).toHaveLength(2)
+  })
+
+  it('discards a disk snapshot captured before a local edit', async () => {
+    const pending = deferred<ServerConfig[]>()
+    vi.spyOn(api, 'listServers').mockReturnValueOnce(pending.promise)
+    vi.spyOn(api, 'saveServers').mockResolvedValue()
+    const read = useServersStore.getState().loadServers()
+    await useServersStore.getState().updateServer(server.id, { name: 'New' })
+    pending.resolve([server])
+    await read
+    expect(useServersStore.getState().servers[0].name).toBe('New')
+  })
 })

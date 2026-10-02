@@ -1,4 +1,7 @@
-use ro_tools_linux::find_prefix_processes;
+use ro_tools_linux::{
+    capture_process_identity, find_prefix_processes, is_descendant_of, is_prefix_leftover_process,
+    verify_process_identity, ProcessIdentity,
+};
 use std::sync::Once;
 use tauri::AppHandle;
 use tokio::process::Child;
@@ -16,11 +19,56 @@ use super::{
 
 static ROLLBACK_LOG_ONCE: Once = Once::new();
 
+/// Called while an exclusive prefix guard is held: no other launcher program can enter.
+/// Wine services may persist, but a tool or its handoff child keeps ownership until it exits.
+pub(crate) async fn wait_for_prefix_programs(prefix: &str, supervisor: Option<ProcessIdentity>) {
+    loop {
+        let mut identities = find_prefix_processes(prefix);
+        // A handoff child may clear WINEPREFIX. The subreaper remains its stable ancestor.
+        if let Some(supervisor) = supervisor.filter(verify_process_identity) {
+            if let Ok(entries) = std::fs::read_dir("/proc") {
+                for entry in entries.flatten() {
+                    let Some(pid) = entry
+                        .file_name()
+                        .to_str()
+                        .and_then(|name| name.parse().ok())
+                    else {
+                        continue;
+                    };
+                    if pid == supervisor.pid {
+                        continue;
+                    }
+                    let Some(identity) = capture_process_identity(pid) else {
+                        continue;
+                    };
+                    if is_descendant_of(pid, supervisor.pid)
+                        && verify_process_identity(&supervisor)
+                        && verify_process_identity(&identity)
+                    {
+                        identities.push(identity);
+                    }
+                }
+            }
+        }
+        let active = identities.into_iter().any(|identity| {
+            identity.pid != std::process::id()
+                && verify_process_identity(&identity)
+                && !is_prefix_leftover_process(identity.pid)
+                && verify_process_identity(&identity)
+        });
+        if !active {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
+}
+
 pub struct RunnerOperation {
     app: Option<AppHandle>,
     sessions: RunnerSessionRegistry,
     ctx: WineContext,
     lease: Option<OperationLease>,
+    supervised: bool,
 }
 
 impl RunnerOperation {
@@ -54,11 +102,13 @@ impl RunnerOperation {
             }
             None
         };
+        let supervised = lease.is_some();
         Ok(Self {
             app: app.cloned(),
             sessions: sessions.clone(),
             ctx: ctx.clone(),
             lease,
+            supervised,
         })
     }
 
@@ -116,27 +166,41 @@ impl RunnerOperation {
         error_context: &str,
     ) -> Result<(), String> {
         let code = self.run(invocation, error_context).await?;
-        let active = find_prefix_processes(&self.ctx.prefix).len();
-        if !shutdown_is_complete(code == 0, active) {
-            return Err(format!(
-                "{} no pudo detener el entorno (código {code})",
-                self.ctx.resolved.kind_label()
-            ));
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            let active = find_prefix_processes(&self.ctx.prefix).len();
+            if active == 0 {
+                return Ok(());
+            }
+            if tokio::time::Instant::now() >= deadline {
+                return Err(format!(
+                    "{} no pudo detener el entorno (código {code}; {active} procesos activos)",
+                    self.ctx.resolved.kind_label()
+                ));
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
         }
-        Ok(())
     }
 
-    /// Quiesces every process owned by this prefix before transactional filesystem rollback.
+    /// Quiesces every process owned by this prefix before completing setup or restoring files.
     ///
     /// In supervised mode this consumes the operation lease and closes the whole sidecar, whose
     /// `Stopped` event is only emitted after `waitpid` reaches `ECHILD`. Direct rollback retains the
     /// legacy wineserver shutdown plus an explicit prefix-process check.
-    pub async fn quiesce_for_restore(&mut self) -> Result<(), String> {
-        if self.lease.take().is_some() {
-            self.sessions
-                .shutdown_prefix(&self.ctx)
-                .await
-                .map_err(|error| error.message)?;
+    pub async fn quiesce(&mut self) -> Result<(), String> {
+        if self.supervised {
+            // Repeated cleanup must never switch to a prefix-wide direct shutdown.
+            drop(self.lease.take());
+            if self
+                .sessions
+                .plan_id_for_prefix(std::path::Path::new(&self.ctx.prefix))
+                .is_some()
+            {
+                self.sessions
+                    .shutdown_prefix(&self.ctx)
+                    .await
+                    .map_err(|error| error.message)?;
+            }
         } else if !find_prefix_processes(&self.ctx.prefix).is_empty() {
             self.run_shutdown_ok(
                 self.ctx.resolved.shutdown_invocation(&self.ctx.prefix)?,
@@ -149,9 +213,7 @@ impl RunnerOperation {
         if remaining == 0 {
             Ok(())
         } else {
-            Err(format!(
-                "quedan {remaining} proceso(s) usando el prefix reconstruido"
-            ))
+            Err(format!("quedan {remaining} proceso(s) usando el entorno"))
         }
     }
 
@@ -185,6 +247,14 @@ pub enum SpawnedRunner {
 }
 
 impl SpawnedRunner {
+    pub fn controller_identity(&self) -> Option<ro_tools_linux::ProcessIdentity> {
+        match self {
+            Self::Direct(child) => child
+                .id()
+                .and_then(ro_tools_linux::capture_process_identity),
+            Self::Supervised(process) => Some(process.controller_identity()),
+        }
+    }
     pub fn controller_pid(&self) -> Option<u32> {
         match self {
             Self::Direct(child) => child.id(),
@@ -209,7 +279,12 @@ impl SpawnedRunner {
         match self {
             Self::Direct(child) => {
                 if child.try_wait().ok().flatten().is_none() {
-                    let _ = child.kill().await;
+                    if let Some(identity) = child
+                        .id()
+                        .and_then(ro_tools_linux::capture_process_identity)
+                    {
+                        let _ = ro_tools_linux::signal_process_identity(&identity, libc::SIGKILL);
+                    }
                 }
                 let _ = child.wait().await;
                 Ok(())
@@ -268,8 +343,4 @@ fn exit_code_from_process_exit(exit: &ProcessExit, error_context: &str) -> i32 {
     }
     let _ = error_context;
     -1
-}
-
-fn shutdown_is_complete(status_success: bool, active_processes: usize) -> bool {
-    status_success || active_processes == 0
 }

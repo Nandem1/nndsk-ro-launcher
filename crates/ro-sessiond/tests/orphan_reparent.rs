@@ -11,6 +11,13 @@ use std::time::{Duration, Instant};
 
 const MAGIC: u32 = 0x015F_F908;
 
+fn sessiond_binary() -> PathBuf {
+    // Also exercise the exact sidecar extracted from a bundle, not only Cargo's debug binary.
+    std::env::var_os("RO_SESSIOND_TEST_BINARY")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(env!("CARGO_BIN_EXE_ro-sessiond")))
+}
+
 fn read_ptrace_scope() -> Option<u32> {
     fs::read_to_string("/proc/sys/kernel/yama/ptrace_scope")
         .ok()?
@@ -98,7 +105,7 @@ struct SessionClient {
 
 impl SessionClient {
     fn spawn(prefix: &Path, parent_pid: u32) -> Self {
-        let sessiond = env!("CARGO_BIN_EXE_ro-sessiond");
+        let sessiond = sessiond_binary();
         let mut child = Command::new(sessiond)
             .arg("--prefix")
             .arg(prefix)
@@ -202,6 +209,71 @@ fn wine_spec(prefix: &Path, program: &Path, role: Option<&str>) -> ProcessSpec {
         cwd: prefix.display().to_string(),
         env,
     }
+}
+
+fn test_empty_tree_shutdown_completes_before_grace_and_live_children_keep_their_grace() {
+    let dir = std::env::temp_dir().join(format!("ro-sessiond-grace-{}", std::process::id()));
+    fs::create_dir_all(&dir).unwrap();
+    let prefix = canonicalize_prefix(&dir);
+    for live_child in [false, true] {
+        let mut client = SessionClient::spawn(&prefix, std::process::id());
+        client.send(&SessionRequest::Hello {
+            protocol_version: PROTOCOL_VERSION,
+        });
+        client
+            .wait_event(Duration::from_secs(5), |ev| {
+                matches!(ev, SessionEvent::Ready { .. })
+            })
+            .unwrap();
+        let supervisor = capture_process_identity(client.child.id()).unwrap();
+        if live_child {
+            let mut spec = wine_spec(&prefix, Path::new("/usr/bin/sleep"), None);
+            spec.args = vec!["0.8".into()];
+            client.send(&SessionRequest::Launch {
+                request_id: "550e8400-e29b-41d4-a716-446655440091".into(),
+                spec,
+            });
+            client
+                .wait_event(Duration::from_secs(5), |ev| {
+                    matches!(ev, SessionEvent::LaunchAccepted { .. })
+                })
+                .unwrap();
+        }
+        let started = Instant::now();
+        client.send(&SessionRequest::Shutdown {
+            request_id: "550e8400-e29b-41d4-a716-446655440092".into(),
+            shutdown_spec: wine_spec(&prefix, Path::new("/usr/bin/true"), None),
+            grace_ms: 10_000,
+        });
+        if live_child {
+            let exit = client
+                .wait_event(Duration::from_secs(3), |ev| {
+                    matches!(ev, SessionEvent::ControllerExited { .. })
+                })
+                .unwrap();
+            assert!(matches!(
+                exit,
+                SessionEvent::ControllerExited {
+                    exit_code: Some(0),
+                    signal: None,
+                    ..
+                }
+            ));
+            assert!(
+                started.elapsed() >= Duration::from_millis(600),
+                "live child must finish naturally"
+            );
+        }
+        client
+            .wait_event(Duration::from_secs(3), |ev| {
+                matches!(ev, SessionEvent::Stopped)
+            })
+            .expect("empty tree must not wait ten seconds");
+        assert!(client.child.wait().unwrap().success());
+        assert!(!verify_process_identity(&supervisor));
+        assert!(zombie_children_of(supervisor.pid).is_empty());
+    }
+    fs::remove_dir(&dir).unwrap();
 }
 
 fn test_handshake_and_orphan() {
@@ -374,7 +446,7 @@ fn test_wrong_parent_pid() {
     let dir = std::env::temp_dir().join(format!("ro-sessiond-bad-ppid-{}", std::process::id()));
     let _ = fs::create_dir_all(&dir);
     let prefix = canonicalize_prefix(&dir);
-    let sessiond = env!("CARGO_BIN_EXE_ro-sessiond");
+    let sessiond = sessiond_binary();
     let mut child = Command::new(sessiond)
         .arg("--prefix")
         .arg(&prefix)
@@ -477,6 +549,7 @@ fn main() {
     test_incompatible_hello();
     test_controller_exited_before_inherited_pipe_closes();
     test_batched_launch_lines_are_drained_without_another_write();
+    test_empty_tree_shutdown_completes_before_grace_and_live_children_keep_their_grace();
     test_handshake_and_orphan();
     test_hundred_true_cycles();
     eprintln!("orphan_reparent integration tests passed");

@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::process::Stdio;
 use std::time::Duration;
 
 use ro_tools_linux::{find_prefix_processes, is_prefix_leftover_process, ProcessIdentity};
@@ -6,7 +7,7 @@ use tokio::time::{sleep, timeout};
 
 use crate::state::GameProcessHandle;
 use crate::utils::{
-    inspect_prefix, pipe_output, resolve_runner, OperationGuard, WineContext, PREFIX_SCHEMA_V3,
+    inspect_prefix, resolve_runner, OperationGuard, WineContext, PREFIX_SCHEMA_V3,
     PREFIX_SCHEMA_VERSION,
 };
 
@@ -184,13 +185,39 @@ async fn shutdown_foreign_leftover_once(ctx: &WineContext) -> Result<(), Session
 async fn spawn_shutdown_command(
     invocation: crate::utils::RunnerInvocation,
 ) -> Result<(), SessionError> {
+    spawn_shutdown_command_with_timeout(invocation, LEFTOVER_SHUTDOWN_WAIT).await
+}
+
+async fn spawn_shutdown_command_with_timeout(
+    invocation: crate::utils::RunnerInvocation,
+    wait: Duration,
+) -> Result<(), SessionError> {
     let mut cmd = invocation.into_command();
-    pipe_output(&mut cmd);
+    // No reader owns these streams. Piping them can block shutdown before wait completes.
+    cmd.stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .kill_on_drop(true);
     let mut child = cmd
         .spawn()
         .map_err(|error| SessionError::internal(format!("leftover shutdown spawn: {error}")))?;
-    let _ = timeout(LEFTOVER_SHUTDOWN_WAIT, child.wait()).await;
-    Ok(())
+    match timeout(wait, child.wait()).await {
+        Ok(Ok(status)) if status.success() => Ok(()),
+        Ok(Ok(status)) => Err(SessionError::internal(format!(
+            "leftover shutdown failed: {status}"
+        ))),
+        Ok(Err(error)) => Err(SessionError::internal(format!(
+            "leftover shutdown wait: {error}"
+        ))),
+        Err(_) => {
+            // This is an unreaped child handle, not an arbitrary PID. Kill and reap before
+            // releasing bootstrap ownership; cancellation is covered by kill_on_drop.
+            child.kill().await.map_err(|error| {
+                SessionError::internal(format!("leftover shutdown timeout cleanup: {error}"))
+            })?;
+            Err(SessionError::internal("leftover shutdown timed out"))
+        }
+    }
 }
 
 async fn wait_for_prefix_clear(prefix: &str, game: &GameProcessHandle) -> Result<(), SessionError> {
@@ -228,6 +255,56 @@ mod tests {
     use super::*;
     use crate::state::GameProcessHandle;
     use ro_tools_linux::ProcessIdentity;
+
+    fn shutdown_fixture(script: &str) -> crate::utils::RunnerInvocation {
+        crate::utils::RunnerInvocation {
+            program: "/bin/sh".into(),
+            args: vec!["-c".into(), script.into()],
+            cwd: std::env::temp_dir(),
+            env: vec![],
+        }
+    }
+
+    #[tokio::test]
+    async fn shutdown_output_cannot_fill_an_unread_pipe() {
+        spawn_shutdown_command_with_timeout(
+            shutdown_fixture("head -c 262144 /dev/zero; head -c 262144 /dev/zero >&2"),
+            Duration::from_secs(2),
+        )
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn shutdown_timeout_is_an_error_and_reaps_the_owned_child() {
+        let marker = std::env::temp_dir().join(format!("ro-shutdown-{}", uuid::Uuid::new_v4()));
+        let script = format!("echo $$ > '{}'; exec sleep 30", marker.display());
+        let error = spawn_shutdown_command_with_timeout(
+            shutdown_fixture(&script),
+            Duration::from_millis(200),
+        )
+        .await
+        .unwrap_err();
+        assert!(error.message.contains("timed out"));
+        let pid: u32 = std::fs::read_to_string(&marker)
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        assert!(!Path::new(&format!("/proc/{pid}")).exists());
+        std::fs::remove_file(marker).unwrap();
+    }
+
+    #[tokio::test]
+    async fn shutdown_nonzero_status_is_not_discarded() {
+        let error = spawn_shutdown_command_with_timeout(
+            shutdown_fixture("exit 17"),
+            Duration::from_secs(2),
+        )
+        .await
+        .unwrap_err();
+        assert!(error.message.contains("17"));
+    }
 
     fn identity(pid: u32) -> ProcessIdentity {
         ProcessIdentity {

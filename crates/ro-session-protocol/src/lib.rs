@@ -72,6 +72,7 @@ pub enum SessionEvent {
     LaunchAccepted {
         request_id: String,
         controller_pid: u32,
+        controller_start_time: u64,
     },
     ShutdownAccepted {
         request_id: String,

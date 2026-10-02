@@ -98,6 +98,8 @@ pub async fn spawn_supervisor(
         &parent_pid,
     ]);
     sanitize_appimage_env(&mut cmd);
+    cmd.env_remove("WINEPREFIX");
+    cmd.env_remove("STEAM_COMPAT_DATA_PATH");
     cmd.stdin(std::process::Stdio::piped());
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::piped());

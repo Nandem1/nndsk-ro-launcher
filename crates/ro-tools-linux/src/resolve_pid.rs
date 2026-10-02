@@ -1,7 +1,7 @@
 use ro_tools_core::ClientProfile;
 
 use crate::proc_memory::{address_in_maps, ProcMemoryReader};
-use crate::wine_process::{find_game_processes, normalize_prefix};
+use crate::wine_process::{find_game_processes, normalize_prefix, verify_process_identity};
 
 /// Selecciona el mejor PID del cliente RO validando memoria cuando es posible.
 pub fn resolve_best_game_pid(
@@ -14,7 +14,7 @@ pub fn resolve_best_game_pid(
     let candidates = find_game_processes(launcher_pid, exe_path, &prefix);
 
     for candidate in &candidates {
-        let Ok(reader) = ProcMemoryReader::open(candidate.pid) else {
+        let Ok(reader) = ProcMemoryReader::open_for_identity(candidate.identity) else {
             continue;
         };
 
@@ -54,7 +54,8 @@ pub fn resolve_best_game_pid(
     }
 
     candidates
-        .first()
+        .iter()
+        .find(|candidate| verify_process_identity(&candidate.identity))
         .map(|c| (c.pid, format!("{} (sin validar memoria)", c.reason)))
 }
 

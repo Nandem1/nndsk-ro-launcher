@@ -14,10 +14,10 @@ use crate::utils::audio;
 use crate::utils::gecko::install_gecko_for_runner;
 use crate::utils::{
     dxvk_cache_path, dxvk_config_path, dxvk_log_path, emit_log, emit_log_opt, emit_progress,
-    inspect_prefix, is_v3_managed_prefix_path, resolve_runner, write_prefix_manifest,
-    write_prefix_manifest_v3, OperationGuard, PrefixFingerprintEnvelope, PrefixManifest,
-    PrefixManifestV3, PrefixScope, ResolvedRunner, WineContext, WineSyncMode, PREFIX_SCHEMA_V3,
-    PREFIX_SCHEMA_VERSION,
+    ensure_custom_setup_allowed, ensure_managed_reset_allowed, inspect_prefix,
+    is_v3_managed_prefix_path, resolve_runner, write_prefix_manifest, write_prefix_manifest_v3,
+    OperationGuard, PrefixFingerprintEnvelope, PrefixManifest, PrefixManifestV3, PrefixScope,
+    ResolvedRunner, WineContext, WineSyncMode, PREFIX_SCHEMA_V3, PREFIX_SCHEMA_VERSION,
 };
 
 pub const MANAGED_DXVK_COMPONENT: &str = "dxvk-2.6.2";
@@ -69,13 +69,6 @@ pub async fn setup_runtime_prefix(
     requirements: RuntimeRequirements,
 ) -> Result<(), String> {
     let root = Path::new(&ctx.prefix);
-    let clean_managed_start = ctx.location.managed
-        && (!root.exists()
-            || (root.is_dir()
-                && root
-                    .read_dir()
-                    .is_ok_and(|mut entries| entries.next().is_none())));
-
     let operational_plan = resolve_operational_plan(OperationalRuntimeInput {
         server_runner: None,
         default_runner: None,
@@ -87,15 +80,23 @@ pub async fn setup_runtime_prefix(
     let anchor = operational_session_anchor(ctx, operational_plan.as_ref(), requirements.webview2);
     let mut op = RunnerOperation::begin(Some(app), sessions, game, ctx, &anchor).await?;
     let _operation = OperationGuard::acquire("prefix", root)?;
+    // Runner startup may await another operation. Re-evaluate ownership and cleanup authority
+    // after taking the filesystem guard, never from a pre-lock snapshot of an empty directory.
+    ensure_custom_setup_allowed(&ctx.location)?;
+    if ctx.location.managed {
+        ensure_managed_reset_allowed(&ctx.location)?;
+    }
+    let clean_managed_start = ctx.location.managed && !prefix_has_state(&ctx.prefix);
 
     let result = async {
         setup_resolved_prefix(app, &op, requirements).await?;
+        op.quiesce().await?;
         write_runtime_manifest(ctx, requirements)
     }
     .await;
 
     if result.is_err() && clean_managed_start && root.exists() && !root.is_symlink() {
-        match op.quiesce_for_restore().await {
+        match op.quiesce().await {
             Ok(()) => {
                 if let Err(error) = std::fs::remove_dir_all(root) {
                     let _ = emit_log(
@@ -116,6 +117,9 @@ pub async fn setup_runtime_prefix(
                 );
             }
         }
+    }
+    if result.is_ok() {
+        emit_progress(app, "¡Listo!", 100)?;
     }
     result
 }
@@ -140,6 +144,7 @@ pub async fn reset_runtime_prefix(
     let anchor = operational_session_anchor(ctx, operational_plan.as_ref(), requirements.webview2);
     let mut op = RunnerOperation::begin(Some(app), sessions, game, ctx, &anchor).await?;
     let _operation = OperationGuard::acquire("prefix", Path::new(&ctx.prefix))?;
+    ensure_managed_reset_allowed(&ctx.location)?;
 
     shutdown_existing_prefix_for_reset(app, &op, ctx).await?;
 
@@ -159,6 +164,7 @@ pub async fn reset_runtime_prefix(
 
     let result = async {
         setup_resolved_prefix(app, &op, requirements).await?;
+        op.quiesce().await?;
         write_runtime_manifest(ctx, requirements)
     }
     .await;
@@ -176,10 +182,11 @@ pub async fn reset_runtime_prefix(
                     )?;
                 }
             }
+            emit_progress(app, "¡Listo!", 100)?;
             Ok(())
         }
         Err(error) => {
-            if let Err(cleanup_error) = op.quiesce_for_restore().await {
+            if let Err(cleanup_error) = op.quiesce().await {
                 let backup_note = backup
                     .as_ref()
                     .map(|path| {
@@ -285,7 +292,7 @@ async fn setup_resolved_prefix(
     emit_progress(app, "Configurando audio...", 96)?;
     audio::ensure_audio_driver(Some(app), op).await?;
 
-    emit_progress(app, "¡Listo!", 100)?;
+    emit_progress(app, "Cerrando los procesos de preparación...", 98)?;
     Ok(())
 }
 
@@ -604,11 +611,13 @@ async fn shutdown_existing_prefix_for_reset(
         return Ok(());
     }
 
-    op.run_shutdown_ok(
-        ctx.resolved.shutdown_invocation(&ctx.prefix)?,
-        "apagado del entorno",
-    )
-    .await?;
+    let shutdown_error = op
+        .run_shutdown_ok(
+            ctx.resolved.shutdown_invocation(&ctx.prefix)?,
+            "apagado del entorno",
+        )
+        .await
+        .err();
     if find_prefix_processes(&ctx.prefix).is_empty() {
         return Ok(());
     }
@@ -671,10 +680,9 @@ async fn shutdown_existing_prefix_for_reset(
         ResetShutdownDecision::LegacyActive { count } => Err(format!(
             "El entorno no registra qué runner lo creó y aún tiene {count} proceso(s) activo(s). Ciérralos antes de rearmar"
         )),
-        ResetShutdownDecision::StillActive => Err(
-            "No se pudo detener el entorno antes de rearmarlo; cierra los procesos activos"
-                .to_string(),
-        ),
+        ResetShutdownDecision::StillActive => Err(shutdown_error.unwrap_or_else(||
+            "No se pudo detener el entorno antes de rearmarlo; cierra los procesos activos".to_string()
+        )),
     }
 }
 
@@ -721,11 +729,6 @@ fn plan_reset_shutdown(
             error: format!("No se pudo resolver {}", view.runner_path),
         },
     }
-}
-
-#[allow(dead_code)] // usado en tests; la lógica de apagado vive en RunnerOperation
-fn shutdown_is_complete(status_success: bool, active_processes: usize) -> bool {
-    status_success || active_processes == 0
 }
 
 #[cfg(test)]
@@ -835,13 +838,6 @@ mod tests {
             plan_reset_shutdown(3, None),
             ResetShutdownDecision::LegacyActive { count: 3 }
         );
-    }
-
-    #[test]
-    fn shutdown_is_idempotent_when_the_prefix_is_already_stopped() {
-        assert!(shutdown_is_complete(false, 0));
-        assert!(shutdown_is_complete(true, 1));
-        assert!(!shutdown_is_complete(false, 1));
     }
 
     #[test]

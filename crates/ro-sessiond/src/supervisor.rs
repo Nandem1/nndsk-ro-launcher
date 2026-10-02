@@ -180,10 +180,14 @@ impl Supervisor {
             },
         );
 
+        let controller_start_time = ro_tools_linux::capture_process_identity(controller_pid)
+            .ok_or_else(|| "failed to capture unreaped controller identity".to_string())?
+            .start_time;
         self.writer
             .emit(&SessionEvent::LaunchAccepted {
                 request_id,
                 controller_pid,
+                controller_start_time,
             })
             .map_err(|e| e.to_string())?;
         Ok(())
@@ -317,6 +321,14 @@ impl Supervisor {
             return;
         }
         self.drain_reap_events();
+
+        // Grace protects live descendants. ECHILD proves cleanup is already complete; waiting
+        // for the deadline here only holds the prefix in Stopping during a normal retry.
+        if self.last_wait_echild {
+            self.join_all_pending_streams();
+            self.phase = SessionPhase::Stopped;
+            return;
+        }
 
         let deadline = self.shutdown_deadline.unwrap_or_else(Instant::now);
         let now = Instant::now();
@@ -582,7 +594,7 @@ mod tests {
             } if stage == "shutdown"
         )));
         sup.advance_shutdown();
-        assert!(sup.term_sent());
+        assert!(sup.term_sent() || sup.phase == SessionPhase::Stopped);
         let _ = fs::remove_dir_all(&dir);
     }
 }

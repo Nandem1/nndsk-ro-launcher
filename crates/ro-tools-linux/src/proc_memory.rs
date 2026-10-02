@@ -4,7 +4,7 @@ use std::os::unix::fs::FileExt;
 use std::sync::Mutex;
 use thiserror::Error;
 
-use crate::wine_process::ProcessIdentity;
+use crate::wine_process::{capture_process_identity, verify_process_identity, ProcessIdentity};
 
 const SCAN_CHUNK_SIZE: usize = 1024 * 1024;
 const MAX_SCAN_CANDIDATES: usize = 2_000_000;
@@ -70,16 +70,26 @@ pub struct MemoryReadDiagnostic {
 #[derive(Debug)]
 pub struct ProcMemoryReader {
     pid: u32,
+    identity: ProcessIdentity,
     file: Mutex<Option<File>>,
     mem_open_errno: Option<i32>,
 }
 
 impl ProcMemoryReader {
     pub fn open(pid: u32) -> Result<Self, ProcMemoryError> {
-        if fs::metadata(format!("/proc/{pid}")).is_err() {
+        let identity = capture_process_identity(pid).ok_or_else(|| ProcMemoryError::Open {
+            pid,
+            message: "proceso no encontrado".into(),
+        })?;
+        Self::open_for_identity(identity)
+    }
+
+    pub fn open_for_identity(identity: ProcessIdentity) -> Result<Self, ProcMemoryError> {
+        let pid = identity.pid;
+        if !verify_process_identity(&identity) {
             return Err(ProcMemoryError::Open {
                 pid,
-                message: "proceso no encontrado".into(),
+                message: "identidad de proceso desactualizada".into(),
             });
         }
 
@@ -88,8 +98,15 @@ impl ProcMemoryReader {
             Ok(file) => (Some(file), None),
             Err(error) => (None, error.raw_os_error()),
         };
+        if !verify_process_identity(&identity) {
+            return Err(ProcMemoryError::Open {
+                pid,
+                message: "identidad de proceso desactualizada".into(),
+            });
+        }
         Ok(Self {
             pid,
+            identity,
             file: Mutex::new(file),
             mem_open_errno,
         })
@@ -104,7 +121,7 @@ impl ProcMemoryReader {
     }
 
     pub fn address_mapped(&self, address: u32) -> bool {
-        address_in_maps(self.pid, address)
+        verify_process_identity(&self.identity) && address_in_maps(self.pid, address)
     }
 
     pub fn probe_stats(&self, hp_base: u32) -> Result<(u32, u32, u32, u32), ToolsError> {
@@ -125,12 +142,18 @@ impl ProcMemoryReader {
 
     /// Intenta leer exactamente `buf.len()` bytes vía `process_vm_readv` sin fallback.
     pub fn try_vm_read(&self, address: u32, buf: &mut [u8]) -> Result<usize, i32> {
+        if !verify_process_identity(&self.identity) {
+            return Err(libc::ESRCH);
+        }
         read_via_vm(self.pid, address, buf)
     }
 
     /// Intenta leer vía `/proc/mem` sin usar `process_vm_readv`.
     pub fn try_proc_mem_read(&self, address: u32, buf: &mut [u8]) -> Result<usize, i32> {
         let guard = self.file.lock().map_err(|_| -1)?;
+        if !verify_process_identity(&self.identity) {
+            return Err(libc::ESRCH);
+        }
         let Some(file) = guard.as_ref() else {
             return Err(self.mem_open_errno.unwrap_or(libc::EACCES));
         };
@@ -234,7 +257,7 @@ pub fn scan_writable_u32_with_reader(
             let chunk = &mut buffer[..requested];
             let address_u32 = address as u32;
             match read_bytes_at(
-                pid,
+                reader.identity,
                 address_u32,
                 chunk,
                 &reader.file,
@@ -307,7 +330,7 @@ pub fn find_all_writable_bytes_with_reader(
             let remaining = (region_end - address) as usize;
             let requested = remaining.min(buffer.len());
             match read_bytes_at(
-                pid,
+                reader.identity,
                 address as u32,
                 &mut buffer[..requested],
                 &reader.file,
@@ -406,12 +429,18 @@ fn scan_aligned_chunk(start: u32, bytes: &[u8], needle: &[u8; 4], output: &mut V
 
 impl MemoryReader for ProcMemoryReader {
     fn read_u32(&self, address: u32) -> Result<u32, ToolsError> {
-        read_u32_at(self.pid, address, &self.file, self.mem_open_errno)
+        read_u32_at(self.identity, address, &self.file, self.mem_open_errno)
     }
 
     fn read_string(&self, address: u32, max_len: usize) -> Result<String, ToolsError> {
         let mut buf = vec![0u8; max_len];
-        let n = read_bytes_at(self.pid, address, &mut buf, &self.file, self.mem_open_errno)?;
+        let n = read_bytes_at(
+            self.identity,
+            address,
+            &mut buf,
+            &self.file,
+            self.mem_open_errno,
+        )?;
         let end = buf[..n].iter().position(|&b| b == 0).unwrap_or(n);
         Ok(String::from_utf8_lossy(&buf[..end]).into_owned())
     }
@@ -419,7 +448,7 @@ impl MemoryReader for ProcMemoryReader {
     fn read_u32_slice(&self, address: u32, len: usize) -> Result<Vec<u32>, ToolsError> {
         let mut bytes = vec![0u8; len * 4];
         let read = read_bytes_at(
-            self.pid,
+            self.identity,
             address,
             &mut bytes,
             &self.file,
@@ -441,24 +470,31 @@ impl MemoryReader for ProcMemoryReader {
 }
 
 fn read_u32_at(
-    pid: u32,
+    identity: ProcessIdentity,
     address: u32,
     file: &Mutex<Option<File>>,
     mem_open_errno: Option<i32>,
 ) -> Result<u32, ToolsError> {
     let mut buf = [0u8; 4];
-    read_bytes_at(pid, address, &mut buf, file, mem_open_errno)?;
+    read_bytes_at(identity, address, &mut buf, file, mem_open_errno)?;
     Ok(u32::from_le_bytes(buf))
 }
 
 fn read_bytes_at(
-    pid: u32,
+    identity: ProcessIdentity,
     address: u32,
     buf: &mut [u8],
     file: &Mutex<Option<File>>,
     mem_open_errno: Option<i32>,
 ) -> Result<usize, ToolsError> {
-    let vm_errno = match read_via_vm(pid, address, buf) {
+    let stale_error = || ToolsError::MemoryRead {
+        address,
+        message: "identidad de proceso desactualizada".into(),
+    };
+    if !verify_process_identity(&identity) {
+        return Err(stale_error());
+    }
+    let vm_errno = match read_via_vm(identity.pid, address, buf) {
         Ok(n) => return Ok(n),
         Err(errno) => errno,
     };
@@ -466,6 +502,9 @@ fn read_bytes_at(
     let mut guard = file
         .lock()
         .map_err(|_| ToolsError::Other("memory lock poisoned".into()))?;
+    if !verify_process_identity(&identity) {
+        return Err(stale_error());
+    }
     let Some(file) = guard.as_mut() else {
         return Err(ToolsError::MemoryRead {
             address,
@@ -631,6 +670,23 @@ mod tests {
         let pid = std::process::id();
         let reader = ProcMemoryReader::open(pid).expect("self exists");
         assert_eq!(reader.pid(), pid);
+    }
+
+    #[test]
+    fn stale_identity_rejects_every_reader_backend_even_when_pid_exists() {
+        let mut reader = ProcMemoryReader::open(std::process::id()).unwrap();
+        reader.identity.start_time += 1;
+        assert!(ProcMemoryReader::open_for_identity(reader.identity).is_err());
+        let mut buffer = [0u8; 4];
+        assert_eq!(reader.try_vm_read(0, &mut buffer), Err(libc::ESRCH));
+        assert_eq!(reader.try_proc_mem_read(0, &mut buffer), Err(libc::ESRCH));
+        assert!(reader
+            .read_u32(0)
+            .unwrap_err()
+            .to_string()
+            .contains("desactualizada"));
+        assert!(reader.read_string(0, 4).is_err());
+        assert!(reader.read_u32_slice(0, 4).is_err());
     }
 
     #[test]

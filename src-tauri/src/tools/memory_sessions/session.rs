@@ -56,7 +56,7 @@ impl MemorySession {
         if capture_process_identity(identity.pid).as_ref() != Some(&identity) {
             return Err("El proceso del cliente ya no es válido".into());
         }
-        let reader = ProcMemoryReader::open(identity.pid)
+        let reader = ProcMemoryReader::open_for_identity(identity)
             .map_err(|error| format!("No se pudo abrir memoria: {error}"))?;
         let ancestor_pid = match ancestor {
             MemoryAncestor::Supervisor(id) | MemoryAncestor::Launcher(id) => id,

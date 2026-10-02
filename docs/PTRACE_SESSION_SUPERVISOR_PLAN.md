@@ -87,10 +87,19 @@ Eventos:
 - `ShutdownAccepted`, `Idle`, `Stopped`;
 - `Error { requestId?, stage, errno?, message }`.
 
+`LaunchAccepted` lleva `controllerPid` y `controllerStartTime`: el supervisor captura la identidad
+antes de reap, y el launcher no vuelve a inferirla de un PID recibido tarde. El sidecar y el launcher
+se distribuyen juntos; un sidecar anterior sin ese campo falla explícitamente, no usa PID-only.
+
 El lector admite mensajes parciales y varios mensajes en una lectura, limita memoria y descarta una
 línea sobredimensionada sin consumir la siguiente. Un único writer serializa eventos. EOF, JSON
 inválido, segundo `Hello`, versión incompatible o cierre inesperado fallan la sesión y despiertan
 todos los waiters; no dejan futures esperando indefinidamente.
+
+El writer del launcher completa cada frame bajo un único lock aunque se cancele su caller. La
+escritura tiene límite de tamaño y deadline de 10 s; un timeout falla el protocolo, no permite
+concatenar otro request a un JSON parcial. Los hooks de ownership corren antes de resolver los
+waiters. Un exit recibido después de cancelar un waiter queda disponible para el siguiente wait.
 
 ### `ProcessSpec`
 
@@ -118,7 +127,10 @@ begin_operation(prefix, runner, plan_id)
 ```
 
 El registry se indexa por prefix canónico. Una entrada fija runner kind/path y `plan_id`; un intento
-de usar otro runner o plan mientras está activa se rechaza sin matar la sesión existente.
+de usar otro runner se rechaza sin matar la sesión existente. Un plan diferente se rechaza mientras
+haya operaciones, clientes o requests activos. Si la sesión está libre, se cierra completamente antes
+de crear una con el nuevo plan. La preparación espera ese cierre antes de escribir el manifiesto y
+anunciar que el entorno está listo.
 
 | Owner            | Qué protege                                             |
 | ---------------- | ------------------------------------------------------- |
@@ -132,7 +144,29 @@ revalida estado/contadores inmediatamente antes de actuar, por lo que un lease n
 timer anterior. `shutdown_all` procesa prefixes en paralelo, tiene límites por sesión y globales, y
 escala a kill verificado si una sesión no termina.
 
-Al cerrar normalmente se ejecuta el shutdown propio del runner y se espera el grace configurado. Si
+`shutdown_all` cierra admisión antes de censar e incluye los locks de arranque pendientes. Sus
+fallbacks de limpieza también son paralelos. Un fallo mata únicamente descendientes del supervisor
+con identidades revalidadas y mantiene el subreaper vivo durante el reap; nunca usa un kill global
+por nombre de proceso. Tras `Stopped` se espera además la salida del sidecar.
+
+El arranque, la adquisición de leases y el cierre usan el mismo lock por prefix. Un reintento que
+llega durante el cierre espera su finalización y crea otra sesión, sin devolver `session is not ready`.
+El cierre tiene una tarea propia que continúa si se cancela el caller. Una tarea antigua sólo puede
+retirar su propia entrada del registry, nunca la sesión que la reemplazó.
+
+Las herramientas conservan el lease y los guards de prefix/dgVoodoo hasta que terminan sus
+programas Windows y handoffs, no sólo el controlador UMU/Proton. Se comprueba también la ascendencia
+del subreaper cuando un hijo elimina `WINEPREFIX`. El progreso de preparación incluye `operationId`;
+la UI ignora eventos de otras operaciones. Las transacciones de prefix tienen tarea propia para que
+cancelar el IPC no abandone el rollback. La autoridad de limpieza se comprueba bajo el guard, no
+con una observación anterior de un directorio vacío.
+
+La captura de candidatos conserva `(pid, start_time)` desde antes de leer `/proc` hasta la sesión
+de memoria. Cada lectura de memoria, incluidos chunks del scan y fallback `/proc/pid/mem`, revalida
+esa identidad antes de acceder. No se modifica memoria ni la política Yama del host.
+
+Al cerrar normalmente se ejecuta el shutdown propio del runner. Si `waitpid` confirma `ECHILD`, se
+completa enseguida; el grace configurado sólo se espera mientras queden hijos vivos. Si
 quedan descendientes se envía SIGTERM, dos segundos después SIGKILL, repitiendo scan/reap hasta
 `ECHILD`. `Stopped` sólo se emite cuando ya no quedan hijos. `PDEATHSIG` lleva el mismo cleanup al
 caso en que muere el launcher.

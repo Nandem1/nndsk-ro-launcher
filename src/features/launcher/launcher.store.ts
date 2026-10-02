@@ -11,7 +11,10 @@ export type LaunchStatus =
 export interface LauncherState {
   status: LaunchStatus
   clients: GameClientSnapshot[]
+  clientsRevision: number
+  closedClientIds: string[]
   setupProgress: ProgressPayload | null
+  operationId: string | null
   error: string | null
   setStatus: (status: LaunchStatus) => void
   setClients: (clients: GameClientSnapshot[]) => void
@@ -25,26 +28,43 @@ export interface LauncherState {
 export const useLauncherStore = create<LauncherState>((set) => ({
   status: 'idle',
   clients: [],
+  clientsRevision: 0,
+  closedClientIds: [],
   setupProgress: null,
+  operationId: null,
   error: null,
   setStatus: (status) => set({ status }),
-  setClients: (clients) => set({ clients }),
+  setClients: (clients) =>
+    set((state) => ({
+      clients: clients.filter(
+        (client) => !state.closedClientIds.includes(client.clientId),
+      ),
+      clientsRevision: state.clientsRevision + 1,
+    })),
   upsertClient: (client) =>
     set((state) => {
+      if (state.closedClientIds.includes(client.clientId)) return state
       const index = state.clients.findIndex(
         (candidate) => candidate.clientId === client.clientId,
       )
-      if (index < 0) return { clients: [...state.clients, client] }
+      if (index < 0)
+        return {
+          clients: [...state.clients, client],
+          clientsRevision: state.clientsRevision + 1,
+        }
       const clients = [...state.clients]
       clients[index] = client
-      return { clients }
+      return { clients, clientsRevision: state.clientsRevision + 1 }
     }),
   removeClient: (clientId) =>
     set((state) => ({
       clients: state.clients.filter((client) => client.clientId !== clientId),
+      clientsRevision: state.clientsRevision + 1,
+      closedClientIds: [...new Set([...state.closedClientIds, clientId])],
     })),
   setClientStatus: (clientId, status) =>
     set((state) => ({
+      clientsRevision: state.clientsRevision + 1,
       clients: state.clients.map((client) =>
         client.clientId === clientId ? { ...client, status } : client,
       ),

@@ -6,6 +6,7 @@ pub mod game_client;
 pub mod launch;
 pub mod memory;
 pub mod observation;
+pub mod progress;
 pub mod runner;
 pub mod server;
 pub mod server_tools;

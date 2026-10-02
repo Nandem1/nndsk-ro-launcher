@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { toErrorMessage } from '../errors'
 
 export type { AsyncResult } from '../async'
@@ -8,9 +8,12 @@ export { runSafely } from '../async'
 export function useAsyncAction<K extends string>() {
   const [busyKey, setBusyKey] = useState<K | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const inFlight = useRef(false)
 
   const run = useCallback(
     async (key: K, fn: () => Promise<void>): Promise<boolean> => {
+      if (inFlight.current) return false
+      inFlight.current = true
       setBusyKey(key)
       setError(null)
       try {
@@ -20,6 +23,7 @@ export function useAsyncAction<K extends string>() {
         setError(toErrorMessage(err))
         return false
       } finally {
+        inFlight.current = false
         setBusyKey(null)
       }
     },

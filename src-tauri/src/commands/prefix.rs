@@ -3,8 +3,9 @@ use std::path::Path;
 use tauri::{AppHandle, State};
 
 use crate::models::server::ServerConfig;
-use crate::state::GameState;
+use crate::state::{GameProcessHandle, GameState};
 use crate::tools::prefix;
+use crate::tools::runner_sessions::RunnerSessionRegistry;
 use crate::tools::runners::ensure_managed_runtime;
 use crate::tools::runtime::{
     observe_legacy_runtime, resolve_operational_plan, runtime_graphics_plan_enabled,
@@ -23,6 +24,23 @@ use crate::utils::{
 pub async fn setup_prefix(
     app: AppHandle,
     state: State<'_, GameState>,
+    server: Option<ServerConfig>,
+    runner: Option<String>,
+    operation_id: Option<String>,
+) -> Result<(), String> {
+    let game = state.game.clone();
+    let sessions = state.sessions.clone();
+    prefix::run_prefix_operation(
+        operation_id,
+        setup_prefix_owned(app, game, sessions, server, runner),
+    )
+    .await
+}
+
+async fn setup_prefix_owned(
+    app: AppHandle,
+    game: GameProcessHandle,
+    sessions: RunnerSessionRegistry,
     server: Option<ServerConfig>,
     runner: Option<String>,
 ) -> Result<(), String> {
@@ -107,22 +125,32 @@ pub async fn setup_prefix(
     }
     if rebuild_managed {
         ensure_managed_reset_allowed(&ctx.location)?;
-        return prefix::reset_runtime_prefix(
-            &app,
-            &state.game,
-            &state.sessions,
-            &ctx,
-            requirements,
-        )
-        .await;
+        return prefix::reset_runtime_prefix(&app, &game, &sessions, &ctx, requirements).await;
     }
-    prefix::setup_runtime_prefix(&app, &state.game, &state.sessions, &ctx, requirements).await
+    prefix::setup_runtime_prefix(&app, &game, &sessions, &ctx, requirements).await
 }
 
 #[tauri::command]
 pub async fn reset_prefix(
     app: AppHandle,
     state: State<'_, GameState>,
+    server: Option<ServerConfig>,
+    runner: Option<String>,
+    operation_id: Option<String>,
+) -> Result<(), String> {
+    let game = state.game.clone();
+    let sessions = state.sessions.clone();
+    prefix::run_prefix_operation(
+        operation_id,
+        reset_prefix_owned(app, game, sessions, server, runner),
+    )
+    .await
+}
+
+async fn reset_prefix_owned(
+    app: AppHandle,
+    game: GameProcessHandle,
+    sessions: RunnerSessionRegistry,
     server: Option<ServerConfig>,
     runner: Option<String>,
 ) -> Result<(), String> {
@@ -139,7 +167,7 @@ pub async fn reset_prefix(
     );
     validate_requirement_support(&ctx, requirements)?;
     ensure_managed_reset_allowed(&ctx.location)?;
-    prefix::reset_runtime_prefix(&app, &state.game, &state.sessions, &ctx, requirements).await
+    prefix::reset_runtime_prefix(&app, &game, &sessions, &ctx, requirements).await
 }
 
 fn observe_prefix_shadow(

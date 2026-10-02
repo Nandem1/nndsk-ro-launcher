@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { api } from '../../shared/api'
 import { launchConfigKey, runtimeStatusKey } from '../../shared/resolveRunner'
 import type {
@@ -10,8 +10,11 @@ import { useSettingsStore } from '../settings/settings.store'
 import { useServersStore } from '../servers/servers.store'
 import { useLauncherStore } from './launcher.store'
 import { useLauncherTask } from './useLauncherTask'
+import { refreshGameClients } from './refreshGameClients'
 
 let fallbackClientSequence = 0
+
+type EnvironmentPreparation = 'ready' | 'prepared' | false
 
 function createClientId(): string {
   if (typeof globalThis.crypto?.randomUUID === 'function') {
@@ -22,8 +25,15 @@ function createClientId(): string {
 }
 
 export function useLaunchGame(server: ServerConfig | null) {
-  const preparePromiseRef = useRef<Promise<boolean> | null>(null)
+  const preparePromiseRef = useRef<Promise<EnvironmentPreparation> | null>(null)
   const launchInFlightRef = useRef(false)
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
   const selectedRunner = useSettingsStore((s) => s.selectedRunner)
   const {
     status,
@@ -31,14 +41,12 @@ export function useLaunchGame(server: ServerConfig | null) {
     error,
     setStatus,
     setProgress,
-    setError,
     addGameLog,
     runTask,
     isBusy,
   } = useLauncherTask()
   const upsertClient = useLauncherStore((s) => s.upsertClient)
   const removeClient = useLauncherStore((s) => s.removeClient)
-  const setClients = useLauncherStore((s) => s.setClients)
 
   const launchSnapshotKey = server
     ? launchConfigKey(server, selectedRunner)
@@ -52,7 +60,9 @@ export function useLaunchGame(server: ServerConfig | null) {
     )
     const currentRunner = useSettingsStore.getState().selectedRunner
     return (
-      !!current && launchConfigKey(current, currentRunner) === launchSnapshotKey
+      mounted.current &&
+      !!current &&
+      launchConfigKey(current, currentRunner) === launchSnapshotKey
     )
   }
 
@@ -62,76 +72,81 @@ export function useLaunchGame(server: ServerConfig | null) {
     }
   }
 
-  const prepareEnvironment = async (): Promise<boolean> => {
+  const prepareEnvironment = async (): Promise<EnvironmentPreparation> => {
     if (!server) return false
     if (useSettingsStore.getState().savingRunner) {
-      setError('Espera a que termine de guardarse el runner seleccionado')
-      setStatus('error')
-      return false
+      throw new Error(
+        'Espera a que termine de guardarse el runner seleccionado',
+      )
     }
-    if (status === 'error') setStatus('idle')
-    setError(null)
-    setStatus('checking')
-    let ready = false
-    const result = await runTask(async () => {
-      let deps = await api.checkDependencies(server, selectedRunner || null)
+    let prepared = false
+    let deps = await api.checkDependencies(server, selectedRunner || null)
+    if (!isCurrentServer()) {
+      throw new Error(
+        'La configuración del servidor o runner cambió durante la comprobación',
+      )
+    }
+    applyCurrentStatus(deps)
+
+    if (deps.audioWarning) addGameLog(deps.audioWarning)
+
+    if (!deps.readyToLaunch) {
+      if (!deps.canSetup) {
+        throw new Error(
+          deps.prefixWarning ??
+            'El entorno no está listo y no puede repararse automáticamente',
+        )
+      }
+
+      setStatus('setting-up')
+      addGameLog(
+        `Configurando entorno ${deps.prefixScope} en ${deps.prefixPath}...`,
+      )
+      await api.setupPrefix(
+        server,
+        selectedRunner || null,
+        useLauncherStore.getState().operationId,
+      )
+      prepared = true
       if (!isCurrentServer()) {
         throw new Error(
-          'La configuración del servidor o runner cambió durante la comprobación',
+          'La configuración cambió mientras se preparaba el entorno; vuelve a comprobarla',
         )
+      }
+      setProgress(null)
+
+      deps = await api.checkDependencies(server, selectedRunner || null)
+      if (!isCurrentServer()) {
+        throw new Error('La configuración cambió durante la comprobación final')
       }
       applyCurrentStatus(deps)
-
-      if (deps.audioWarning) addGameLog(deps.audioWarning)
-
       if (!deps.readyToLaunch) {
-        if (!deps.canSetup) {
-          throw new Error(
-            deps.prefixWarning ??
-              'El entorno no está listo y no puede repararse automáticamente',
-          )
-        }
-
-        setStatus('setting-up')
-        addGameLog(
-          `Configurando entorno ${deps.prefixScope} en ${deps.prefixPath}...`,
+        throw new Error(
+          deps.prefixWarning ??
+            'El entorno siguió incompleto después de configurarlo',
         )
-        await api.setupPrefix(server, selectedRunner || null)
-        if (!isCurrentServer()) {
-          throw new Error(
-            'La configuración cambió mientras se preparaba el entorno; vuelve a comprobarla',
-          )
-        }
-        setProgress(null)
-
-        deps = await api.checkDependencies(server, selectedRunner || null)
-        if (!isCurrentServer()) {
-          throw new Error(
-            'La configuración cambió durante la comprobación final',
-          )
-        }
-        applyCurrentStatus(deps)
-        if (!deps.readyToLaunch) {
-          throw new Error(
-            deps.prefixWarning ??
-              'El entorno siguió incompleto después de configurarlo',
-          )
-        }
       }
+    }
 
-      ready = true
-      setStatus('idle')
-    })
-    return result.ok && ready && isCurrentServer()
+    if (prepared) {
+      addGameLog(
+        'Entorno listo. Antes de jugar, abre el patcher si hay actualizaciones y configura OpenSetup (resolución y gráficos). También puedes configurar dgVoodoo.',
+      )
+    }
+    return prepared ? 'prepared' : 'ready'
   }
 
-  const handlePrepareEnvironment = (): Promise<boolean> => {
+  const handlePrepareEnvironment = (): Promise<EnvironmentPreparation> => {
     if (preparePromiseRef.current) return preparePromiseRef.current
-    const promise = prepareEnvironment().finally(() => {
-      if (preparePromiseRef.current === promise) {
-        preparePromiseRef.current = null
-      }
-    })
+    const promise = runTask(prepareEnvironment)
+      .then((result) =>
+        result.ok && isCurrentServer() ? result.value : (false as const),
+      )
+      .finally(() => {
+        if (preparePromiseRef.current === promise) {
+          preparePromiseRef.current = null
+        }
+      })
     preparePromiseRef.current = promise
     return promise
   }
@@ -141,52 +156,51 @@ export function useLaunchGame(server: ServerConfig | null) {
     environmentPrepared = false,
   ) => {
     if (!server || launchInFlightRef.current) return
-    if (useSettingsStore.getState().savingRunner) {
-      setError('Espera a que termine de guardarse el runner seleccionado')
-      setStatus('error')
-      return
-    }
     launchInFlightRef.current = true
     try {
-      if (!environmentPrepared && !(await handlePrepareEnvironment())) return
-      if (!isCurrentServer()) {
-        setError(
-          'La configuración del servidor cambió; vuelve a preparar el entorno',
-        )
-        setStatus('error')
-        return
-      }
+      await runTask(async () => {
+        if (useSettingsStore.getState().savingRunner) {
+          throw new Error(
+            'Espera a que termine de guardarse el runner seleccionado',
+          )
+        }
+        if (!environmentPrepared && (await prepareEnvironment()) !== 'ready')
+          return
+        if (!isCurrentServer()) {
+          throw new Error(
+            'La configuración del servidor cambió; vuelve a preparar el entorno',
+          )
+        }
 
-      const clientId = createClientId()
-      upsertClient({
-        clientId,
-        serverId: server.id,
-        serverName: server.name,
-        status: 'launching',
-        pid: null,
-      })
-      const result = await runTask(async () => {
-        setStatus('launching')
-        addGameLog(`Lanzando ${server.name}...`)
-
-        const client = await api.launchGame(
+        const clientId = createClientId()
+        upsertClient({
           clientId,
-          server,
-          launchValues,
-          selectedRunner || null,
-        )
-        upsertClient(client)
-        setStatus('idle')
-      })
-      if (!result.ok) {
-        removeClient(clientId)
-      } else {
+          serverId: server.id,
+          serverName: server.name,
+          status: 'launching',
+          pid: null,
+        })
         try {
-          setClients(await api.listGameClients())
+          setStatus('launching')
+          addGameLog(`Lanzando ${server.name}...`)
+
+          const client = await api.launchGame(
+            clientId,
+            server,
+            launchValues,
+            selectedRunner || null,
+          )
+          upsertClient(client)
+        } catch (cause) {
+          removeClient(clientId)
+          throw cause
+        }
+        try {
+          await refreshGameClients()
         } catch {
           addGameLog('No se pudo sincronizar la lista de clientes activos')
         }
-      }
+      })
     } finally {
       launchInFlightRef.current = false
     }

@@ -22,20 +22,21 @@ pub async fn launch_game(
         state
             .game
             .begin_launch(client_id.clone(), server.id.clone(), server.name.clone())?;
+    let _pending_launch = state.game.guard_pending_launch(reservation);
     if had_clients {
         if let Err(error) = launcher::stop_tools_for_additional_client(&state).await {
-            state.game.cancel_launch(reservation);
             return Err(format!(
                 "No se pudieron detener las herramientas antes de abrir otro cliente: {error}"
             ));
         }
     }
     drop(tool_lifecycle);
-    let result = launcher::launch_game(
+    launcher::launch_game(
         app,
         state.game.clone(),
         reservation,
         launcher::LaunchTools {
+            tool_lifecycle: &state.tool_lifecycle,
             autopot: &state.autopot,
             autobuff: &state.autobuff,
             spammer: &state.spammer,
@@ -49,11 +50,7 @@ pub async fn launch_game(
         runner,
         launch_values.unwrap_or_default(),
     )
-    .await;
-    if result.is_err() {
-        state.game.cancel_launch(reservation);
-    }
-    result
+    .await
 }
 
 #[tauri::command]

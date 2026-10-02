@@ -6,16 +6,20 @@ import { Button, type ButtonVariant } from '../../shared/ui/Button'
 import { useLaunchGame } from './useLaunchGame'
 import { useSelectedServer } from '../servers/useSelectedServer'
 import { useSettingsStore } from '../settings/settings.store'
-import { useCurrentAdvancedStatus } from '../settings/useSelectedRuntimeStatus'
+import {
+  useCurrentAdvancedStatus,
+  useCurrentRuntimeStatusError,
+} from '../settings/useSelectedRuntimeStatus'
 import { LaunchFieldsModal } from './LaunchFieldsModal'
 import { useLauncherStore } from './launcher.store'
 
 export function LaunchButton() {
   const server = useSelectedServer()
-  const [showLaunchFields, setShowLaunchFields] = useState(false)
+  const [fieldsKey, setFieldsKey] = useState<string | null>(null)
   const savingRunner = useSettingsStore((s) => s.savingRunner)
   const selectedRunner = useSettingsStore((s) => s.selectedRunner)
   const advancedStatus = useCurrentAdvancedStatus()
+  const depsError = useCurrentRuntimeStatusError()
   const {
     status,
     setupProgress,
@@ -30,19 +34,25 @@ export function LaunchButton() {
   )
 
   const serverLaunchKey = server ? launchConfigKey(server, selectedRunner) : ''
-  useEffect(() => setShowLaunchFields(false), [serverLaunchKey])
+  useEffect(() => setFieldsKey(null), [serverLaunchKey])
 
-  const isDisabled = !server || isBusy || savingRunner
-  const buildMode = status === 'idle' && !advancedStatus?.readyToLaunch
+  const checkingEnvironment = !advancedStatus && !depsError
+  const isDisabled = !server || isBusy || savingRunner || checkingEnvironment
+  const buildMode =
+    status === 'idle' && !!advancedStatus && !advancedStatus.readyToLaunch
 
   const labels: Record<typeof status, string> = {
-    idle: buildMode
-      ? advancedStatus?.canSetup === false
-        ? 'Revisar entorno'
-        : 'Preparar entorno'
-      : existingClients > 0
-        ? 'Abrir otro cliente'
-        : 'Jugar',
+    idle: checkingEnvironment
+      ? 'Comprobando entorno...'
+      : depsError
+        ? 'Comprobar entorno'
+        : buildMode
+          ? advancedStatus?.canSetup === false
+            ? 'Revisar entorno'
+            : 'Preparar entorno'
+          : existingClients > 0
+            ? 'Abrir otro cliente'
+            : 'Jugar',
     checking: 'Comprobando...',
     'setting-up': 'Configurando...',
     launching: 'Iniciando...',
@@ -85,6 +95,10 @@ export function LaunchButton() {
         block
         onClick={() => {
           void (async () => {
+            if (!advancedStatus?.readyToLaunch) {
+              await handlePrepareEnvironment()
+              return
+            }
             let fields: string[]
             try {
               fields = requiredLaunchFields(server?.launch)
@@ -96,8 +110,8 @@ export function LaunchButton() {
               await handleLaunch()
               return
             }
-            if (await handlePrepareEnvironment()) {
-              setShowLaunchFields(true)
+            if ((await handlePrepareEnvironment()) === 'ready') {
+              setFieldsKey(serverLaunchKey)
             }
           })()
         }}
@@ -106,18 +120,23 @@ export function LaunchButton() {
         {icon}
         {labels[status]}
       </Button>
+      {depsError && status !== 'error' && (
+        <p className="text-red-400 text-[11px] text-center px-2 leading-relaxed">
+          {depsError}
+        </p>
+      )}
       {status === 'error' && error && (
         <p className="text-red-400 text-[11px] text-center px-2 leading-relaxed">
           {error}
         </p>
       )}
-      {showLaunchFields && server && (
+      {fieldsKey === serverLaunchKey && server && (
         <LaunchFieldsModal
           serverName={server.name}
           fields={requiredLaunchFields(server.launch)}
-          onCancel={() => setShowLaunchFields(false)}
+          onCancel={() => setFieldsKey(null)}
           onSubmit={(values) => {
-            setShowLaunchFields(false)
+            setFieldsKey(null)
             void handleLaunch(values, true)
           }}
         />

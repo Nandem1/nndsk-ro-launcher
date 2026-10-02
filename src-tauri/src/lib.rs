@@ -64,7 +64,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(GameState {
             game: state::GameProcessHandle::new(),
-            tool_lifecycle: tokio::sync::Mutex::new(()),
+            tool_lifecycle: std::sync::Arc::new(tokio::sync::Mutex::new(())),
             autopot: AutopotHandle::new(memory.clone()),
             autobuff: AutobuffHandle::new(memory.clone()),
             spammer: SpammerHandle::new(),
