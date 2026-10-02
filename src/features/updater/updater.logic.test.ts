@@ -49,6 +49,17 @@ describe('updateCopy', () => {
     ).toBe(false)
   })
 
+  it('names the installed version after a successful install', () => {
+    expect(
+      updateCopy(
+        snapshot({
+          kind: 'readyToRestart',
+          installedVersion: '0.2.0',
+        }),
+      ).line,
+    ).toBe('Lista · 0.2.0')
+  })
+
   it('reports cumulative download percent against content length', () => {
     expect(
       updateCopy(
@@ -60,6 +71,19 @@ describe('updateCopy', () => {
         }),
       ).detail,
     ).toBe('Progreso 25%')
+  })
+
+  it('reports downloaded bytes when content length is unknown', () => {
+    expect(
+      updateCopy(
+        snapshot({
+          kind: 'downloading',
+          release: { version: '0.2.0', publishedAt: null, notes: null },
+          downloadedBytes: 4096,
+          contentLength: null,
+        }),
+      ).detail,
+    ).toBe('Progreso 4096 B')
   })
 
   it('treats unauthentic as an error dot, not as current', () => {

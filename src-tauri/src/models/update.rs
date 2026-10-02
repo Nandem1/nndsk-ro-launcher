@@ -10,7 +10,11 @@ pub struct UpdateSnapshot {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum UpdatePhase {
     Idle,
     Checking,
@@ -102,5 +106,53 @@ mod tests {
             Some("hola mundo".to_string())
         );
         assert_eq!(truncate_release_notes(Some("   ")), None);
+    }
+
+    #[test]
+    fn serializes_phase_fields_as_camel_case() {
+        let ready = UpdateSnapshot {
+            current_version: "0.1.0".into(),
+            phase: UpdatePhase::ReadyToRestart {
+                installed_version: "0.2.0".into(),
+            },
+        };
+        assert_eq!(
+            serde_json::to_value(&ready).unwrap(),
+            serde_json::json!({
+                "currentVersion": "0.1.0",
+                "phase": {
+                    "kind": "readyToRestart",
+                    "installedVersion": "0.2.0"
+                }
+            })
+        );
+
+        let downloading = UpdateSnapshot {
+            current_version: "0.1.0".into(),
+            phase: UpdatePhase::Downloading {
+                release: ReleaseSummary {
+                    version: "0.2.0".into(),
+                    published_at: Some("2026-09-30T00:00:00Z".into()),
+                    notes: None,
+                },
+                downloaded_bytes: 25,
+                content_length: Some(100),
+            },
+        };
+        let phase = serde_json::to_value(&downloading)
+            .unwrap()
+            .get("phase")
+            .cloned()
+            .unwrap();
+        assert_eq!(phase.get("downloadedBytes"), Some(&serde_json::json!(25)));
+        assert_eq!(phase.get("contentLength"), Some(&serde_json::json!(100)));
+        assert_eq!(
+            phase
+                .get("release")
+                .and_then(|release| release.get("publishedAt")),
+            Some(&serde_json::json!("2026-09-30T00:00:00Z"))
+        );
+        assert_eq!(phase.get("downloaded_bytes"), None);
+        assert_eq!(phase.get("content_length"), None);
     }
 }

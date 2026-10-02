@@ -80,7 +80,7 @@ export function App() {
           {railExpanded ? (
             <div
               key="rail-full"
-              className="flex flex-col min-h-0 flex-1 animate-rail-expand"
+              className="flex flex-col min-h-0 flex-1 gap-2.5 animate-rail-expand"
             >
               {mode === 'ingame' && (
                 <div className="shrink-0 flex justify-end pb-2">
@@ -102,7 +102,7 @@ export function App() {
                 <DiscordPresenceToggle />
                 <UpdatePanel />
               </div>
-              <div className="shrink-0 pb-2.5">
+              <div className="shrink-0">
                 <PrefixResetButton />
               </div>
               <LaunchButton />
