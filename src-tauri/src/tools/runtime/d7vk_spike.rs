@@ -716,6 +716,7 @@ mod tests {
             ids,
             std::collections::BTreeSet::from([
                 crate::tools::artifacts::MANAGED_RUNNER_ID,
+                crate::tools::artifacts::LOCAL_MANAGED_RUNNER_ID,
                 crate::tools::artifacts::LEGACY_MANAGED_RUNNER_ID,
                 crate::tools::artifacts::UMU_ID,
                 crate::tools::artifacts::MANAGED_DXVK_ID,

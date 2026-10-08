@@ -10,5 +10,5 @@ pub use managed::{
 pub(crate) use managed::{
     ensure_selected_runtime, managed_proton_id_for_path, managed_proton_path_for_id,
     managed_proton_ready, managed_runtime_ready_for_id, LEGACY_MANAGED_RUNNER_ID,
-    LEGACY_MANAGED_RUNNER_LABEL, MANAGED_DXVK_ID, UMU_ID,
+    LEGACY_MANAGED_RUNNER_LABEL, LOCAL_MANAGED_RUNNER_ID, MANAGED_DXVK_ID, UMU_ID,
 };

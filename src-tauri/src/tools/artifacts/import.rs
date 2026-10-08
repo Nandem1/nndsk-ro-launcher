@@ -1,17 +1,22 @@
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
+use std::os::unix::fs::DirBuilderExt;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 
+use crate::utils::emit_progress;
 use crate::utils::OperationGuard;
+use tauri::AppHandle;
 
-use super::descriptor::{catalog_descriptor, ArtifactDescriptor, MANAGED_RUNNER_ID};
+use super::descriptor::{
+    catalog_descriptor, ArtifactDescriptor, LOCAL_MANAGED_RUNNER_ID, MANAGED_RUNNER_ID,
+};
 use super::{
     artifact_cache_state_at, extract, fetch, install, runtime_dir, unique_suffix,
     ArtifactCacheState,
 };
 
-/// Import the single checksum-pinned preservation build, not an arbitrary runner archive.
+/// Import known checksum-pinned packages, not an arbitrary runner archive.
 /// The blocking owner retains both the runtime lock and cleanup if the caller is cancelled.
 pub(crate) async fn import_managed_runtime_archive(path: &Path) -> Result<PathBuf, String> {
     if !path.is_absolute() {
@@ -19,13 +24,31 @@ pub(crate) async fn import_managed_runtime_archive(path: &Path) -> Result<PathBu
     }
     let source = path.to_path_buf();
     let destination = runtime_dir();
-    let descriptor = *catalog_descriptor(MANAGED_RUNNER_ID)
-        .ok_or_else(|| "El runtime principal no está en el catálogo".to_string())?;
+    let descriptor = known_runtime_descriptor(&source)?;
     tokio::task::spawn_blocking(move || {
         import_archive_at(&descriptor, &source, &destination).map(|root| root.join("proton"))
     })
     .await
     .map_err(|error| format!("Falló la tarea de importación: {error}"))?
+}
+
+fn known_runtime_descriptor(path: &Path) -> Result<ArtifactDescriptor, String> {
+    let metadata = path
+        .symlink_metadata()
+        .map_err(|error| format!("No se pudo comprobar el paquete del runtime: {error}"))?;
+    if !metadata.is_file() || metadata.file_type().is_symlink() {
+        return Err(
+            "El runtime debe ser un archivo regular, no un enlace, dispositivo ni FIFO".to_string(),
+        );
+    }
+    [MANAGED_RUNNER_ID, LOCAL_MANAGED_RUNNER_ID]
+        .into_iter()
+        .filter_map(catalog_descriptor)
+        .find(|descriptor| descriptor.expected_size == metadata.len())
+        .copied()
+        .ok_or_else(|| {
+            "El tamaño no coincide con un paquete conocido de nndsk-ro-proton".to_string()
+        })
 }
 
 fn import_archive_at(
@@ -34,6 +57,15 @@ fn import_archive_at(
     destination: &Path,
 ) -> Result<PathBuf, String> {
     let _operation = OperationGuard::acquire("runtime", destination)?;
+    import_archive_locked(descriptor, source, destination)
+}
+
+/// Caller owns the runtime operation lease, including across blocking extraction.
+fn import_archive_locked(
+    descriptor: &ArtifactDescriptor,
+    source: &Path,
+    destination: &Path,
+) -> Result<PathBuf, String> {
     let input = open_regular_archive(source, descriptor.expected_size)?;
     std::fs::create_dir_all(destination)
         .map_err(|error| format!("No se pudo preparar el directorio de runtimes: {error}"))?;
@@ -76,6 +108,84 @@ fn import_archive_at(
         artifact_cache_state_at(descriptor, &final_dir) == ArtifactCacheState::Ready
     })?;
     Ok(final_dir)
+}
+
+/// The caller transfers its existing lease; no recursive lock acquisition.
+/// Cancellation cannot remove files still owned by the blocking importer.
+pub(crate) async fn download_managed_runtime(
+    app: &AppHandle,
+    descriptor: &'static ArtifactDescriptor,
+    operation: OperationGuard,
+    progress_start: u32,
+    progress_end: u32,
+) -> Result<(), String> {
+    if descriptor.kind != super::ArtifactKind::NndskRoProton {
+        return Err("La descarga transaccional requiere un runtime nndsk-ro-proton".to_string());
+    }
+    let destination = runtime_dir();
+    let final_dir = destination.join(descriptor.id);
+    if artifact_cache_state_at(descriptor, &final_dir) == ArtifactCacheState::Ready {
+        return Ok(());
+    }
+    require_missing_destination(&final_dir)?;
+    let directory = destination.join(format!(
+        ".{}.download-{}-{}",
+        descriptor.id,
+        std::process::id(),
+        unique_suffix()
+    ));
+    let cleanup = DownloadDirectory::create(&directory)?;
+    let archive = directory.join(descriptor.archive.archive_name());
+    fetch::download_verified(
+        app,
+        descriptor,
+        &archive,
+        progress_start,
+        progress_end.saturating_sub(2),
+    )
+    .await?;
+    emit_progress(
+        app,
+        &format!("Verificando e instalando {}...", descriptor.id),
+        progress_end,
+    )?;
+    let descriptor = *descriptor;
+    tokio::task::spawn_blocking(move || {
+        let _operation = operation;
+        let _cleanup = cleanup;
+        import_archive_locked(&descriptor, &archive, &destination).map(|_| ())
+    })
+    .await
+    .map_err(|error| format!("Falló la instalación del runtime: {error}"))?
+}
+
+fn require_missing_destination(path: &Path) -> Result<(), String> {
+    match path.symlink_metadata() {
+        Ok(_) => Err(format!(
+            "{} ya existe pero no coincide con el runtime; se conservó sin sustituirlo",
+            path.display()
+        )),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(format!("No se pudo comprobar el destino: {error}")),
+    }
+}
+
+struct DownloadDirectory(PathBuf);
+
+impl DownloadDirectory {
+    fn create(path: &Path) -> Result<Self, String> {
+        std::fs::DirBuilder::new()
+            .mode(0o700)
+            .create(path)
+            .map_err(|error| format!("No se pudo crear descarga privada: {error}"))?;
+        Ok(Self(path.to_path_buf()))
+    }
+}
+
+impl Drop for DownloadDirectory {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
 }
 
 fn open_regular_archive(path: &Path, expected_size: u64) -> Result<File, String> {
@@ -357,6 +467,66 @@ mod tests {
         assert_eq!(std::fs::read(staging.join("sentinel")).unwrap(), b"keep");
     }
 
+    #[test]
+    fn private_download_collision_preserves_other_owners_and_uses_private_mode() {
+        use std::os::unix::fs::PermissionsExt;
+        let fixture = Fixture::new();
+        let owned = fixture.root.join("download-owned");
+        {
+            let cleanup = DownloadDirectory::create(&owned).unwrap();
+            assert_eq!(
+                std::fs::metadata(&owned).unwrap().permissions().mode() & 0o777,
+                0o700
+            );
+            std::fs::write(owned.join("sentinel"), b"keep").unwrap();
+            assert!(DownloadDirectory::create(&owned).is_err());
+            assert_eq!(std::fs::read(owned.join("sentinel")).unwrap(), b"keep");
+            drop(cleanup);
+        }
+        assert!(!owned.exists());
+        let foreign = fixture.root.join("foreign-download");
+        std::fs::create_dir(&foreign).unwrap();
+        std::fs::write(foreign.join("sentinel"), b"keep").unwrap();
+        assert!(DownloadDirectory::create(&foreign).is_err());
+        assert_eq!(std::fs::read(foreign.join("sentinel")).unwrap(), b"keep");
+        assert!(require_missing_destination(&foreign).is_err());
+    }
+
+    #[tokio::test]
+    async fn cancelled_waiter_does_not_release_the_blocking_owners_lease_or_files() {
+        let fixture = Fixture::new();
+        let destination = fixture.destination.clone();
+        std::fs::create_dir_all(&destination).unwrap();
+        let operation = OperationGuard::acquire("runtime", &destination).unwrap();
+        let directory = destination.join("owned-download");
+        let cleanup = DownloadDirectory::create(&directory).unwrap();
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let (done_tx, done_rx) = tokio::sync::oneshot::channel();
+        let waiter = tokio::spawn(async move {
+            tokio::task::spawn_blocking(move || {
+                let _operation = operation;
+                let _cleanup = cleanup;
+                started_tx.send(()).unwrap();
+                release_rx.recv().unwrap();
+                drop(_cleanup);
+                drop(_operation);
+                done_tx.send(()).unwrap();
+            })
+            .await
+            .unwrap();
+        });
+        started_rx.await.unwrap();
+        waiter.abort();
+        assert!(waiter.await.unwrap_err().is_cancelled());
+        assert!(OperationGuard::acquire("runtime", &destination).is_err());
+        assert!(directory.exists());
+        release_tx.send(()).unwrap();
+        done_rx.await.unwrap();
+        assert!(!directory.exists());
+        assert!(OperationGuard::acquire("runtime", &destination).is_ok());
+    }
+
     #[tokio::test]
     async fn public_import_rejects_relative_paths_before_selecting_appdata() {
         assert!(import_managed_runtime_archive(Path::new("runtime.tar.zst"))
@@ -397,11 +567,11 @@ mod tests {
             std::process::id(),
             unique_suffix()
         ));
-        let descriptor = catalog_descriptor(MANAGED_RUNNER_ID).unwrap();
-        let result = import_archive_at(descriptor, &source, &root);
+        let descriptor = known_runtime_descriptor(&source).unwrap();
+        let result = import_archive_at(&descriptor, &source, &root);
         if let Ok(installed) = &result {
             assert_eq!(
-                artifact_cache_state_at(descriptor, installed),
+                artifact_cache_state_at(&descriptor, installed),
                 ArtifactCacheState::Ready
             );
             assert!(installed.join("proton").is_file());

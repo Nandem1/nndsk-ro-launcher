@@ -28,7 +28,7 @@ pub(crate) fn payload_ready(descriptor: &ArtifactDescriptor, root: &Path) -> boo
                         let path = root.join(entrypoint);
                         regular_path_inside_root(root, &path) && is_executable(&path)
                     })
-                && nndsk_manifest_ready(root, &NNDSK_MODULES)
+                && nndsk_manifest_ready(root, &NNDSK_MODULES, descriptor.version)
         }
     }
 }
@@ -115,7 +115,7 @@ struct ManifestSource {
     repository: String,
 }
 
-fn nndsk_manifest_ready(root: &Path, modules: &[ModuleIdentity]) -> bool {
+fn nndsk_manifest_ready(root: &Path, modules: &[ModuleIdentity], expected_version: &str) -> bool {
     use std::os::unix::fs::PermissionsExt;
 
     let manifest_path = root.join("nndsk-runtime.json");
@@ -141,7 +141,7 @@ fn nndsk_manifest_ready(root: &Path, modules: &[ModuleIdentity]) -> bool {
     ]);
     if manifest.schema_version != 1
         || manifest.runtime_id != "nndsk-ro-proton"
-        || manifest.version != "0.1.0-dev.1"
+        || manifest.version != expected_version
         || manifest.source_commit != NNDSK_RUNTIME_SOURCE_COMMIT
         || manifest.patchset_revision != 1
         || !manifest.requires_verified_dos_launch_path
@@ -433,7 +433,7 @@ mod tests {
             .unwrap();
         }
         fn ready(&self) -> bool {
-            nndsk_manifest_ready(&self.root, &self.modules)
+            nndsk_manifest_ready(&self.root, &self.modules, "0.1.0-dev.1")
         }
     }
 
@@ -460,6 +460,32 @@ mod tests {
             serde_json::json!({"sha256": "00", "size": 0, "mode": 365});
         fixture.save();
         assert!(!fixture.ready());
+    }
+
+    #[test]
+    fn notice_only_revision_keeps_exact_modules_but_requires_its_own_version() {
+        let mut fixture = ManifestFixture::new();
+        assert!(!nndsk_manifest_ready(
+            &fixture.root,
+            &fixture.modules,
+            "0.1.0-dev.2"
+        ));
+        fixture.manifest["version"] = "0.1.0-dev.2".into();
+        fixture.save();
+        assert!(nndsk_manifest_ready(
+            &fixture.root,
+            &fixture.modules,
+            "0.1.0-dev.2"
+        ));
+        assert!(!fixture.ready());
+        fixture.manifest["modifiedModules"][fixture.modules[0].path]["sha256"] =
+            "00".repeat(32).into();
+        fixture.save();
+        assert!(!nndsk_manifest_ready(
+            &fixture.root,
+            &fixture.modules,
+            "0.1.0-dev.2"
+        ));
     }
 
     #[test]

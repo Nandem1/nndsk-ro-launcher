@@ -1,7 +1,9 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use crate::tools::runners::{managed_proton_id_for_path, managed_proton_ready, MANAGED_RUNNER_ID};
+use crate::tools::runners::{
+    managed_proton_id_for_path, managed_proton_ready, LOCAL_MANAGED_RUNNER_ID, MANAGED_RUNNER_ID,
+};
 use crate::utils::is_wine_7_16_version;
 use crate::utils::{ResolvedRunner, RunnerKind};
 
@@ -60,7 +62,7 @@ pub(crate) fn probe_managed_proton_identity(probe: &RunnerProbe) -> bool {
     matches!(
         &probe.identity.provenance,
         ComponentProvenance::ArtifactReceipt(receipt)
-            if receipt.identity.artifact_id.as_str() == MANAGED_RUNNER_ID
+            if [MANAGED_RUNNER_ID, LOCAL_MANAGED_RUNNER_ID].contains(&receipt.identity.artifact_id.as_str())
     )
 }
 

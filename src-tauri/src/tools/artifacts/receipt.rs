@@ -225,7 +225,8 @@ mod tests {
 
     #[test]
     fn local_runtime_receipt_records_source_identity_without_fabricating_https() {
-        let descriptor = catalog_descriptor(MANAGED_RUNNER_ID).unwrap();
+        let descriptor =
+            catalog_descriptor(super::super::descriptor::LOCAL_MANAGED_RUNNER_ID).unwrap();
         let receipt = receipt_v2_from_descriptor(descriptor);
         let value = serde_json::to_value(&receipt).unwrap();
         assert_eq!(value["source"]["type"], "localOnly");
@@ -245,6 +246,23 @@ mod tests {
                 artifact_id: descriptor.id.to_string(),
                 digest: expected_digest_hex(descriptor.digest).to_string(),
             }
+        ));
+    }
+
+    #[test]
+    fn published_runtime_receipt_binds_the_exact_versioned_https_source() {
+        let descriptor = catalog_descriptor(MANAGED_RUNNER_ID).unwrap();
+        let receipt = receipt_v2_from_descriptor(descriptor);
+        assert!(stored_receipt_matches_descriptor(descriptor, &receipt));
+        let mut altered = receipt;
+        altered.source = ReceiptSourceV2::Https {
+            url: "https://example.com/other.tar.zst".to_string(),
+        };
+        assert!(!stored_receipt_matches_descriptor(descriptor, &altered));
+        let local = catalog_descriptor(super::super::descriptor::LOCAL_MANAGED_RUNNER_ID).unwrap();
+        assert!(!stored_receipt_matches_descriptor(
+            descriptor,
+            &receipt_v2_from_descriptor(local)
         ));
     }
 }

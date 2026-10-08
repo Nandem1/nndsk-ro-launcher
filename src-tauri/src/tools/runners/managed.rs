@@ -12,6 +12,7 @@ pub const MANAGED_RUNNER_ID: &str = artifacts::MANAGED_RUNNER_ID;
 pub const MANAGED_RUNNER_LABEL: &str = artifacts::MANAGED_RUNNER_LABEL;
 pub(crate) const LEGACY_MANAGED_RUNNER_ID: &str = artifacts::LEGACY_MANAGED_RUNNER_ID;
 pub(crate) const LEGACY_MANAGED_RUNNER_LABEL: &str = artifacts::LEGACY_MANAGED_RUNNER_LABEL;
+pub(crate) const LOCAL_MANAGED_RUNNER_ID: &str = artifacts::LOCAL_MANAGED_RUNNER_ID;
 pub(crate) const MANAGED_DXVK_ID: &str = artifacts::MANAGED_DXVK_ID;
 pub(crate) const UMU_ID: &str = artifacts::UMU_ID;
 
@@ -28,18 +29,26 @@ pub fn managed_proton_path() -> PathBuf {
 }
 
 pub(crate) fn managed_proton_path_for_id(id: &str) -> Option<PathBuf> {
-    [MANAGED_RUNNER_ID, LEGACY_MANAGED_RUNNER_ID]
-        .contains(&id)
-        .then(|| managed_runtime_dir().join(id).join("proton"))
+    [
+        MANAGED_RUNNER_ID,
+        LOCAL_MANAGED_RUNNER_ID,
+        LEGACY_MANAGED_RUNNER_ID,
+    ]
+    .contains(&id)
+    .then(|| managed_runtime_dir().join(id).join("proton"))
 }
 
 /// Preserve the identity of existing installations instead of relabelling old prefixes.
 pub(crate) fn managed_proton_id_for_path(path: &Path) -> Option<&'static str> {
     let canonical =
         |path: &Path| std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
-    [MANAGED_RUNNER_ID, LEGACY_MANAGED_RUNNER_ID]
-        .into_iter()
-        .find(|id| canonical(path) == canonical(&managed_proton_path_for_id(id).unwrap()))
+    [
+        MANAGED_RUNNER_ID,
+        LOCAL_MANAGED_RUNNER_ID,
+        LEGACY_MANAGED_RUNNER_ID,
+    ]
+    .into_iter()
+    .find(|id| canonical(path) == canonical(&managed_proton_path_for_id(id).unwrap()))
 }
 
 pub(crate) fn managed_proton_ready(id: &str) -> bool {
@@ -136,17 +145,16 @@ async fn ensure_runtime_for_id(app: &AppHandle, id: Option<&str>) -> Result<(), 
             runtime_dir.display()
         )
     })?;
-    let _operation = OperationGuard::acquire("runtime", &runtime_dir)?;
+    let operation = OperationGuard::acquire("runtime", &runtime_dir)?;
 
     ensure_catalog_artifact(app, catalog_descriptor(UMU_ID).unwrap(), 1, 5).await?;
     if let Some(id) = id {
-        ensure_catalog_artifact(
-            app,
-            catalog_descriptor(id).expect("known Proton descriptor"),
-            6,
-            38,
-        )
-        .await?;
+        let descriptor = catalog_descriptor(id).expect("known Proton descriptor");
+        if descriptor.kind == artifacts::ArtifactKind::NndskRoProton {
+            artifacts::download_managed_runtime(app, descriptor, operation, 6, 38).await?;
+        } else {
+            ensure_catalog_artifact(app, descriptor, 6, 38).await?;
+        }
         emit_log(
             app,
             format!(
@@ -217,5 +225,26 @@ mod tests {
             RuntimeRequirement::UmuOnly
         );
         assert!(managed_proton_path_for_id("unknown").is_none());
+    }
+
+    #[test]
+    fn publication_never_migrates_a_preservation_runner_selection() {
+        let local = managed_proton_path_for_id(LOCAL_MANAGED_RUNNER_ID).unwrap();
+        assert_ne!(local, managed_proton_path());
+        assert_eq!(
+            managed_proton_id_for_path(&local),
+            Some(LOCAL_MANAGED_RUNNER_ID)
+        );
+        assert_eq!(
+            selected_runtime_requirement(None, Some(local.to_str().unwrap())),
+            RuntimeRequirement::Managed(LOCAL_MANAGED_RUNNER_ID)
+        );
+        assert_eq!(
+            selected_runtime_requirement(
+                Some(local.to_str().unwrap()),
+                Some(managed_proton_path().to_str().unwrap())
+            ),
+            RuntimeRequirement::Managed(LOCAL_MANAGED_RUNNER_ID)
+        );
     }
 }

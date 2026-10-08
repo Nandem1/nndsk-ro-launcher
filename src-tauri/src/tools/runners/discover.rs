@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use crate::models::runner::RunnerInfo;
 use crate::tools::runners::{
     managed_proton_path, managed_proton_path_for_id, LEGACY_MANAGED_RUNNER_ID,
-    LEGACY_MANAGED_RUNNER_LABEL, MANAGED_RUNNER_ID, MANAGED_RUNNER_LABEL,
+    LEGACY_MANAGED_RUNNER_LABEL, LOCAL_MANAGED_RUNNER_ID, MANAGED_RUNNER_ID, MANAGED_RUNNER_LABEL,
 };
 use crate::utils::{app_data_dir, discovered_system_wines, is_executable_file, resolve_runner};
 
@@ -20,6 +20,16 @@ pub fn discover_runners() -> Result<Vec<RunnerInfo>, String> {
         path: managed_path.to_string_lossy().to_string(),
     }];
     let mut seen = HashSet::from([path_key(&managed_path)]);
+
+    let local_path = managed_proton_path_for_id(LOCAL_MANAGED_RUNNER_ID).unwrap();
+    if is_executable_file(&local_path) {
+        seen.insert(path_key(&local_path));
+        runners.push(RunnerInfo {
+            id: LOCAL_MANAGED_RUNNER_ID.to_string(),
+            name: "nndsk-ro-proton 0.1.0-dev.1 · local anterior".to_string(),
+            path: local_path.to_string_lossy().to_string(),
+        });
+    }
 
     let legacy_path = managed_proton_path_for_id(LEGACY_MANAGED_RUNNER_ID).unwrap();
     if is_executable_file(&legacy_path) {

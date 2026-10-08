@@ -23,8 +23,8 @@ const importAction = useSettingsStore.getState().importRuntimeArchive
 const setRunnerAction = useSettingsStore.getState().setRunner
 const current = {
   id: MANAGED_RUNTIME_ID,
-  name: 'nndsk-ro-proton 0.1.0-dev.1',
-  path: '/runtime/nndsk-ro-proton-0.1.0-dev.1/proton',
+  name: 'nndsk-ro-proton 0.1.0-dev.2',
+  path: '/runtime/nndsk-ro-proton-0.1.0-dev.2/proton',
 }
 const server: ServerConfig = {
   id: 'sakura',
@@ -131,7 +131,7 @@ describe('RunnerSelector runtime import', () => {
       screen.getByRole('button', { name: 'Importar y usar nndsk-ro-proton' }),
     ).toBeEnabled()
     expect(
-      screen.getByText(/La descarga pública aún no está/),
+      screen.getByText(/se descarga y verifica por SHA-256 al preparar el/),
     ).toBeInTheDocument()
   })
 
@@ -142,7 +142,7 @@ describe('RunnerSelector runtime import', () => {
       screen.getByRole('button', { name: 'Importar y usar nndsk-ro-proton' }),
     ).toBeDisabled()
     expect(
-      screen.getByRole('button', { name: 'nndsk-ro-proton 0.1.0-dev.1' }),
+      screen.getByRole('button', { name: 'nndsk-ro-proton 0.1.0-dev.2' }),
     ).toBeDisabled()
   })
 

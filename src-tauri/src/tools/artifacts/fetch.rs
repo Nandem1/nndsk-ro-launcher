@@ -30,6 +30,8 @@ pub(crate) async fn download_verified(
 
     let client = reqwest::Client::builder()
         .user_agent("nndsk-ro-launcher")
+        .connect_timeout(std::time::Duration::from_secs(15))
+        .timeout(std::time::Duration::from_secs(1800))
         .build()
         .map_err(|error| format!("No se pudo preparar HTTP: {error}"))?;
     let mut response = client

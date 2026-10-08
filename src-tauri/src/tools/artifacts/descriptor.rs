@@ -1,12 +1,16 @@
 use crate::tools::runtime::ArtifactArchitecture;
 
-pub const MANAGED_RUNNER_ID: &str = "nndsk-ro-proton-0.1.0-dev.1";
-pub const MANAGED_RUNNER_LABEL: &str = "nndsk-ro-proton 0.1.0-dev.1";
+pub const MANAGED_RUNNER_ID: &str = "nndsk-ro-proton-0.1.0-dev.2";
+pub const MANAGED_RUNNER_LABEL: &str = "nndsk-ro-proton 0.1.0-dev.2";
+pub(crate) const LOCAL_MANAGED_RUNNER_ID: &str = "nndsk-ro-proton-0.1.0-dev.1";
 pub(crate) const LEGACY_MANAGED_RUNNER_ID: &str = "ro-proton-cachyos-11.0-20260702-slr";
 pub(crate) const LEGACY_MANAGED_RUNNER_LABEL: &str = "proton-cachyos-11.0-20260702-slr-x86_64";
 pub(crate) const NNDSK_RUNTIME_SOURCE_COMMIT: &str = "93bda981a6e8b7bdadb46fa3497f84df8dfc6fe2";
 pub(crate) const NNDSK_RUNTIME_SHA256: &str =
+    "208e6d4735c9a25c4f14b6465712a1069ce53aaf4d5a12eb5a3967abe962ead4";
+const LOCAL_NNDSK_RUNTIME_SHA256: &str =
     "75b0c916ccf6e7fcd64ed2afe576c2c0bc6a75ef63a8d74ad6dd9bee629d4d9f";
+const NNDSK_RUNTIME_URL: &str = "https://github.com/Nandem1/nndsk-ro-proton/releases/download/v0.1.0-dev.2/nndsk-ro-proton-0.1.0-dev.2-linux-x86_64.tar.zst";
 pub(crate) const MANAGED_DXVK_ID: &str = "dxvk-2.6.2";
 pub(crate) const UMU_ID: &str = "umu-launcher-1.4.0";
 
@@ -160,12 +164,32 @@ const PROTON_DESCRIPTOR: ArtifactDescriptor = ArtifactDescriptor {
 const NNDSK_RUNTIME_DESCRIPTOR: ArtifactDescriptor = ArtifactDescriptor {
     id: MANAGED_RUNNER_ID,
     kind: ArtifactKind::NndskRoProton,
+    version: "0.1.0-dev.2",
+    source: ArtifactSource::Https {
+        url: NNDSK_RUNTIME_URL,
+    },
+    expected_size: 399_605_131,
+    digest: ExpectedDigest::Sha256(NNDSK_RUNTIME_SHA256),
+    archive: ArchiveLayout::TarZst {
+        archive_name: "nndsk-ro-proton-0.1.0-dev.2-linux-x86_64.tar.zst",
+        root: "nndsk-ro-proton",
+    },
+    platform: "linux-x86_64",
+    architectures: &[ArtifactArchitecture::X86, ArtifactArchitecture::X86_64],
+    recipe_revision: 1,
+    payload: PayloadValidatorId::NndskRoProton,
+};
+
+// Preserve existing receipts, selections and prefix fingerprints. Never relabel dev.1.
+const NNDSK_LOCAL_DESCRIPTOR: ArtifactDescriptor = ArtifactDescriptor {
+    id: LOCAL_MANAGED_RUNNER_ID,
+    kind: ArtifactKind::NndskRoProton,
     version: "0.1.0-dev.1",
     source: ArtifactSource::LocalOnly {
         source_commit: NNDSK_RUNTIME_SOURCE_COMMIT,
     },
     expected_size: 398_862_860,
-    digest: ExpectedDigest::Sha256(NNDSK_RUNTIME_SHA256),
+    digest: ExpectedDigest::Sha256(LOCAL_NNDSK_RUNTIME_SHA256),
     archive: ArchiveLayout::TarZst {
         archive_name: "nndsk-ro-proton-0.1.0-dev.1-linux-x86_64.tar.zst",
         root: "nndsk-ro-proton",
@@ -193,11 +217,12 @@ const DXVK_DESCRIPTOR: ArtifactDescriptor = ArtifactDescriptor {
     payload: PayloadValidatorId::DxvkPrefixDlls,
 };
 
-static CATALOG: [ArtifactDescriptor; 4] = [
+static CATALOG: [ArtifactDescriptor; 5] = [
     UMU_DESCRIPTOR,
     PROTON_DESCRIPTOR,
     DXVK_DESCRIPTOR,
     NNDSK_RUNTIME_DESCRIPTOR,
+    NNDSK_LOCAL_DESCRIPTOR,
 ];
 
 #[allow(dead_code)]
@@ -269,10 +294,13 @@ mod tests {
 
     #[test]
     fn preservation_build_is_pinned_without_claiming_a_public_download() {
-        let runtime = catalog_descriptor(MANAGED_RUNNER_ID).unwrap();
+        let runtime = catalog_descriptor(LOCAL_MANAGED_RUNNER_ID).unwrap();
         assert_eq!(runtime.kind, ArtifactKind::NndskRoProton);
         assert_eq!(runtime.expected_size, 398_862_860);
-        assert_eq!(runtime.digest, ExpectedDigest::Sha256(NNDSK_RUNTIME_SHA256));
+        assert_eq!(
+            runtime.digest,
+            ExpectedDigest::Sha256(LOCAL_NNDSK_RUNTIME_SHA256)
+        );
         assert_eq!(runtime.archive.archive_root(), "nndsk-ro-proton");
         assert_eq!(
             runtime.source,
@@ -281,5 +309,22 @@ mod tests {
             }
         );
         assert_ne!(runtime.id, LEGACY_MANAGED_RUNNER_ID);
+    }
+
+    #[test]
+    fn published_runtime_is_pinned_and_distinct_from_preservation_build() {
+        let public = catalog_descriptor(MANAGED_RUNNER_ID).unwrap();
+        let local = catalog_descriptor(LOCAL_MANAGED_RUNNER_ID).unwrap();
+        assert_eq!(
+            public.source,
+            ArtifactSource::Https {
+                url: NNDSK_RUNTIME_URL
+            }
+        );
+        assert_eq!(public.expected_size, 399_605_131);
+        assert_eq!(public.digest, ExpectedDigest::Sha256(NNDSK_RUNTIME_SHA256));
+        assert_ne!(public.id, local.id);
+        assert_ne!(public.digest, local.digest);
+        assert_eq!(public.recipe_revision, local.recipe_revision);
     }
 }

@@ -503,15 +503,21 @@ fn managed_runtime_pending(
             .as_ref()
             .is_some_and(|_| !manifest_compatible);
     let reset_allowed = ensure_managed_reset_allowed(&location).is_ok();
-    let needs_local_import =
-        managed_id == Some(MANAGED_RUNNER_ID) && !managed_proton_ready(MANAGED_RUNNER_ID);
+    let needs_local_import = managed_id.is_some_and(|id| {
+        crate::tools::artifacts::catalog_descriptor(id).is_some_and(|descriptor| {
+            matches!(
+                descriptor.source,
+                crate::tools::artifacts::ArtifactSource::LocalOnly { .. }
+            ) && !managed_proton_ready(id)
+        })
+    });
     let can_reset = health.configured && reset_allowed && !needs_local_import;
     let can_setup = path_safe
         && !managed_unclaimed
         && (!requires_rebuild || reset_allowed)
         && !needs_local_import;
     let runtime_warning = if needs_local_import {
-        "Importa el paquete verificado de nndsk-ro-proton en Runner predeterminado. La descarga pública aún no está disponible; el entorno existente se conservará".to_string()
+        "El runtime local anterior no está instalado. Importa su paquete verificado o selecciona explícitamente nndsk-ro-proton 0.1.0-dev.2, disponible por descarga; el entorno existente se conservará".to_string()
     } else {
         "Runtime administrado pendiente. Al preparar el entorno se comprobarán UMU y Proton; solo se descargará lo que falte o no pase la validación".to_string()
     };

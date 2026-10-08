@@ -4,7 +4,8 @@ use crate::models::dependency::{
 };
 use crate::tools::prefix::MANAGED_DXVK_COMPONENT;
 use crate::tools::runners::{
-    managed_proton_id_for_path, LEGACY_MANAGED_RUNNER_ID, MANAGED_RUNNER_ID,
+    managed_proton_id_for_path, LEGACY_MANAGED_RUNNER_ID, LOCAL_MANAGED_RUNNER_ID,
+    MANAGED_RUNNER_ID,
 };
 use crate::tools::server_tools::{
     GepardInspection, GepardRunnerProfile, GEPARD_HONEY_SHA256, GEPARD_SAKURA_SHA256,
@@ -247,7 +248,9 @@ pub(crate) fn observed_runtime_spec(
             return None;
         }
         return match path_id {
-            MANAGED_RUNNER_ID => Some(CompatibilityRuntimeSpec::ManagedNndskRoProton),
+            MANAGED_RUNNER_ID | LOCAL_MANAGED_RUNNER_ID => {
+                Some(CompatibilityRuntimeSpec::ManagedNndskRoProton)
+            }
             LEGACY_MANAGED_RUNNER_ID => Some(CompatibilityRuntimeSpec::ManagedProtonCachyos11),
             _ => None,
         };

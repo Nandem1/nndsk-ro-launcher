@@ -93,9 +93,9 @@ export function RunnerSelector() {
             : 'Importar y usar nndsk-ro-proton'}
         </Button>
         <p className="mt-1 text-[9px] leading-relaxed text-zinc-500">
-          Paquete local verificado por SHA-256. La descarga pública aún no está
-          disponible; importar cambia sólo el predeterminado global, no los
-          runners propios de cada servidor.
+          nndsk-ro-proton se descarga y verifica por SHA-256 al preparar el
+          entorno. La importación local es opcional y cambia sólo el
+          predeterminado global, no los runners propios de cada servidor.
         </p>
       </div>
       {savingRunner && (
