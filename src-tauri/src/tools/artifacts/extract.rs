@@ -16,6 +16,15 @@ pub(crate) fn extract_archive(
 ) -> Result<(), String> {
     std::fs::create_dir(staging_dir)
         .map_err(|error| format!("No se pudo crear staging: {error}"))?;
+    extract_created_archive(descriptor, archive_path, staging_dir)
+}
+
+/// The importer creates and owns this staging directory before arming its cleanup.
+pub(crate) fn extract_created_archive(
+    descriptor: &ArtifactDescriptor,
+    archive_path: &Path,
+    staging_dir: &Path,
+) -> Result<(), String> {
     let file = File::open(archive_path)
         .map_err(|error| format!("No se pudo abrir {}: {error}", archive_path.display()))?;
 
@@ -29,6 +38,11 @@ pub(crate) fn extract_archive(
         }
         ArchiveLayout::TarXz { .. } => {
             let decoder = XzDecoder::new(BufReader::new(file));
+            extract_entries(Archive::new(decoder), staging_dir, descriptor)?;
+        }
+        ArchiveLayout::TarZst { .. } => {
+            let decoder = zstd::stream::read::Decoder::new(BufReader::new(file))
+                .map_err(|error| format!("No se pudo leer zstd de {}: {error}", descriptor.id))?;
             extract_entries(Archive::new(decoder), staging_dir, descriptor)?;
         }
     }
@@ -307,5 +321,54 @@ mod tests {
         assert!(extract_archive(descriptor, &archive, &staging).is_err());
         let _ = std::fs::remove_file(archive);
         let _ = std::fs::remove_dir_all(staging);
+    }
+
+    #[test]
+    fn tar_zst_uses_the_same_traversal_and_link_guards() {
+        let directory = std::env::temp_dir().join(format!(
+            "ro-launcher-zstd-traversal-{}-{}",
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let outside = directory.join("outside");
+        std::fs::write(&outside, b"keep").unwrap();
+        let mut descriptor = test_descriptor("fixture");
+        descriptor.archive = ArchiveLayout::TarZst {
+            archive_name: "test.tar.zst",
+            root: "fixture",
+        };
+        for (index, (path, link)) in [
+            ("../outside", None),
+            ("/absolute", None),
+            ("fixture/link", Some("../../outside")),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let archive = directory.join(format!("test-{index}.tar.zst"));
+            let mut header = tar::Header::new_gnu();
+            header.set_mode(0o644);
+            // Construct invalid paths directly, since tar::Builder rejects them before extraction.
+            header.as_mut_bytes()[..path.len()].copy_from_slice(path.as_bytes());
+            header.set_size(0);
+            if let Some(link) = link {
+                header.set_entry_type(EntryType::Symlink);
+                header.set_link_name(link).unwrap();
+            }
+            header.set_cksum();
+            let mut builder = Builder::new(Vec::new());
+            builder.append(&header, &[] as &[u8]).unwrap();
+            let bytes = zstd::stream::encode_all(&builder.into_inner().unwrap()[..], 1).unwrap();
+            std::fs::write(&archive, bytes).unwrap();
+            assert!(extract_archive(
+                &descriptor,
+                &archive,
+                &directory.join(format!("staging-{index}"))
+            )
+            .is_err());
+            assert_eq!(std::fs::read(&outside).unwrap(), b"keep");
+        }
+        std::fs::remove_dir_all(directory).unwrap();
     }
 }

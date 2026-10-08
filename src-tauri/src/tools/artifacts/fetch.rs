@@ -17,7 +17,10 @@ pub(crate) async fn download_verified(
     progress_start: u32,
     progress_end: u32,
 ) -> Result<(), String> {
-    let url = catalog_url(descriptor);
+    let url = catalog_url(descriptor).ok_or_else(|| format!(
+        "{} todavía no tiene una release descargable; importa el archivo local verificado desde Ajustes",
+        descriptor.id
+    ))?;
     if !request_url_allowed(descriptor, url) {
         return Err(format!(
             "La URL de {} no está permitida por el catálogo",
@@ -188,7 +191,7 @@ pub(crate) fn verify_archive_file(
     let expected = super::descriptor::expected_digest_hex(digest);
     if actual != expected {
         return Err(format!(
-            "El checksum de {} no coincide; el archivo descargado no se instalará",
+            "El checksum de {} no coincide; el archivo no se instalará",
             path.display()
         ));
     }

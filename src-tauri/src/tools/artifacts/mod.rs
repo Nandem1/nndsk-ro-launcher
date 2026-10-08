@@ -3,6 +3,7 @@
 mod descriptor;
 mod extract;
 mod fetch;
+mod import;
 mod install;
 mod payload;
 mod receipt;
@@ -18,12 +19,14 @@ use crate::utils::{app_data_dir, emit_log, emit_log_opt, emit_progress, replace_
 #[allow(unused_imports)]
 pub(crate) use descriptor::{
     catalog_all, catalog_descriptor, decode_hex_digest, expected_digest_hex, ArtifactDescriptor,
-    ExpectedDigest, DXVK_SHA256, MANAGED_DXVK_ID, MANAGED_RUNNER_ID, MANAGED_RUNNER_LABEL,
-    PROTON_SHA512, UMU_ID, UMU_SHA256,
+    ArtifactKind, ArtifactSource, ExpectedDigest, DXVK_SHA256, LEGACY_MANAGED_RUNNER_ID,
+    LEGACY_MANAGED_RUNNER_LABEL, MANAGED_DXVK_ID, MANAGED_RUNNER_ID, MANAGED_RUNNER_LABEL,
+    NNDSK_RUNTIME_SHA256, NNDSK_RUNTIME_SOURCE_COMMIT, PROTON_SHA512, UMU_ID, UMU_SHA256,
 };
 pub(crate) use fetch::{
     download_pinned_https, pinned_https_url_allowed, verify_archive_file, PinnedHttpsFile,
 };
+pub(crate) use import::import_managed_runtime_archive;
 
 const RUNTIME_DIR: &str = "runtime";
 
@@ -277,9 +280,12 @@ mod tests {
 
     #[test]
     fn pinned_proton_is_newer_than_the_broken_dxvk_snapshot() {
-        assert_eq!(MANAGED_RUNNER_ID, "ro-proton-cachyos-11.0-20260702-slr");
         assert_eq!(
-            MANAGED_RUNNER_LABEL,
+            LEGACY_MANAGED_RUNNER_ID,
+            "ro-proton-cachyos-11.0-20260702-slr"
+        );
+        assert_eq!(
+            LEGACY_MANAGED_RUNNER_LABEL,
             "proton-cachyos-11.0-20260702-slr-x86_64"
         );
         assert_eq!(PROTON_SHA512.len(), 128);

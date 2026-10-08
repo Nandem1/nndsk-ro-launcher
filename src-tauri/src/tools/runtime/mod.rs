@@ -43,8 +43,8 @@ pub(crate) use encode::server_path_token16;
 pub(crate) use environment::GraphicsEnvironmentError;
 pub(crate) use host_gpu::probe_host_gpu;
 pub(crate) use identity::{
-    prefix_v3_write_enabled, resolve_prefix_binding, resolve_prefix_binding_for_managed_descriptor,
-    PrefixBinding, PrefixIdentityStatus,
+    prefix_v3_write_enabled, resolve_prefix_binding,
+    resolve_prefix_binding_for_managed_descriptor_id, PrefixBinding, PrefixIdentityStatus,
 };
 pub(crate) use inspection::inspect_subject;
 pub(crate) use model::InvocationTarget;
@@ -60,7 +60,7 @@ pub(crate) use observation_store::{
     enqueue_persist_unreached, export_observations, list_observations, new_observation_id,
     ObservationFinishedPayload, ObservationStartedPayload,
 };
-pub(crate) use probe::{paths_match, probe_runner, RunnerProbe};
+pub(crate) use probe::{probe_runner, RunnerProbe};
 pub(crate) use resolver::DgVoodooState;
 pub(crate) use session_anchor::{
     runtime_anchor_for_operation, session_anchor_unavailable, ExecutionFacts, SessionAnchorV2,

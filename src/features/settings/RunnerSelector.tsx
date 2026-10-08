@@ -1,12 +1,25 @@
+import { useState } from 'react'
+import { open } from '@tauri-apps/plugin-dialog'
 import { useSettingsStore } from './settings.store'
 import { Panel } from '../../shared/ui/Panel'
 import { DarkSelect } from '../../shared/ui/DarkSelect'
+import { Button } from '../../shared/ui/Button'
+import { runSafely } from '../../shared/async'
 import { isLauncherBusy, useLauncherStore } from '../launcher/launcher.store'
 import { useSelectedServer } from '../servers/useSelectedServer'
 
 export function RunnerSelector() {
-  const { runners, selectedRunner, savingRunner, error, setRunner } =
-    useSettingsStore()
+  const {
+    runners,
+    selectedRunner,
+    savingRunner,
+    importingRuntime,
+    error,
+    setRunner,
+    importRuntimeArchive,
+  } = useSettingsStore()
+  const [pickingArchive, setPickingArchive] = useState(false)
+  const [pickerError, setPickerError] = useState<string | null>(null)
   const launcherStatus = useLauncherStore((state) => state.status)
   const activeClients = useLauncherStore((state) => state.clients.length)
   const server = useSelectedServer()
@@ -27,24 +40,72 @@ export function RunnerSelector() {
     })
   }
 
-  if (options.length === 0) return null
+  const importBusy = pickingArchive || importingRuntime
+
+  const importRuntime = async () => {
+    setPickingArchive(true)
+    setPickerError(null)
+    try {
+      const result = await runSafely(() =>
+        open({
+          title: 'Importar nndsk-ro-proton verificado',
+          multiple: false,
+          directory: false,
+          filters: [{ name: 'Runtime tar.zst', extensions: ['zst'] }],
+        }),
+      )
+      if (!result.ok) {
+        setPickerError(result.error)
+        return
+      }
+      if (typeof result.value !== 'string') return
+      const launcher = useLauncherStore.getState()
+      if (isLauncherBusy(launcher.status) || launcher.clients.length > 0) {
+        setPickerError(
+          'Espera a que termine la sesión antes de importar el runtime',
+        )
+        return
+      }
+      await importRuntimeArchive(result.value)
+    } finally {
+      setPickingArchive(false)
+    }
+  }
 
   return (
     <Panel title="Runner predeterminado" className="shrink-0">
-      <DarkSelect
-        value={selectedRunner}
-        options={options}
-        onChange={setRunner}
-        disabled={savingRunner || launcherBusy}
-      />
+      {options.length > 0 && (
+        <DarkSelect
+          value={selectedRunner}
+          options={options}
+          onChange={setRunner}
+          disabled={savingRunner || launcherBusy || importBusy}
+        />
+      )}
+      <div className="mt-2">
+        <Button
+          size="xs"
+          disabled={savingRunner || launcherBusy || importBusy}
+          onClick={() => void importRuntime()}
+        >
+          {importBusy
+            ? 'Importando runtime...'
+            : 'Importar y usar nndsk-ro-proton'}
+        </Button>
+        <p className="mt-1 text-[9px] leading-relaxed text-zinc-500">
+          Paquete local verificado por SHA-256. La descarga pública aún no está
+          disponible; importar cambia sólo el predeterminado global, no los
+          runners propios de cada servidor.
+        </p>
+      </div>
       {savingRunner && (
         <p className="mt-1.5 text-[10px] text-zinc-500">
           Guardando selección...
         </p>
       )}
-      {error && (
+      {(error || pickerError) && (
         <p role="alert" className="mt-1.5 text-[10px] text-red-400">
-          {error}
+          {pickerError || error}
         </p>
       )}
       {!detected && selectedRunner && (

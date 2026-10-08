@@ -26,7 +26,7 @@ use commands::{
         delete_runtime_observations, export_runtime_observations, list_runtime_observations,
     },
     prefix::{reset_prefix, setup_prefix},
-    runners::list_runners,
+    runners::{import_managed_runtime_archive, list_runners},
     server_tools::{install_dgvoodoo, launch_server_tool, scan_server_tools, uninstall_dgvoodoo},
     servers::{list_servers, save_servers},
     settings::{load_settings, save_settings},
@@ -46,6 +46,12 @@ use tools::{
     updater::{OfficialUpdaterBackend, UpdateLease},
 };
 use utils::configure_linux_webview_env;
+
+/// Headless entrypoint for local checksum-pinned runtime deployment.
+/// Uses exactly the same transaction and validation as the desktop importer.
+pub async fn import_runtime_archive(path: &std::path::Path) -> Result<std::path::PathBuf, String> {
+    tools::artifacts::import_managed_runtime_archive(path).await
+}
 
 #[tauri::command]
 async fn show_main_window(app: tauri::AppHandle) {
@@ -93,6 +99,7 @@ pub fn run() {
             stop_game,
             stop_all_games,
             list_runners,
+            import_managed_runtime_archive,
             list_servers,
             load_settings,
             save_servers,

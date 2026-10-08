@@ -706,9 +706,21 @@ mod tests {
     }
 
     #[test]
-    fn catalog_still_has_three_artifacts() {
+    fn experimental_d7vk_remains_outside_the_managed_catalog() {
         assert!(catalog_descriptor("d7vk-2.2").is_none());
-        assert_eq!(crate::tools::artifacts::catalog_all().len(), 3);
+        let ids: std::collections::BTreeSet<_> = crate::tools::artifacts::catalog_all()
+            .iter()
+            .map(|descriptor| descriptor.id)
+            .collect();
+        assert_eq!(
+            ids,
+            std::collections::BTreeSet::from([
+                crate::tools::artifacts::MANAGED_RUNNER_ID,
+                crate::tools::artifacts::LEGACY_MANAGED_RUNNER_ID,
+                crate::tools::artifacts::UMU_ID,
+                crate::tools::artifacts::MANAGED_DXVK_ID,
+            ])
+        );
     }
 
     #[test]

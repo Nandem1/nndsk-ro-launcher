@@ -24,6 +24,7 @@ describe('settings store runner selection', () => {
       selectedRunner: '',
       richPresenceEnabled: false,
       savingRunner: false,
+      importingRuntime: false,
       savingPresence: false,
       error: null,
       notice: null,
@@ -59,6 +60,128 @@ describe('settings store runner selection', () => {
     expect(useSettingsStore.getState().selectedRunner).toBe(proton.path)
     expect(useSettingsStore.getState().notice?.kind).toBe('migrated')
     expect(loadDepsStatus).not.toHaveBeenCalled()
+  })
+
+  it('imports the verified package and explicitly selects its known runner', async () => {
+    const importArchive = vi
+      .spyOn(api, 'importManagedRuntimeArchive')
+      .mockResolvedValue(proton.path)
+    vi.spyOn(api, 'listRunners').mockResolvedValue([proton])
+    const save = vi.spyOn(api, 'saveSettings').mockResolvedValue()
+    useSettingsStore.setState({ selectedRunner: '/runners/wine716/bin/wine' })
+
+    expect(
+      await useSettingsStore
+        .getState()
+        .importRuntimeArchive('/tmp/runtime.tar.zst'),
+    ).toBe(true)
+
+    expect(importArchive).toHaveBeenCalledWith('/tmp/runtime.tar.zst')
+    expect(save).toHaveBeenCalledWith({
+      defaultRunner: proton.path,
+      richPresenceEnabled: false,
+    })
+    expect(useSettingsStore.getState()).toMatchObject({
+      selectedRunner: proton.path,
+      runners: [proton],
+      importingRuntime: false,
+      error: null,
+    })
+  })
+
+  it('keeps the saved runner when importing an unverified archive fails', async () => {
+    vi.spyOn(api, 'importManagedRuntimeArchive').mockRejectedValue(
+      new Error('SHA-256 mismatch'),
+    )
+    const list = vi.spyOn(api, 'listRunners').mockResolvedValue([proton])
+    const save = vi.spyOn(api, 'saveSettings').mockResolvedValue()
+    useSettingsStore.setState({ selectedRunner: '/runners/wine716/bin/wine' })
+
+    expect(
+      await useSettingsStore
+        .getState()
+        .importRuntimeArchive('/tmp/other.tar.zst'),
+    ).toBe(false)
+
+    expect(useSettingsStore.getState()).toMatchObject({
+      selectedRunner: '/runners/wine716/bin/wine',
+      importingRuntime: false,
+      error: 'SHA-256 mismatch',
+    })
+    expect(list).not.toHaveBeenCalled()
+    expect(save).not.toHaveBeenCalled()
+  })
+
+  it('refuses to select an imported path without the known runtime identity', async () => {
+    vi.spyOn(api, 'importManagedRuntimeArchive').mockResolvedValue(proton.path)
+    vi.spyOn(api, 'listRunners').mockResolvedValue([
+      { ...proton, id: 'external:unverified' },
+    ])
+    const save = vi.spyOn(api, 'saveSettings').mockResolvedValue()
+    useSettingsStore.setState({ selectedRunner: '/custom/wine' })
+
+    expect(
+      await useSettingsStore
+        .getState()
+        .importRuntimeArchive('/tmp/runtime.tar.zst'),
+    ).toBe(false)
+
+    expect(save).not.toHaveBeenCalled()
+    expect(useSettingsStore.getState()).toMatchObject({
+      selectedRunner: '/custom/wine',
+      importingRuntime: false,
+      error: 'El runtime importado no aparece como paquete verificado',
+    })
+  })
+
+  it('does not duplicate an import or overwrite a newer explicit runner selection', async () => {
+    const pending = deferred<string>()
+    const importArchive = vi
+      .spyOn(api, 'importManagedRuntimeArchive')
+      .mockReturnValueOnce(pending.promise)
+    vi.spyOn(api, 'listRunners').mockResolvedValue([proton])
+    const save = vi.spyOn(api, 'saveSettings').mockResolvedValue()
+    useSettingsStore.setState({ selectedRunner: '/custom/first/wine' })
+
+    const importing = useSettingsStore
+      .getState()
+      .importRuntimeArchive('/tmp/runtime.tar.zst')
+    expect(useSettingsStore.getState().importingRuntime).toBe(true)
+    expect(
+      await useSettingsStore
+        .getState()
+        .importRuntimeArchive('/tmp/runtime.tar.zst'),
+    ).toBe(false)
+    await useSettingsStore.getState().setRunner('/custom/newer/wine')
+    pending.resolve(proton.path)
+    await importing
+
+    expect(importArchive).toHaveBeenCalledTimes(1)
+    expect(save).toHaveBeenCalledTimes(1)
+    expect(useSettingsStore.getState()).toMatchObject({
+      selectedRunner: '/custom/newer/wine',
+      runners: [proton],
+      importingRuntime: false,
+    })
+  })
+
+  it('keeps the prior selection when saving an imported runtime selection fails', async () => {
+    vi.spyOn(api, 'importManagedRuntimeArchive').mockResolvedValue(proton.path)
+    vi.spyOn(api, 'listRunners').mockResolvedValue([proton])
+    vi.spyOn(api, 'saveSettings').mockRejectedValue(new Error('disk full'))
+    useSettingsStore.setState({ selectedRunner: '/custom/wine' })
+
+    expect(
+      await useSettingsStore
+        .getState()
+        .importRuntimeArchive('/tmp/runtime.tar.zst'),
+    ).toBe(false)
+
+    expect(useSettingsStore.getState()).toMatchObject({
+      selectedRunner: '/custom/wine',
+      importingRuntime: false,
+      error: 'disk full',
+    })
   })
 
   it('serializes rapid runner writes and keeps the latest selection', async () => {

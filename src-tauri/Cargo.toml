@@ -29,6 +29,7 @@ sha2 = "0.10"
 tar = "0.4"
 flate2 = "1"
 xz2 = "0.1"
+zstd = "0.13.3"
 ro-tools-core = { path = "../crates/ro-tools-core" }
 ro-tools-linux = { path = "../crates/ro-tools-linux" }
 ro-session-protocol = { path = "../crates/ro-session-protocol" }

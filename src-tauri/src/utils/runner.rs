@@ -90,6 +90,138 @@ fn invocation_cwd_for_prefix(prefix_path: &str) -> PathBuf {
     }
 }
 
+/// Pass a real DOS executable path to Proton instead of activating its Unix-path helper.
+/// Drive letters come exclusively from this prefix's existing Wine mappings.
+fn proton_executable_dos_path(prefix_path: &str, exe_path: &str) -> Result<OsString, String> {
+    let prefix = Path::new(prefix_path);
+    if !prefix.is_absolute() || exe_path.contains('\0') {
+        return Err("El prefix y el ejecutable requieren rutas absolutas válidas".to_string());
+    }
+    let bytes = exe_path.as_bytes();
+    if bytes.get(1) == Some(&b':') {
+        if !bytes[0].is_ascii_alphabetic() || !matches!(bytes.get(2), Some(b'\\' | b'/')) {
+            return Err(
+                "El ejecutable DOS debe incluir una unidad y una ruta absoluta".to_string(),
+            );
+        }
+        let drive = bytes[0].to_ascii_lowercase();
+        let components: Vec<_> = exe_path[3..].split(['\\', '/']).collect();
+        for component in &components {
+            validate_dos_component(component)?;
+        }
+        let root = proton_drive_root(prefix, drive)?;
+        let target = root.join(components.iter().collect::<PathBuf>());
+        let canonical = canonical_executable(&target)?;
+        if !canonical.starts_with(&root) {
+            return Err("La ruta DOS sale de su unidad mediante un enlace simbólico".to_string());
+        }
+        return Ok(OsString::from(format!(
+            "{}:\\{}",
+            char::from(drive.to_ascii_uppercase()),
+            components.join("\\")
+        )));
+    }
+
+    let executable = Path::new(exe_path);
+    if !executable.is_absolute() {
+        return Err("El ejecutable de Proton debe ser una ruta absoluta".to_string());
+    }
+    let canonical = canonical_executable(executable)?;
+    let mappings = std::fs::read_dir(prefix.join("dosdevices"))
+        .map_err(|error| format!("No se pudieron leer las unidades Wine del prefix: {error}"))?;
+    let mut candidates = Vec::new();
+    for entry in mappings.flatten() {
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else {
+            continue;
+        };
+        let label = name.as_bytes();
+        if label.len() != 2 || !label[0].is_ascii_lowercase() || label[1] != b':' {
+            continue;
+        }
+        let Ok(root) = proton_drive_root(prefix, label[0]) else {
+            continue;
+        };
+        if canonical.starts_with(&root) {
+            candidates.push((root, label[0]));
+        }
+    }
+    // Prefer the deepest mapping; equal mappings use a stable drive-letter order.
+    candidates.sort_by(|(left, left_drive), (right, right_drive)| {
+        right
+            .components()
+            .count()
+            .cmp(&left.components().count())
+            .then_with(|| left_drive.cmp(right_drive))
+    });
+    let Some((root, drive)) = candidates.first() else {
+        return Err("Ninguna unidad Wine existente contiene el ejecutable de Proton".to_string());
+    };
+    let relative = canonical
+        .strip_prefix(root)
+        .map_err(|error| error.to_string())?;
+    let mut components = Vec::new();
+    for component in relative.components() {
+        let Some(component) = component.as_os_str().to_str() else {
+            return Err("El ejecutable de Proton no tiene una ruta UTF-8".to_string());
+        };
+        validate_dos_component(component)?;
+        components.push(component);
+    }
+    let dos = format!(
+        "{}:\\{}",
+        char::from(drive.to_ascii_uppercase()),
+        components.join("\\")
+    );
+    let current_root = proton_drive_root(prefix, *drive)?;
+    if current_root != *root || canonical_executable(&current_root.join(relative))? != canonical {
+        return Err("La ruta DOS no corresponde al mismo ejecutable de Proton".to_string());
+    }
+    Ok(OsString::from(dos))
+}
+
+fn proton_drive_root(prefix: &Path, drive: u8) -> Result<PathBuf, String> {
+    let mapping = prefix
+        .join("dosdevices")
+        .join(format!("{}:", char::from(drive)));
+    if !mapping
+        .symlink_metadata()
+        .is_ok_and(|metadata| metadata.file_type().is_symlink())
+    {
+        return Err("La unidad DOS no es un enlace Wine existente".to_string());
+    }
+    let root = std::fs::canonicalize(mapping)
+        .map_err(|error| format!("La unidad Wine no se puede resolver: {error}"))?;
+    if !root.is_dir() {
+        return Err("La unidad Wine no apunta a un directorio".to_string());
+    }
+    Ok(root)
+}
+
+fn canonical_executable(path: &Path) -> Result<PathBuf, String> {
+    let canonical = std::fs::canonicalize(path)
+        .map_err(|error| format!("No se pudo resolver el ejecutable de Proton: {error}"))?;
+    if !canonical.is_file() {
+        return Err("El ejecutable de Proton no es un archivo".to_string());
+    }
+    Ok(canonical)
+}
+
+fn validate_dos_component(component: &str) -> Result<(), String> {
+    if component.is_empty()
+        || matches!(component, "." | "..")
+        || component.ends_with(['.', ' '])
+        || component
+            .chars()
+            .any(|ch| ch < ' ' || "\\/:\"<>|?*".contains(ch))
+    {
+        return Err(
+            "La ruta del ejecutable no se puede representar inequívocamente en DOS".to_string(),
+        );
+    }
+    Ok(())
+}
+
 fn resolve_winetricks_executable() -> Result<PathBuf, String> {
     let path = effective_wine_winetricks_path()
         .or(winetricks_path())
@@ -172,8 +304,14 @@ pub struct ResolvedRunner {
     strategy: RunnerStrategy,
 }
 
+#[cfg(test)]
 pub(crate) fn resolved_managed_proton_descriptor() -> ResolvedRunner {
-    let proton_script = managed_proton_path();
+    resolved_managed_proton_descriptor_for_path(managed_proton_path())
+}
+
+pub(crate) fn resolved_managed_proton_descriptor_for_path(
+    proton_script: PathBuf,
+) -> ResolvedRunner {
     let proton_dir = proton_script
         .parent()
         .map(Path::to_path_buf)
@@ -335,7 +473,9 @@ impl ResolvedRunner {
             RunnerStrategy::Proton { .. } => {
                 let mut invocation =
                     self.proton_invocation(prefix_path, ProtonVerb::WaitForExitAndRun)?;
-                invocation.args.push(OsString::from(exe_path));
+                invocation
+                    .args
+                    .push(proton_executable_dos_path(prefix_path, exe_path)?);
                 invocation
                     .args
                     .extend(args.into_iter().map(|a| a.as_ref().to_os_string()));
@@ -390,7 +530,9 @@ impl ResolvedRunner {
             }
             RunnerStrategy::Proton { .. } => {
                 let mut invocation = self.proton_invocation(prefix_path, ProtonVerb::Run)?;
-                invocation.args.push(OsString::from(exe_path));
+                invocation
+                    .args
+                    .push(proton_executable_dos_path(prefix_path, exe_path)?);
                 invocation
                     .args
                     .extend(args.into_iter().map(|a| a.as_ref().to_os_string()));
@@ -1091,6 +1233,203 @@ mod tests {
         }
     }
 
+    #[test]
+    fn managed_descriptor_stub_retains_the_requested_runner_path_without_execution() {
+        let requested = PathBuf::from("/nonexistent/legacy-runtime/proton");
+        let runner = resolved_managed_proton_descriptor_for_path(requested.clone());
+        assert_eq!(runner.runner_path(), requested);
+        assert_eq!(runner.proton_root(), requested.parent());
+        assert_eq!(runner.proton_umu_path(), Some(managed_umu_path().as_path()));
+    }
+
+    struct ProtonPathFixture {
+        root: PathBuf,
+        prefix: PathBuf,
+        game_dir: PathBuf,
+        executable: PathBuf,
+    }
+
+    impl ProtonPathFixture {
+        fn new() -> Self {
+            let root = std::env::temp_dir().join(format!(
+                "ro-launcher-proton-path-{}-{}",
+                std::process::id(),
+                uuid::Uuid::new_v4()
+            ));
+            let prefix = root.join("prefix");
+            let game_dir = root.join("games/RO [2026] ñ");
+            let executable = game_dir.join("HoneyRO.exe");
+            std::fs::create_dir_all(prefix.join("dosdevices")).unwrap();
+            std::fs::create_dir_all(&game_dir).unwrap();
+            std::fs::write(&executable, b"own path fixture only").unwrap();
+            std::os::unix::fs::symlink("../../games", prefix.join("dosdevices/x:")).unwrap();
+            std::os::unix::fs::symlink("/", prefix.join("dosdevices/z:")).unwrap();
+            Self {
+                root,
+                prefix,
+                game_dir,
+                executable,
+            }
+        }
+
+        fn dos(&self, executable: &str) -> OsString {
+            OsString::from(format!("X:\\RO [2026] ñ\\{executable}"))
+        }
+
+        fn convert(&self, executable: &str) -> Result<OsString, String> {
+            proton_executable_dos_path(self.prefix.to_str().unwrap(), executable)
+        }
+    }
+
+    impl Drop for ProtonPathFixture {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.root);
+        }
+    }
+
+    #[test]
+    fn proton_dos_path_prefers_the_most_specific_real_drive_mapping() {
+        let fixture = ProtonPathFixture::new();
+        assert_eq!(
+            fixture
+                .convert(fixture.executable.to_str().unwrap())
+                .unwrap(),
+            fixture.dos("HoneyRO.exe")
+        );
+        std::os::unix::fs::symlink(&fixture.game_dir, fixture.prefix.join("dosdevices/y:"))
+            .unwrap();
+        assert_eq!(
+            fixture
+                .convert(fixture.executable.to_str().unwrap())
+                .unwrap(),
+            OsString::from("Y:\\HoneyRO.exe")
+        );
+    }
+
+    #[test]
+    fn proton_dos_path_verifies_absolute_dos_input_without_reassigning_its_drive() {
+        let fixture = ProtonPathFixture::new();
+        for input in ["X:\\RO [2026] ñ\\HoneyRO.exe", "x:/RO [2026] ñ/HoneyRO.exe"] {
+            assert_eq!(fixture.convert(input).unwrap(), fixture.dos("HoneyRO.exe"));
+        }
+        for input in [
+            "X:RO [2026] ñ\\HoneyRO.exe",
+            "X:\\..\\HoneyRO.exe",
+            "X:\\RO [2026] ñ\\..\\HoneyRO.exe",
+            "X:\\RO [2026] ñ\\Missing.exe",
+            "Q:\\RO [2026] ñ\\HoneyRO.exe",
+            "\\\\server\\share\\HoneyRO.exe",
+        ] {
+            assert!(
+                fixture.convert(input).is_err(),
+                "accepted invalid DOS input"
+            );
+        }
+    }
+
+    #[test]
+    fn proton_dos_path_ignores_stale_or_non_drive_mappings_and_rejects_missing_mapping() {
+        let fixture = ProtonPathFixture::new();
+        let dosdevices = fixture.prefix.join("dosdevices");
+        std::os::unix::fs::symlink("missing", dosdevices.join("a:")).unwrap();
+        std::os::unix::fs::symlink("b:", dosdevices.join("b:")).unwrap();
+        std::os::unix::fs::symlink(&fixture.executable, dosdevices.join("d:")).unwrap();
+        std::os::unix::fs::symlink(&fixture.game_dir, dosdevices.join("x::")).unwrap();
+        assert_eq!(
+            fixture
+                .convert(fixture.executable.to_str().unwrap())
+                .unwrap(),
+            fixture.dos("HoneyRO.exe")
+        );
+        std::fs::remove_file(dosdevices.join("x:")).unwrap();
+        std::fs::remove_file(dosdevices.join("z:")).unwrap();
+        assert!(fixture
+            .convert(fixture.executable.to_str().unwrap())
+            .is_err());
+        assert!(fixture.convert("A:\\HoneyRO.exe").is_err());
+        assert!(fixture.convert("B:\\HoneyRO.exe").is_err());
+        assert!(fixture.convert("D:\\HoneyRO.exe").is_err());
+    }
+
+    #[test]
+    fn proton_dos_path_rejects_symlink_escape_from_the_requested_drive() {
+        let fixture = ProtonPathFixture::new();
+        let outside = fixture.root.join("outside.exe");
+        std::fs::write(&outside, b"own outside fixture").unwrap();
+        std::os::unix::fs::symlink(&outside, fixture.game_dir.join("escape.exe")).unwrap();
+        assert!(fixture.convert("X:\\RO [2026] ñ\\escape.exe").is_err());
+        let unix_alias = fixture.root.join("same-executable.exe");
+        std::os::unix::fs::symlink(&fixture.executable, &unix_alias).unwrap();
+        assert_eq!(
+            fixture.convert(unix_alias.to_str().unwrap()).unwrap(),
+            fixture.dos("HoneyRO.exe")
+        );
+    }
+
+    #[test]
+    fn proton_dos_path_rejects_ambiguous_or_nonexistent_unix_targets() {
+        let fixture = ProtonPathFixture::new();
+        for name in [
+            "literal\\slash.exe",
+            "alternate:stream.exe",
+            "trailing.exe.",
+            "trailing.exe ",
+        ] {
+            let target = fixture.game_dir.join(name);
+            std::fs::write(&target, b"own ambiguous fixture").unwrap();
+            assert!(fixture.convert(target.to_str().unwrap()).is_err());
+        }
+        assert!(fixture.convert("HoneyRO.exe").is_err());
+        assert!(fixture.convert(fixture.game_dir.to_str().unwrap()).is_err());
+        assert!(fixture
+            .convert(fixture.game_dir.join("absent.exe").to_str().unwrap())
+            .is_err());
+        assert!(fixture.convert("X:\\RO [2026] ñ\\HoneyRO.exe\0").is_err());
+    }
+
+    #[test]
+    fn proton_dos_path_rejects_non_utf8_canonical_target() {
+        use std::os::unix::ffi::OsStringExt;
+
+        let fixture = ProtonPathFixture::new();
+        let target = fixture
+            .game_dir
+            .join(OsString::from_vec(vec![b'b', 0xff, b'.', b'e', b'x', b'e']));
+        std::fs::write(&target, b"own non UTF-8 fixture").unwrap();
+        let alias = fixture.game_dir.join("utf8-alias.exe");
+        std::os::unix::fs::symlink(&target, &alias).unwrap();
+        assert!(fixture.convert(alias.to_str().unwrap()).is_err());
+    }
+
+    #[test]
+    fn proton_tool_dos_launch_preserves_cwd_and_all_following_arguments() {
+        let fixture = ProtonPathFixture::new();
+        let runner = test_proton_runner();
+        let invocation = runner
+            .tool_invocation(
+                fixture.prefix.to_str().unwrap(),
+                fixture.executable.to_str().unwrap(),
+                ["arg with spaces", "-flag", "[brackets]", "back\\slash"],
+                fixture.game_dir.to_str().unwrap(),
+            )
+            .unwrap();
+        assert_eq!(invocation.cwd, fixture.game_dir.canonicalize().unwrap());
+        assert_eq!(
+            invocation.args,
+            [
+                fixture.dos("HoneyRO.exe"),
+                OsString::from("arg with spaces"),
+                OsString::from("-flag"),
+                OsString::from("[brackets]"),
+                OsString::from("back\\slash"),
+            ]
+        );
+        assert_eq!(
+            env(&invocation.into_command(), "PROTON_VERB"),
+            Some("run".into())
+        );
+    }
+
     fn args(command: &Command) -> Vec<OsString> {
         command
             .as_std()
@@ -1168,17 +1507,26 @@ mod tests {
     #[test]
     fn proton_game_uses_umu_and_never_inner_wine() {
         let runner = test_proton_runner();
+        let fixture = ProtonPathFixture::new();
         let command = runner.game_command(
-            "/tmp/proton-prefix",
-            "/games/RO/ragexe.exe",
+            fixture.prefix.to_str().unwrap(),
+            fixture.executable.to_str().unwrap(),
             ["account", "secret with spaces"],
-            "/games/RO",
+            fixture.game_dir.to_str().unwrap(),
         );
 
         assert_eq!(command.as_std().get_program(), OsStr::new(UMU_RUN_BIN));
         assert_eq!(
             args(&command),
-            ["/games/RO/ragexe.exe", "account", "secret with spaces"].map(OsString::from)
+            [
+                fixture.dos("HoneyRO.exe"),
+                "account".into(),
+                "secret with spaces".into()
+            ]
+        );
+        assert_eq!(
+            command.as_std().get_current_dir(),
+            Some(fixture.game_dir.as_path())
         );
         assert_eq!(env(&command, "PROTONPATH"), Some("/opt/test-proton".into()));
         assert_eq!(env(&command, "GAMEID"), Some(DEFAULT_GAME_ID.into()));
@@ -1202,8 +1550,13 @@ mod tests {
     #[test]
     fn proton_operations_select_the_expected_verbs() {
         let runner = test_proton_runner();
-        let tool =
-            runner.tool_command("/tmp/p", "/games/setup.exe", Vec::<String>::new(), "/games");
+        let fixture = ProtonPathFixture::new();
+        let tool = runner.tool_command(
+            fixture.prefix.to_str().unwrap(),
+            fixture.executable.to_str().unwrap(),
+            Vec::<String>::new(),
+            fixture.game_dir.to_str().unwrap(),
+        );
         let builtin = runner.builtin_command("/tmp/p", "reg", ["query", "HKCU\\Software"]);
         let create = runner.create_prefix_command("/tmp/p");
 

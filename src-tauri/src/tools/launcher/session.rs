@@ -24,7 +24,7 @@ use crate::tools::runner_sessions::{
     path_log_token, prefix_log_token, ClientRuntimeGuard, RunnerOperation, RunnerSessionRegistry,
     SessionOwnership, SpawnedRunner,
 };
-use crate::tools::runners::ensure_managed_runtime;
+use crate::tools::runners::ensure_selected_runtime;
 use crate::tools::runtime::{
     apply_graphics_environment_to_invocation, classify_run_outcome, enqueue_persist_finished,
     enqueue_persist_started, enqueue_persist_unreached, new_observation_id, observe_legacy_runtime,
@@ -116,7 +116,7 @@ pub async fn launch_game(
         memory,
     } = tools;
     let default_runner = runner.clone();
-    ensure_managed_runtime(&app).await?;
+    ensure_selected_runtime(&app, server.runner.as_deref(), runner.as_deref()).await?;
     let ctx = resolve_server_wine_context_with_runner(Some(&server), runner).await?;
     validate_runtime_prefix(&ctx)?;
     let missing_components =

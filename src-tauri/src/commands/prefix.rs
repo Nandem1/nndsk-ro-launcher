@@ -6,7 +6,7 @@ use crate::models::server::ServerConfig;
 use crate::state::{GameProcessHandle, GameState};
 use crate::tools::prefix;
 use crate::tools::runner_sessions::RunnerSessionRegistry;
-use crate::tools::runners::ensure_managed_runtime;
+use crate::tools::runners::ensure_selected_runtime;
 use crate::tools::runtime::{
     observe_legacy_runtime, resolve_operational_plan, runtime_graphics_plan_enabled,
     runtime_shadow_enabled, DgVoodooObservation, DgVoodooState, LegacyRuntimeInput,
@@ -44,7 +44,12 @@ async fn setup_prefix_owned(
     server: Option<ServerConfig>,
     runner: Option<String>,
 ) -> Result<(), String> {
-    ensure_managed_runtime(&app).await?;
+    ensure_selected_runtime(
+        &app,
+        server.as_ref().and_then(|server| server.runner.as_deref()),
+        runner.as_deref(),
+    )
+    .await?;
     let ctx = resolve_context(server.as_ref(), runner.clone()).await?;
     let requirements = runtime_requirements(server.as_ref(), &ctx, runner.as_deref())?;
     observe_prefix_shadow(
@@ -154,7 +159,12 @@ async fn reset_prefix_owned(
     server: Option<ServerConfig>,
     runner: Option<String>,
 ) -> Result<(), String> {
-    ensure_managed_runtime(&app).await?;
+    ensure_selected_runtime(
+        &app,
+        server.as_ref().and_then(|server| server.runner.as_deref()),
+        runner.as_deref(),
+    )
+    .await?;
     let ctx = resolve_context(server.as_ref(), runner.clone()).await?;
     let requirements = runtime_requirements(server.as_ref(), &ctx, runner.as_deref())?;
     observe_prefix_shadow(

@@ -1,7 +1,12 @@
 use crate::tools::runtime::ArtifactArchitecture;
 
-pub const MANAGED_RUNNER_ID: &str = "ro-proton-cachyos-11.0-20260702-slr";
-pub const MANAGED_RUNNER_LABEL: &str = "proton-cachyos-11.0-20260702-slr-x86_64";
+pub const MANAGED_RUNNER_ID: &str = "nndsk-ro-proton-0.1.0-dev.1";
+pub const MANAGED_RUNNER_LABEL: &str = "nndsk-ro-proton 0.1.0-dev.1";
+pub(crate) const LEGACY_MANAGED_RUNNER_ID: &str = "ro-proton-cachyos-11.0-20260702-slr";
+pub(crate) const LEGACY_MANAGED_RUNNER_LABEL: &str = "proton-cachyos-11.0-20260702-slr-x86_64";
+pub(crate) const NNDSK_RUNTIME_SOURCE_COMMIT: &str = "93bda981a6e8b7bdadb46fa3497f84df8dfc6fe2";
+pub(crate) const NNDSK_RUNTIME_SHA256: &str =
+    "75b0c916ccf6e7fcd64ed2afe576c2c0bc6a75ef63a8d74ad6dd9bee629d4d9f";
 pub(crate) const MANAGED_DXVK_ID: &str = "dxvk-2.6.2";
 pub(crate) const UMU_ID: &str = "umu-launcher-1.4.0";
 
@@ -52,6 +57,7 @@ pub(crate) struct ArtifactDescriptor {
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum ArtifactKind {
     ProtonCachyos,
+    NndskRoProton,
     UmuLauncher,
     Dxvk,
 }
@@ -59,6 +65,8 @@ pub(crate) enum ArtifactKind {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ArtifactSource {
     Https { url: &'static str },
+    // This preservation build is verified locally; no downloadable release exists yet.
+    LocalOnly { source_commit: &'static str },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -81,11 +89,16 @@ pub(crate) enum ArchiveLayout {
         archive_name: &'static str,
         root: &'static str,
     },
+    TarZst {
+        archive_name: &'static str,
+        root: &'static str,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum PayloadValidatorId {
     ProtonCachyosSlr,
+    NndskRoProton,
     UmuZipapp,
     DxvkPrefixDlls,
 }
@@ -95,7 +108,8 @@ impl ArchiveLayout {
         match self {
             ArchiveLayout::Tar { archive_name, .. }
             | ArchiveLayout::TarGz { archive_name, .. }
-            | ArchiveLayout::TarXz { archive_name, .. } => archive_name,
+            | ArchiveLayout::TarXz { archive_name, .. }
+            | ArchiveLayout::TarZst { archive_name, .. } => archive_name,
         }
     }
 
@@ -103,7 +117,8 @@ impl ArchiveLayout {
         match self {
             ArchiveLayout::Tar { root, .. }
             | ArchiveLayout::TarGz { root, .. }
-            | ArchiveLayout::TarXz { root, .. } => root,
+            | ArchiveLayout::TarXz { root, .. }
+            | ArchiveLayout::TarZst { root, .. } => root,
         }
     }
 }
@@ -126,7 +141,7 @@ const UMU_DESCRIPTOR: ArtifactDescriptor = ArtifactDescriptor {
 };
 
 const PROTON_DESCRIPTOR: ArtifactDescriptor = ArtifactDescriptor {
-    id: MANAGED_RUNNER_ID,
+    id: LEGACY_MANAGED_RUNNER_ID,
     kind: ArtifactKind::ProtonCachyos,
     version: PROTON_VERSION,
     source: ArtifactSource::Https { url: PROTON_URL },
@@ -140,6 +155,25 @@ const PROTON_DESCRIPTOR: ArtifactDescriptor = ArtifactDescriptor {
     architectures: &[ArtifactArchitecture::X86_64],
     recipe_revision: 1,
     payload: PayloadValidatorId::ProtonCachyosSlr,
+};
+
+const NNDSK_RUNTIME_DESCRIPTOR: ArtifactDescriptor = ArtifactDescriptor {
+    id: MANAGED_RUNNER_ID,
+    kind: ArtifactKind::NndskRoProton,
+    version: "0.1.0-dev.1",
+    source: ArtifactSource::LocalOnly {
+        source_commit: NNDSK_RUNTIME_SOURCE_COMMIT,
+    },
+    expected_size: 398_862_860,
+    digest: ExpectedDigest::Sha256(NNDSK_RUNTIME_SHA256),
+    archive: ArchiveLayout::TarZst {
+        archive_name: "nndsk-ro-proton-0.1.0-dev.1-linux-x86_64.tar.zst",
+        root: "nndsk-ro-proton",
+    },
+    platform: "linux-x86_64",
+    architectures: &[ArtifactArchitecture::X86, ArtifactArchitecture::X86_64],
+    recipe_revision: 1,
+    payload: PayloadValidatorId::NndskRoProton,
 };
 
 const DXVK_DESCRIPTOR: ArtifactDescriptor = ArtifactDescriptor {
@@ -159,10 +193,15 @@ const DXVK_DESCRIPTOR: ArtifactDescriptor = ArtifactDescriptor {
     payload: PayloadValidatorId::DxvkPrefixDlls,
 };
 
-static CATALOG: [ArtifactDescriptor; 3] = [UMU_DESCRIPTOR, PROTON_DESCRIPTOR, DXVK_DESCRIPTOR];
+static CATALOG: [ArtifactDescriptor; 4] = [
+    UMU_DESCRIPTOR,
+    PROTON_DESCRIPTOR,
+    DXVK_DESCRIPTOR,
+    NNDSK_RUNTIME_DESCRIPTOR,
+];
 
 #[allow(dead_code)]
-pub(crate) fn catalog_all() -> &'static [ArtifactDescriptor; 3] {
+pub(crate) fn catalog_all() -> &'static [ArtifactDescriptor] {
     &CATALOG
 }
 
@@ -200,7 +239,7 @@ mod tests {
 
     #[test]
     fn catalog_urls_sizes_digests_and_paths_match_phase2_constants() {
-        let proton = catalog_descriptor(MANAGED_RUNNER_ID).unwrap();
+        let proton = catalog_descriptor(LEGACY_MANAGED_RUNNER_ID).unwrap();
         assert_eq!(proton.expected_size, 328_233_608);
         assert_eq!(proton.archive.archive_name(), PROTON_ARCHIVE_NAME);
         assert_eq!(proton.archive.archive_root(), PROTON_ARCHIVE_ROOT);
@@ -221,10 +260,26 @@ mod tests {
 
     #[test]
     fn source_digest_bytes_match_hex_constants() {
-        let proton = catalog_descriptor(MANAGED_RUNNER_ID).unwrap();
+        let proton = catalog_descriptor(LEGACY_MANAGED_RUNNER_ID).unwrap();
         assert_eq!(
             decode_hex_digest(expected_digest_hex(proton.digest)),
             decode_hex_digest(PROTON_SHA512)
         );
+    }
+
+    #[test]
+    fn preservation_build_is_pinned_without_claiming_a_public_download() {
+        let runtime = catalog_descriptor(MANAGED_RUNNER_ID).unwrap();
+        assert_eq!(runtime.kind, ArtifactKind::NndskRoProton);
+        assert_eq!(runtime.expected_size, 398_862_860);
+        assert_eq!(runtime.digest, ExpectedDigest::Sha256(NNDSK_RUNTIME_SHA256));
+        assert_eq!(runtime.archive.archive_root(), "nndsk-ro-proton");
+        assert_eq!(
+            runtime.source,
+            ArtifactSource::LocalOnly {
+                source_commit: NNDSK_RUNTIME_SOURCE_COMMIT
+            }
+        );
+        assert_ne!(runtime.id, LEGACY_MANAGED_RUNNER_ID);
     }
 }

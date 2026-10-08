@@ -5,12 +5,15 @@ use tauri::AppHandle;
 use crate::models::dependency::{DependencyStatus, RuntimeCheck, RuntimeCheckSeverity};
 use crate::models::server::ServerConfig;
 use crate::tools::prefix::{DxvkProvision, MANAGED_DXVK_COMPONENT};
-use crate::tools::runners::{managed_dxvk_ready, managed_proton_path, managed_runtime_ready};
+use crate::tools::runners::{
+    managed_dxvk_ready, managed_proton_id_for_path, managed_proton_path, managed_proton_ready,
+    managed_runtime_ready_for_id, MANAGED_RUNNER_ID,
+};
 use crate::tools::runtime::{
     assess_compatibility, build_runtime_plan_summary, compatibility_ipc, gepard_runtime_check,
     inspect_subject, legacy_gepard_runner_check, observe_legacy_runtime,
-    operational_session_anchor, paths_match, recommendation_to_gepard_profile,
-    resolve_operational_plan_with_profile, resolve_prefix_binding_for_managed_descriptor,
+    operational_session_anchor, recommendation_to_gepard_profile,
+    resolve_operational_plan_with_profile, resolve_prefix_binding_for_managed_descriptor_id,
     runtime_compat_enabled, runtime_graphics_plan_enabled, runtime_shadow_enabled, AssessedRuntime,
     DgVoodooObservation, DgVoodooState, LegacyRuntimeInput, OperationalRuntimeInput, RuntimePlan,
     RuntimeProfile, ShadowOperation,
@@ -32,7 +35,14 @@ pub async fn check_dependencies(
     server: Option<ServerConfig>,
     runner: Option<String>,
 ) -> Result<DependencyStatus, String> {
-    if !managed_runtime_ready() {
+    let selected = effective_runner_path(
+        server.as_ref().and_then(|server| server.runner.as_deref()),
+        runner.as_deref(),
+    );
+    let managed_id = selected
+        .map(|path| managed_proton_id_for_path(Path::new(path)))
+        .unwrap_or(Some(MANAGED_RUNNER_ID));
+    if managed_id.is_some_and(|id| !managed_runtime_ready_for_id(id)) {
         return managed_runtime_pending(server.as_ref(), runner.as_deref());
     }
     let ctx = resolve_context(server.as_ref(), runner.clone()).await?;
@@ -445,11 +455,11 @@ fn managed_runtime_pending(
         server.and_then(|server| server.runner.as_deref()),
         selected_runner,
     );
-    let location = if effective_runner.is_none()
-        || effective_runner
-            .is_some_and(|runner| paths_match(Path::new(runner), &managed_proton_path()))
-    {
-        resolve_prefix_binding_for_managed_descriptor(server)?.location
+    let managed_id = effective_runner
+        .map(|path| managed_proton_id_for_path(Path::new(path)))
+        .unwrap_or(Some(MANAGED_RUNNER_ID));
+    let location = if let Some(id) = managed_id {
+        resolve_prefix_binding_for_managed_descriptor_id(server, id)?.location
     } else {
         resolve_server_prefix_with_runner(server, effective_runner)?
     };
@@ -493,9 +503,18 @@ fn managed_runtime_pending(
             .as_ref()
             .is_some_and(|_| !manifest_compatible);
     let reset_allowed = ensure_managed_reset_allowed(&location).is_ok();
-    let can_reset = health.configured && reset_allowed;
-    let can_setup = path_safe && !managed_unclaimed && (!requires_rebuild || reset_allowed);
-    let runtime_warning = "Runtime administrado pendiente. Al preparar el entorno se comprobarán UMU y Proton; solo se descargará lo que falte o no pase la validación".to_string();
+    let needs_local_import =
+        managed_id == Some(MANAGED_RUNNER_ID) && !managed_proton_ready(MANAGED_RUNNER_ID);
+    let can_reset = health.configured && reset_allowed && !needs_local_import;
+    let can_setup = path_safe
+        && !managed_unclaimed
+        && (!requires_rebuild || reset_allowed)
+        && !needs_local_import;
+    let runtime_warning = if needs_local_import {
+        "Importa el paquete verificado de nndsk-ro-proton en Runner predeterminado. La descarga pública aún no está disponible; el entorno existente se conservará".to_string()
+    } else {
+        "Runtime administrado pendiente. Al preparar el entorno se comprobarán UMU y Proton; solo se descargará lo que falte o no pase la validación".to_string()
+    };
     let prefix_warning = if managed_unclaimed {
         Some(
             "El directorio administrado contiene datos sin un manifiesto válido; no se modificará"

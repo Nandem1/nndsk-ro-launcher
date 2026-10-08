@@ -12,6 +12,7 @@ import type {
 import { advancedStatusFromDeps } from './advanced.logic'
 import { resolveRunnerAfterLoad } from './settings.logic'
 import { runtimeStatusKey } from '../../shared/resolveRunner'
+import { MANAGED_RUNTIME_ID } from '../../shared/constants'
 
 interface SettingsState {
   runners: RunnerInfo[]
@@ -22,6 +23,7 @@ interface SettingsState {
   advancedStatusError: string | null
   loading: boolean
   savingRunner: boolean
+  importingRuntime: boolean
   savingPresence: boolean
   error: string | null
   notice: StorageNotice | null
@@ -34,6 +36,7 @@ interface SettingsState {
   ) => Promise<void>
   applyDepsStatus: (status: DependencyStatus, key: string) => void
   setRunner: (path: string) => Promise<void>
+  importRuntimeArchive: (archivePath: string) => Promise<boolean>
   setRichPresenceEnabled: (enabled: boolean) => Promise<void>
 }
 
@@ -66,6 +69,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   advancedStatusError: null,
   loading: true,
   savingRunner: false,
+  importingRuntime: false,
   savingPresence: false,
   error: null,
   notice: null,
@@ -213,6 +217,33 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     const queued = settingsSaveTail.then(save, save)
     settingsSaveTail = queued.catch(() => undefined)
     await queued
+  },
+
+  importRuntimeArchive: async (archivePath) => {
+    if (get().importingRuntime) return false
+    const runnerRevision = runnerSaveRequestId
+    set({ importingRuntime: true, error: null })
+    try {
+      const result = await runSafely(async () => {
+        const path = await api.importManagedRuntimeArchive(archivePath)
+        await get().loadRunners()
+        const imported = get().runners.find(
+          (runner) => runner.id === MANAGED_RUNTIME_ID && runner.path === path,
+        )
+        if (!imported)
+          throw new Error(
+            'El runtime importado no aparece como paquete verificado',
+          )
+        // Import-and-use is explicit, but must not undo a newer user selection.
+        if (runnerRevision === runnerSaveRequestId)
+          await get().setRunner(imported.path)
+      })
+      if (!result.ok && runnerRevision === runnerSaveRequestId)
+        set({ error: result.error })
+      return result.ok && get().error === null
+    } finally {
+      set({ importingRuntime: false })
+    }
   },
 
   setRichPresenceEnabled: async (enabled) => {

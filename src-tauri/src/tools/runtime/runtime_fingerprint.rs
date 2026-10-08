@@ -468,9 +468,9 @@ fn encode_component_provenance(provenance: &ComponentProvenance) -> CanonicalVal
 mod tests {
     use super::*;
     use crate::tools::artifacts::PROTON_SHA512;
-    use crate::tools::runners::MANAGED_RUNNER_ID;
+    use crate::tools::runners::LEGACY_MANAGED_RUNNER_ID as MANAGED_RUNNER_ID;
     use crate::tools::runtime::encode::fingerprint_digest;
-    use crate::tools::runtime::fingerprint::managed_proton_prefix_fingerprint_input;
+    use crate::tools::runtime::fingerprint::managed_proton_prefix_fingerprint_input_for_id;
     use crate::tools::runtime::identity::{
         PrefixBinding, PrefixIdentityStatus, RuntimeEligibility,
     };
@@ -489,7 +489,7 @@ mod tests {
         PrefixBinding {
             status: PrefixIdentityStatus::LegacyV2RunnerMatched,
             desired_fingerprint: compute_prefix_fingerprint(
-                &managed_proton_prefix_fingerprint_input(),
+                &managed_proton_prefix_fingerprint_input_for_id(MANAGED_RUNNER_ID),
             ),
             location: PrefixLocation {
                 path: "/tmp/runtime-fp-prefix".to_string(),
@@ -584,7 +584,9 @@ mod tests {
     }
 
     fn managed_proton_plan(dgvoodoo: bool) -> RuntimePlan {
-        let managed_proton = crate::utils::resolved_managed_proton_descriptor();
+        let managed_proton = crate::utils::resolved_managed_proton_descriptor_for_path(
+            crate::tools::runners::managed_proton_path_for_id(MANAGED_RUNNER_ID).unwrap(),
+        );
         let profile = profile_from_legacy(LegacyProfileInput {
             server_runner: None,
             default_runner: None,
@@ -610,6 +612,12 @@ mod tests {
         use super::super::probe::probe_managed_proton_descriptor;
 
         let mut probe = probe_managed_proton_descriptor(PayloadVerification::ShapeVerified);
+        if let ComponentProvenance::ArtifactReceipt(receipt) = &mut probe.identity.provenance {
+            receipt.identity =
+                super::super::managed_identity::managed_proton_artifact_identity_for_id(
+                    MANAGED_RUNNER_ID,
+                );
+        }
         probe.identity.observed_material.roles = BTreeSet::from([
             ObservedMaterial {
                 role: ObservedMaterialRole::Entrypoint,

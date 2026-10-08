@@ -11,7 +11,7 @@ export const LAUNCHER_EVENTS = {
 } as const
 
 /** Debe coincidir con MANAGED_RUNNER_ID en el backend. */
-export const MANAGED_RUNTIME_ID = 'ro-proton-cachyos-11.0-20260702-slr' as const
+export const MANAGED_RUNTIME_ID = 'nndsk-ro-proton-0.1.0-dev.1' as const
 
 /** Ruta por defecto del WINEPREFIX (solo para mensajes al usuario). */
 export const DEFAULT_PREFIX_PATH = '~/.local/share/ro-launcher/prefix'

@@ -1,19 +1,21 @@
 use std::path::Path;
 
 use crate::models::server::ServerConfig;
-use crate::tools::runners::{managed_proton_path, MANAGED_RUNNER_ID};
+use crate::tools::runners::{
+    managed_proton_id_for_path, managed_proton_path_for_id, MANAGED_RUNNER_ID,
+};
 use crate::utils::{
     inspect_prefix, isolated_prefix_path_for_runner, isolated_prefix_path_v3, PrefixLocation,
     PrefixScope, ResolvedRunner, RunnerKind, PREFIX_SCHEMA_V3,
 };
 
 use super::fingerprint::{
-    compute_prefix_fingerprint, managed_proton_prefix_fingerprint_input,
-    prefix_fingerprint_from_plan, prefix_owned_graphics_for_dxvk, ExternalRoleMaterial,
-    PrefixFingerprint, RunnerLocatorIdentity, RunnerPrefixIdentity, Wow64LayoutFingerprint,
+    compute_prefix_fingerprint, prefix_fingerprint_from_plan, prefix_owned_graphics_for_dxvk,
+    ExternalRoleMaterial, PrefixFingerprint, RunnerLocatorIdentity, RunnerPrefixIdentity,
+    Wow64LayoutFingerprint,
 };
-use super::managed_identity::managed_proton_artifact_identity;
-use super::probe::{is_managed_proton, RunnerProbe};
+use super::managed_identity::managed_proton_artifact_identity_for_id;
+use super::probe::RunnerProbe;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PrefixIdentityStatus {
     V3Verified,
@@ -76,17 +78,28 @@ pub(crate) fn resolve_prefix_binding(
 pub(crate) fn resolve_prefix_binding_for_managed_descriptor(
     server: Option<&ServerConfig>,
 ) -> Result<PrefixBinding, String> {
-    let desired = compute_prefix_fingerprint(&managed_proton_prefix_fingerprint_input());
-    let runner_path = managed_proton_path();
+    resolve_prefix_binding_for_managed_descriptor_id(server, MANAGED_RUNNER_ID)
+}
+
+pub(crate) fn resolve_prefix_binding_for_managed_descriptor_id(
+    server: Option<&ServerConfig>,
+    id: &str,
+) -> Result<PrefixBinding, String> {
+    let runner_path =
+        managed_proton_path_for_id(id).ok_or_else(|| "Runtime desconocido".to_string())?;
+    let desired = compute_prefix_fingerprint(
+        &super::fingerprint::managed_proton_prefix_fingerprint_input_for_id(id),
+    );
     let base = crate::utils::resolve_server_prefix_with_runner(
         server,
         Some(runner_path.to_string_lossy().as_ref()),
     )?;
-    resolve_prefix_binding_for_location(server, &managed_proton_stub(), &desired, base)
-}
-
-fn managed_proton_stub() -> ResolvedRunner {
-    crate::utils::resolved_managed_proton_descriptor()
+    resolve_prefix_binding_for_location(
+        server,
+        &crate::utils::resolved_managed_proton_descriptor_for_path(runner_path),
+        &desired,
+        base,
+    )
 }
 
 fn resolve_prefix_binding_for_location(
@@ -368,12 +381,14 @@ fn runner_material(
         },
         super::model::CapabilityEvidence::Unknown { .. } => Wow64LayoutFingerprint::Unknown,
     };
-    if is_managed_proton(resolved) {
+    if let Some(id) = managed_proton_id_for_path(resolved.runner_path())
+        .filter(|_| resolved.kind() == RunnerKind::Proton)
+    {
         return Ok((
             RunnerLocatorIdentity::Managed {
-                artifact_id: MANAGED_RUNNER_ID.to_string(),
+                artifact_id: id.to_string(),
             },
-            RunnerPrefixIdentity::Managed(managed_proton_artifact_identity()),
+            RunnerPrefixIdentity::Managed(managed_proton_artifact_identity_for_id(id)),
             wow64,
         ));
     }
@@ -428,12 +443,18 @@ mod tests {
 
     #[test]
     fn managed_descriptor_binding_uses_golden_proton_fingerprint() {
-        let binding = resolve_prefix_binding_for_managed_descriptor(None)
-            .expect("managed descriptor binding");
+        let binding = resolve_prefix_binding_for_managed_descriptor_id(
+            None,
+            crate::tools::runners::LEGACY_MANAGED_RUNNER_ID,
+        )
+        .expect("managed descriptor binding");
         assert_eq!(
             binding.desired_fingerprint.digest.hex_digest(),
             "a23f2a940a9cb8e5110b0e454ad68a35a22af760c005bcd0ebdf47ab44330270"
         );
+        let new = resolve_prefix_binding_for_managed_descriptor(None)
+            .expect("new managed descriptor binding");
+        assert_ne!(new.desired_fingerprint, binding.desired_fingerprint);
     }
 
     #[test]
@@ -570,7 +591,11 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            v2_path_identity_conflict_at(&path, "expected-server", &managed_proton_stub()),
+            v2_path_identity_conflict_at(
+                &path,
+                "expected-server",
+                &crate::utils::resolved_managed_proton_descriptor()
+            ),
             Some("v2-prefix-identity-mismatch".to_string())
         );
         std::fs::remove_dir_all(root).unwrap();

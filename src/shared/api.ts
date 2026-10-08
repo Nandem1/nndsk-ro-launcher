@@ -161,6 +161,9 @@ export const api = {
 
   listRunners: () => invoke<RunnerInfo[]>('list_runners'),
 
+  importManagedRuntimeArchive: (archivePath: string) =>
+    invoke<string>('import_managed_runtime_archive', { archivePath }),
+
   scanServerTools: (server: ServerConfig) => {
     assertValid(validateServerConfig(server))
     return invoke<ServerToolsStatus>('scan_server_tools', { server })

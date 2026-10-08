@@ -1,4 +1,6 @@
 use crate::tools::prefix::MANAGED_DXVK_COMPONENT;
+use crate::tools::runners::managed_proton_id_for_path;
+#[cfg(test)]
 use crate::tools::runners::MANAGED_RUNNER_ID;
 use crate::utils::{is_wine_7_16_version, PrefixLocation, ResolvedRunner, RunnerKind};
 
@@ -9,7 +11,7 @@ use super::model::{
     RunnerRequest, RunnerSelectionSource, RuntimePlan, RuntimeProfile, SyncPlan, SyncSupport,
     Wow64Layout,
 };
-use super::probe::{is_managed_proton, paths_match, RunnerProbe};
+use super::probe::{paths_match, RunnerProbe};
 
 const RUNNER_DXVK_COMPONENT: &str = "runner/dxvk";
 pub(crate) const WINETRICKS_DXVK_RECIPE: &str = "winetricks/dxvk-legacy-unpinned";
@@ -60,10 +62,11 @@ pub(crate) fn profile_from_legacy(
     } else {
         RunnerSelectionSource::ProductDefault
     };
-    let runner = if is_managed_proton(input.resolved) {
+    let runner = if let Some(id) = managed_proton_id_for_path(input.resolved.runner_path())
+        .filter(|_| input.resolved.kind() == RunnerKind::Proton)
+    {
         RunnerRequest::Managed {
-            artifact_id: ArtifactId::new(MANAGED_RUNNER_ID)
-                .map_err(|_| RuntimeResolutionError::InvalidKnownId)?,
+            artifact_id: ArtifactId::new(id).map_err(|_| RuntimeResolutionError::InvalidKnownId)?,
         }
     } else {
         RunnerRequest::External {
@@ -167,7 +170,9 @@ fn validate_runner_request(
     }
     match request {
         RunnerRequest::Managed { artifact_id } => {
-            if artifact_id.as_str() != MANAGED_RUNNER_ID || !is_managed_proton(resolved) {
+            if resolved.kind() != RunnerKind::Proton
+                || managed_proton_id_for_path(resolved.runner_path()) != Some(artifact_id.as_str())
+            {
                 return Err(RuntimeResolutionError::RunnerRequestMismatch);
             }
             match &probe.identity.provenance {

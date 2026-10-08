@@ -4,7 +4,8 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use super::descriptor::{
-    architectures_json, expected_digest_hex, ArtifactDescriptor, ArtifactKind, ExpectedDigest,
+    architectures_json, expected_digest_hex, ArtifactDescriptor, ArtifactKind, ArtifactSource,
+    ExpectedDigest,
 };
 pub(crate) const MARKER_FILE: &str = ".ro-launcher-runtime.json";
 pub(crate) const RUNTIME_SCHEMA_V1: u32 = 1;
@@ -38,6 +39,11 @@ pub(crate) struct RuntimeReceiptV2 {
 pub(crate) enum ReceiptSourceV2 {
     #[serde(rename = "https")]
     Https { url: String },
+    #[serde(rename = "localOnly")]
+    LocalOnly {
+        #[serde(rename = "sourceCommit")]
+        source_commit: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -59,8 +65,13 @@ pub(crate) fn receipt_v2_from_descriptor(descriptor: &ArtifactDescriptor) -> Run
         version: descriptor.version.to_string(),
         digest: digest.to_string(),
         digest_algorithm,
-        source: ReceiptSourceV2::Https {
-            url: super::source::catalog_url(descriptor).to_string(),
+        source: match descriptor.source {
+            ArtifactSource::Https { url } => ReceiptSourceV2::Https {
+                url: url.to_string(),
+            },
+            ArtifactSource::LocalOnly { source_commit } => ReceiptSourceV2::LocalOnly {
+                source_commit: source_commit.to_string(),
+            },
         },
         platform: descriptor.platform.to_string(),
         architectures: architectures_json(descriptor.architectures),
@@ -94,6 +105,7 @@ pub(crate) fn runtime_marker_v1_matches(
     marker: &RuntimeMarkerV1,
 ) -> bool {
     marker.schema_version == RUNTIME_SCHEMA_V1
+        && matches!(descriptor.source, ArtifactSource::Https { .. })
         && marker.artifact_id == descriptor.id
         && marker.digest == expected_digest_hex(descriptor.digest)
 }
@@ -144,8 +156,8 @@ pub(crate) fn stored_identity_matches_descriptor(
 mod tests {
     use super::*;
     use crate::tools::artifacts::descriptor::{
-        catalog_descriptor, DXVK_SHA256, MANAGED_DXVK_ID, MANAGED_RUNNER_ID, PROTON_SHA512, UMU_ID,
-        UMU_SHA256,
+        catalog_descriptor, DXVK_SHA256, LEGACY_MANAGED_RUNNER_ID, MANAGED_DXVK_ID,
+        MANAGED_RUNNER_ID, NNDSK_RUNTIME_SOURCE_COMMIT, PROTON_SHA512, UMU_ID, UMU_SHA256,
     };
     use serde::Deserialize;
 
@@ -170,7 +182,7 @@ mod tests {
             "../../../../contract-fixtures/runtime-markers.json"
         ))
         .unwrap();
-        let proton = catalog_descriptor(MANAGED_RUNNER_ID).unwrap();
+        let proton = catalog_descriptor(LEGACY_MANAGED_RUNNER_ID).unwrap();
         assert!(runtime_marker_v1_matches(proton, &fixtures.schema1));
         assert!(!runtime_marker_v1_matches(proton, &fixtures.future_schema));
         assert!(!runtime_marker_v1_matches(
@@ -185,7 +197,7 @@ mod tests {
             "../../../../contract-fixtures/runtime-receipts-v2.json"
         ))
         .unwrap();
-        let proton = catalog_descriptor(MANAGED_RUNNER_ID).unwrap();
+        let proton = catalog_descriptor(LEGACY_MANAGED_RUNNER_ID).unwrap();
         assert!(stored_receipt_matches_descriptor(proton, &fixtures.proton));
         assert_eq!(fixtures.proton.digest, PROTON_SHA512);
 
@@ -205,9 +217,34 @@ mod tests {
 
     #[test]
     fn same_version_display_different_digest_is_different_identity() {
-        let proton = catalog_descriptor(MANAGED_RUNNER_ID).unwrap();
+        let proton = catalog_descriptor(LEGACY_MANAGED_RUNNER_ID).unwrap();
         let mut foreign = receipt_v2_from_descriptor(proton);
         foreign.digest = DXVK_SHA256.to_string();
         assert!(!stored_receipt_matches_descriptor(proton, &foreign));
+    }
+
+    #[test]
+    fn local_runtime_receipt_records_source_identity_without_fabricating_https() {
+        let descriptor = catalog_descriptor(MANAGED_RUNNER_ID).unwrap();
+        let receipt = receipt_v2_from_descriptor(descriptor);
+        let value = serde_json::to_value(&receipt).unwrap();
+        assert_eq!(value["source"]["type"], "localOnly");
+        assert_eq!(value["source"]["sourceCommit"], NNDSK_RUNTIME_SOURCE_COMMIT);
+        assert!(value["source"].get("url").is_none());
+        let decoded = serde_json::from_value(value).unwrap();
+        assert!(stored_receipt_matches_descriptor(descriptor, &decoded));
+        let mut altered = receipt;
+        altered.source = ReceiptSourceV2::LocalOnly {
+            source_commit: "00".repeat(20),
+        };
+        assert!(!stored_receipt_matches_descriptor(descriptor, &altered));
+        assert!(!runtime_marker_v1_matches(
+            descriptor,
+            &RuntimeMarkerV1 {
+                schema_version: RUNTIME_SCHEMA_V1,
+                artifact_id: descriptor.id.to_string(),
+                digest: expected_digest_hex(descriptor.digest).to_string(),
+            }
+        ));
     }
 }

@@ -1,8 +1,11 @@
 use std::collections::BTreeSet;
 
+use crate::tools::artifacts::{
+    catalog_descriptor, decode_hex_digest, expected_digest_hex, ExpectedDigest,
+};
 use crate::tools::runners::{
-    managed_dxvk_source_digest_bytes, managed_proton_source_digest_bytes, managed_runtime_ready,
-    managed_umu_source_digest_bytes, MANAGED_DXVK_ID, MANAGED_RUNNER_ID, UMU_ID,
+    managed_dxvk_source_digest_bytes, managed_runtime_ready, managed_umu_source_digest_bytes,
+    MANAGED_DXVK_ID, MANAGED_RUNNER_ID, UMU_ID,
 };
 
 use super::model::{
@@ -19,16 +22,24 @@ pub(crate) fn managed_runtime_payload_verification() -> PayloadVerification {
 }
 
 pub(crate) fn managed_proton_artifact_identity() -> ArtifactIdentity {
+    managed_proton_artifact_identity_for_id(MANAGED_RUNNER_ID)
+}
+
+pub(crate) fn managed_proton_artifact_identity_for_id(id: &str) -> ArtifactIdentity {
+    let descriptor = catalog_descriptor(id).expect("known managed Proton descriptor");
     ArtifactIdentity {
         schema_version: ARTIFACT_IDENTITY_SCHEMA_VERSION,
-        artifact_id: ArtifactId::new(MANAGED_RUNNER_ID).expect("managed runner id"),
+        artifact_id: ArtifactId::new(descriptor.id).expect("managed runner id"),
         source_digest: SourceDigest {
-            algorithm: DigestAlgorithm::Sha512,
-            bytes: managed_proton_source_digest_bytes(),
+            algorithm: match descriptor.digest {
+                ExpectedDigest::Sha256(_) => DigestAlgorithm::Sha256,
+                ExpectedDigest::Sha512(_) => DigestAlgorithm::Sha512,
+            },
+            bytes: decode_hex_digest(expected_digest_hex(descriptor.digest)),
         },
-        platform: "linux-x86_64".to_string(),
-        architectures: BTreeSet::from([ArtifactArchitecture::X86_64]),
-        install_recipe_revision: 1,
+        platform: descriptor.platform.to_string(),
+        architectures: descriptor.architectures.iter().copied().collect(),
+        install_recipe_revision: descriptor.recipe_revision,
     }
 }
 

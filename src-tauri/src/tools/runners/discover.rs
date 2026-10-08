@@ -2,7 +2,10 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use crate::models::runner::RunnerInfo;
-use crate::tools::runners::{managed_proton_path, MANAGED_RUNNER_ID, MANAGED_RUNNER_LABEL};
+use crate::tools::runners::{
+    managed_proton_path, managed_proton_path_for_id, LEGACY_MANAGED_RUNNER_ID,
+    LEGACY_MANAGED_RUNNER_LABEL, MANAGED_RUNNER_ID, MANAGED_RUNNER_LABEL,
+};
 use crate::utils::{app_data_dir, discovered_system_wines, is_executable_file, resolve_runner};
 
 /// Expone primero el runtime administrado y después los runners compatibles ya instalados.
@@ -17,6 +20,16 @@ pub fn discover_runners() -> Result<Vec<RunnerInfo>, String> {
         path: managed_path.to_string_lossy().to_string(),
     }];
     let mut seen = HashSet::from([path_key(&managed_path)]);
+
+    let legacy_path = managed_proton_path_for_id(LEGACY_MANAGED_RUNNER_ID).unwrap();
+    if is_executable_file(&legacy_path) {
+        seen.insert(path_key(&legacy_path));
+        runners.push(RunnerInfo {
+            id: LEGACY_MANAGED_RUNNER_ID.to_string(),
+            name: format!("{LEGACY_MANAGED_RUNNER_LABEL} · anterior"),
+            path: legacy_path.to_string_lossy().to_string(),
+        });
+    }
 
     for path in installed_runner_paths() {
         let Some(path) = normalize_runner_path(path) else {

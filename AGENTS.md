@@ -10,13 +10,16 @@ RO-Launcher is a Linux-first Tauri v2 launcher for Ragnarok Online. It manages r
 Wine prefixes, graphics compatibility, patchers, input automation, memory readers, and Discord
 Rich Presence. A fix is acceptable only if it keeps these contracts:
 
-- Proton-CachyOS 11 through managed UMU is the general default. Do not globally downgrade it.
+- nndsk-ro-proton through managed UMU is the primary runtime. Preserve its validated Proton-CachyOS
+  11 base and three compatibility changes; Wine 7.16 remains the per-server backward-compatibility
+  fallback. Do not silently migrate existing runner selections or prefixes.
 - Runner selection is per server. A non-empty `server.runner` overrides the global default and the
   UI must show the effective runner rather than implying the global one is active.
 - SakuraRO's validated Gepard `26.9.3.1` hash uses portable Wine 7.16 legacy/old-WoW64 plus managed
   DXVK 2.6.2. This is a hash-specific compatibility profile, not a universal Gepard rule.
-- HoneyRO's validated Gepard `26.8.26.1` hash works with Proton-CachyOS 11. Unknown hashes may warn,
-  but must not silently force a runner.
+- HoneyRO's validated configuration passes with nndsk-ro-proton. Its historical Gepard
+  `26.8.26.1`/Proton-CachyOS 11 evidence remains historical, not proof for every client/update.
+  Unknown hashes may warn, but must not silently force a runner.
 - Never modify, hook, disable, spoof, or bypass Gepard/GameGuard, the game executable, packets, or
   server validation. Compatibility comes from selecting and configuring a legitimate runner.
 - A server+runner pairing owns its own prefix. Never migrate one prefix between runners, adopt an
@@ -275,7 +278,7 @@ comparing runners. For process changes, test direct launch, patcher handoff, sto
 multiple clients, multiple prefixes, launcher exit, and repeated cycles without zombies. For
 memory work, the acceptance environment is `ptrace_scope=1`; `ptrace_scope=0` is diagnostic only.
 
-SakuraRO with the validated Wine 7.16 profile and HoneyRO with default Proton-CachyOS are mandatory
+SakuraRO with the validated Wine 7.16 profile and HoneyRO with nndsk-ro-proton are mandatory
 regression anchors for runner/prefix architecture. A result from one Gepard build does not prove a
 rule for another build.
 

@@ -1,4 +1,6 @@
-use super::managed_identity::{managed_dxvk_artifact_identity, managed_proton_artifact_identity};
+use super::managed_identity::managed_dxvk_artifact_identity;
+#[cfg(test)]
+use super::managed_identity::managed_proton_artifact_identity;
 use crate::tools::runners::MANAGED_RUNNER_ID;
 use crate::utils::RunnerKind;
 
@@ -274,12 +276,16 @@ fn encode_prefix_fingerprint_input(input: &PrefixFingerprintInput) -> CanonicalV
 }
 
 pub(crate) fn managed_proton_prefix_fingerprint_input() -> PrefixFingerprintInput {
-    let identity = managed_proton_artifact_identity();
+    managed_proton_prefix_fingerprint_input_for_id(MANAGED_RUNNER_ID)
+}
+
+pub(crate) fn managed_proton_prefix_fingerprint_input_for_id(id: &str) -> PrefixFingerprintInput {
+    let identity = super::managed_identity::managed_proton_artifact_identity_for_id(id);
     PrefixFingerprintInput {
         architecture_policy: ArchitecturePolicy::RunnerDefault,
         runner_kind: RunnerKind::Proton,
         runner_locator: RunnerLocatorIdentity::Managed {
-            artifact_id: MANAGED_RUNNER_ID.to_string(),
+            artifact_id: id.to_string(),
         },
         runner_prefix_identity: RunnerPrefixIdentity::Managed(identity),
         wow64_layout: Wow64LayoutFingerprint::Unknown,
@@ -370,17 +376,36 @@ mod tests {
 
     #[test]
     fn golden_managed_proton_prefix_fingerprint() {
-        let fp = compute_prefix_fingerprint(&managed_proton_prefix_fingerprint_input());
+        let legacy = managed_proton_prefix_fingerprint_input_for_id(
+            crate::tools::runners::LEGACY_MANAGED_RUNNER_ID,
+        );
+        let fp = compute_prefix_fingerprint(&legacy);
         assert_eq!(
             fp.digest.hex_digest(),
             "a23f2a940a9cb8e5110b0e454ad68a35a22af760c005bcd0ebdf47ab44330270"
         );
-        let root = encode_prefix_fingerprint_input(&managed_proton_prefix_fingerprint_input());
+        let root = encode_prefix_fingerprint_input(&legacy);
         let mut encoded = Vec::new();
         root.encode(&mut encoded);
         assert_eq!(
             sha256_hex(&encoded),
             "e43918a5f92ade0f4bb785458889fc40b80eff603ef7106541d9fe04a2f88bee"
+        );
+    }
+
+    #[test]
+    fn new_runtime_cannot_reuse_legacy_prefix_identity() {
+        let old = managed_proton_prefix_fingerprint_input_for_id(
+            crate::tools::runners::LEGACY_MANAGED_RUNNER_ID,
+        );
+        let new = managed_proton_prefix_fingerprint_input();
+        assert_ne!(
+            compute_prefix_fingerprint(&old),
+            compute_prefix_fingerprint(&new)
+        );
+        assert_eq!(
+            explain_identity_delta(&old, &new),
+            vec!["runner-locator", "runner-prefix-identity"]
         );
     }
 

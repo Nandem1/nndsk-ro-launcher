@@ -10,7 +10,7 @@ use crate::models::tool_kind::ToolKind;
 use crate::state::GameProcessHandle;
 use crate::tools::prefix::{DxvkProvision, MANAGED_DXVK_COMPONENT};
 use crate::tools::runner_sessions::{RunnerOperation, RunnerSessionRegistry, SpawnedRunner};
-use crate::tools::runners::ensure_managed_runtime;
+use crate::tools::runners::ensure_selected_runtime;
 use crate::tools::runtime::{
     apply_graphics_environment_to_invocation, observe_legacy_runtime,
     runtime_graphics_plan_enabled, runtime_shadow_enabled, DgVoodooObservation, InvocationPlan,
@@ -147,7 +147,7 @@ pub async fn launch_tool(
     runner: Option<String>,
 ) -> Result<(), String> {
     let default_runner = runner.clone();
-    ensure_managed_runtime(app).await?;
+    ensure_selected_runtime(app, server.runner.as_deref(), runner.as_deref()).await?;
     let initial_status = scan_status(app, server)?;
     let _initial_exe = tool_executable_path(&initial_status, tool)?;
 

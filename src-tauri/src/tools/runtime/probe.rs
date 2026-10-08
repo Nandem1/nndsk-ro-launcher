@@ -1,12 +1,12 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use crate::tools::runners::{managed_proton_path, MANAGED_RUNNER_ID};
+use crate::tools::runners::{managed_proton_id_for_path, managed_proton_ready, MANAGED_RUNNER_ID};
 use crate::utils::is_wine_7_16_version;
 use crate::utils::{ResolvedRunner, RunnerKind};
 
 use super::managed_identity::{
-    managed_proton_artifact_identity, managed_runtime_payload_verification,
+    managed_proton_artifact_identity, managed_proton_artifact_identity_for_id,
 };
 use super::material::FileDigestCache;
 use super::model::{
@@ -127,10 +127,16 @@ fn probe_runner_with_cache(resolved: &ResolvedRunner, cache: &mut FileDigestCach
     };
 
     let roles = observed_roles(resolved, cache);
-    let provenance = if is_managed_proton(resolved) {
+    let provenance = if let Some(id) =
+        managed_proton_id_for_path(resolved.runner_path()).filter(|_| kind == RunnerKind::Proton)
+    {
         ComponentProvenance::ArtifactReceipt(ArtifactReceipt {
-            identity: managed_proton_artifact_identity(),
-            payload_verification: managed_runtime_payload_verification(),
+            identity: managed_proton_artifact_identity_for_id(id),
+            payload_verification: if managed_proton_ready(id) {
+                PayloadVerification::ShapeVerified
+            } else {
+                PayloadVerification::Unverified
+            },
         })
     } else {
         ComponentProvenance::ExternalObserved(ExternalObserved {
@@ -157,7 +163,7 @@ fn probe_runner_with_cache(resolved: &ResolvedRunner, cache: &mut FileDigestCach
 
 pub(super) fn is_managed_proton(resolved: &ResolvedRunner) -> bool {
     resolved.kind() == RunnerKind::Proton
-        && paths_match(resolved.runner_path(), &managed_proton_path())
+        && managed_proton_id_for_path(resolved.runner_path()).is_some()
 }
 
 pub(crate) fn paths_match(left: &Path, right: &Path) -> bool {

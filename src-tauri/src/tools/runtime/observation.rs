@@ -247,8 +247,15 @@ pub(crate) fn redact_observation_for_disk(record: &RuntimeObservationV1) -> Runt
         .into_iter()
         .filter(|value| !value.is_empty())
         .collect::<Vec<_>>();
+    redact_observation_with_secrets(record, &secrets)
+}
+
+fn redact_observation_with_secrets(
+    record: &RuntimeObservationV1,
+    secrets: &[String],
+) -> RuntimeObservationV1 {
     let json = serde_json::to_value(record).expect("observation json");
-    let redacted = redact_json_value(&json, &secrets);
+    let redacted = redact_json_value(&json, secrets);
     serde_json::from_value(redacted).expect("observation roundtrip")
 }
 
@@ -317,7 +324,6 @@ mod tests {
     #[test]
     fn redaction_strips_home_from_strings() {
         let home = "/tmp/ro-launcher-redact-home";
-        std::env::set_var("HOME", home);
         let record = RuntimeObservationV1 {
             schema_version: 1,
             observation_id: "obs-test".to_string(),
@@ -380,7 +386,7 @@ mod tests {
         };
         let mut poisoned = record;
         poisoned.prefix_token = format!("{home}/prefixes/foo");
-        let redacted = redact_observation_for_disk(&poisoned);
+        let redacted = redact_observation_with_secrets(&poisoned, &[home.to_string()]);
         assert!(!redacted.prefix_token.contains(home));
     }
 

@@ -95,6 +95,68 @@ pub(crate) fn install_extracted(
     }
 }
 
+/// Activate a first installation only. Never replace an unknown or potentially live runtime.
+pub(crate) fn install_new_extracted(
+    descriptor: &ArtifactDescriptor,
+    staging_dir: &Path,
+    final_dir: &Path,
+    artifact_ready: impl FnOnce(&ArtifactDescriptor) -> bool,
+) -> Result<(), String> {
+    let extracted = staging_dir.join(descriptor.archive.archive_root());
+    rename_without_replacement(&extracted, final_dir).map_err(|error| {
+        format!(
+            "No se pudo activar {} sin sustituir datos existentes: {error}",
+            descriptor.id
+        )
+    })?;
+    let result = (|| {
+        inject_fault(InstallFault::AfterActivateRename)?;
+        replace_json(
+            &final_dir.join(MARKER_FILE),
+            &receipt_v2_from_descriptor(descriptor),
+        )?;
+        inject_fault(InstallFault::AfterMarkerWrite)?;
+        if !artifact_ready(descriptor) {
+            return Err(format!(
+                "La instalación de {} no superó la validación",
+                descriptor.id
+            ));
+        }
+        Ok(())
+    })();
+    clear_fault();
+    if let Err(error) = result {
+        // Return our own tree to staging for its owner to clean up. An existing target is never removed.
+        return match rename_without_replacement(final_dir, &extracted) {
+            Ok(()) => Err(error),
+            Err(restore) => Err(format!("{error}; no se pudo devolver la instalación a staging: {restore}; conservada en {}", final_dir.display())),
+        };
+    }
+    Ok(())
+}
+
+fn rename_without_replacement(source: &Path, destination: &Path) -> std::io::Result<()> {
+    use std::os::unix::ffi::OsStrExt;
+
+    let source = std::ffi::CString::new(source.as_os_str().as_bytes())?;
+    let destination = std::ffi::CString::new(destination.as_os_str().as_bytes())?;
+    // Linux-first launcher: fail rather than fall back to a racy, replacing rename.
+    let result = unsafe {
+        libc::renameat2(
+            libc::AT_FDCWD,
+            source.as_ptr(),
+            libc::AT_FDCWD,
+            destination.as_ptr(),
+            libc::RENAME_NOREPLACE,
+        )
+    };
+    if result == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
+    }
+}
+
 fn inject_fault(fault: InstallFault) -> Result<(), String> {
     if cfg!(test) && current_fault() == fault {
         return Err(format!("fault inyectado: {:?}", fault));

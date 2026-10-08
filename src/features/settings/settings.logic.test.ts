@@ -5,8 +5,8 @@ import { resolveRunnerAfterLoad } from './settings.logic'
 
 const proton: RunnerInfo = {
   id: MANAGED_RUNTIME_ID,
-  name: 'proton-cachyos-slr',
-  path: '/home/user/.steam/.../proton-cachyos-slr/proton',
+  name: 'nndsk-ro-proton 0.1.0-dev.1',
+  path: '/home/user/.local/share/ro-launcher/runtime/nndsk-ro-proton-0.1.0-dev.1/proton',
 }
 
 const runners = [proton]
@@ -36,6 +36,34 @@ describe('resolveRunnerAfterLoad', () => {
       resolveRunnerAfterLoad(alternative.path, [proton, alternative]),
     ).toEqual({
       path: alternative.path,
+      persist: false,
+    })
+  })
+
+  it('prefiere nndsk-ro-proton sobre la base anterior sólo en una configuración nueva', () => {
+    const previous: RunnerInfo = {
+      id: 'ro-proton-cachyos-11.0-20260702-slr',
+      name: 'Proton-CachyOS 11 (anterior)',
+      path: '/runtime/ro-proton-cachyos-11.0-20260702-slr/proton',
+    }
+    expect(resolveRunnerAfterLoad('', [previous, proton])).toEqual({
+      path: proton.path,
+      persist: true,
+    })
+    expect(resolveRunnerAfterLoad(previous.path, [previous, proton])).toEqual({
+      path: previous.path,
+      persist: false,
+    })
+  })
+
+  it('mantiene Wine 7.16 configurado al aparecer el nuevo runtime', () => {
+    const legacy: RunnerInfo = {
+      id: 'external:wine716',
+      name: 'Wine 7.16 old-WoW64',
+      path: '/runners/wine716/bin/wine',
+    }
+    expect(resolveRunnerAfterLoad(legacy.path, [proton, legacy])).toEqual({
+      path: legacy.path,
       persist: false,
     })
   })

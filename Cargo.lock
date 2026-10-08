@@ -3010,6 +3010,7 @@ dependencies = [
  "uuid",
  "xz2",
  "zip 2.4.2",
+ "zstd",
 ]
 
 [[package]]

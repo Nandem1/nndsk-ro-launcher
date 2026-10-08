@@ -3,15 +3,16 @@ use crate::models::dependency::{
     RuntimeCheckSeverity,
 };
 use crate::tools::prefix::MANAGED_DXVK_COMPONENT;
+use crate::tools::runners::{
+    managed_proton_id_for_path, LEGACY_MANAGED_RUNNER_ID, MANAGED_RUNNER_ID,
+};
 use crate::tools::server_tools::{
     GepardInspection, GepardRunnerProfile, GEPARD_HONEY_SHA256, GEPARD_SAKURA_SHA256,
 };
 use crate::utils::ResolvedRunner;
 
-use super::model::RuntimePlan;
-use super::probe::{
-    is_managed_proton, probe_managed_proton_identity, probe_wine_716_old_wow64_layout, RunnerProbe,
-};
+use super::model::{ComponentProvenance, RuntimePlan};
+use super::probe::{probe_wine_716_old_wow64_layout, RunnerProbe};
 
 pub(crate) const COMPATIBILITY_CATALOG_SCHEMA_VERSION: u32 = 1;
 
@@ -75,6 +76,7 @@ pub(crate) enum EvidenceProvenance {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RecommendedProfileId {
+    ManagedNndskRoProton,
     ManagedProtonCachyos11,
     Wine716OldWow64ManagedDxvk,
 }
@@ -100,6 +102,7 @@ pub(crate) enum SubjectObservation {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CompatibilityRuntimeSpec {
+    ManagedNndskRoProton,
     ManagedProtonCachyos11,
     Wine716OldWow64ManagedDxvk,
 }
@@ -131,6 +134,10 @@ pub(crate) struct AssessedRuntime<'a> {
 
 fn honey_evidence_id() -> EvidenceId {
     EvidenceId::new("gepard-26.8.26.1-proton-cachyos-11").expect("evidence id")
+}
+
+fn honey_nndsk_evidence_id() -> EvidenceId {
+    EvidenceId::new("gepard-26.8.26.1-nndsk-ro-proton-0.1.0-dev.1").expect("evidence id")
 }
 
 fn sakura_evidence_id() -> EvidenceId {
@@ -167,14 +174,43 @@ pub(crate) fn shipped_compatibility_records() -> &'static [CompatibilityRecordV1
                 runtime: CompatibilityRuntimeSpec::Wine716OldWow64ManagedDxvk,
                 recommendation_profile: RecommendedProfileId::Wine716OldWow64ManagedDxvk,
             },
+            CompatibilityRecordV1 {
+                evidence_id: honey_nndsk_evidence_id(),
+                outcome: CompatibilityAssessment::Validated {
+                    evidence_id: honey_nndsk_evidence_id(),
+                },
+                recorded_at: "2026-10-06",
+                provenance: EvidenceProvenance::CuratedShipped,
+                gepard_sha256: GEPARD_HONEY_SHA256,
+                gepard_product_version: "3.0",
+                gepard_file_version: "26.8.26.1",
+                runtime: CompatibilityRuntimeSpec::ManagedNndskRoProton,
+                recommendation_profile: RecommendedProfileId::ManagedNndskRoProton,
+            },
         ]
     })
 }
 
 pub(crate) fn find_shipped_record_by_hash(sha256: &str) -> Option<&'static CompatibilityRecordV1> {
-    shipped_compatibility_records()
+    preferred_record_by_hash(shipped_compatibility_records(), sha256)
+}
+
+fn preferred_record_by_hash<'a>(
+    records: &'a [CompatibilityRecordV1],
+    sha256: &str,
+) -> Option<&'a CompatibilityRecordV1> {
+    records
         .iter()
-        .find(|record| record.gepard_sha256.eq_ignore_ascii_case(sha256))
+        .find(|record| {
+            record.gepard_sha256.eq_ignore_ascii_case(sha256)
+                && record.runtime == CompatibilityRuntimeSpec::ManagedNndskRoProton
+                && record.provenance == EvidenceProvenance::CuratedShipped
+        })
+        .or_else(|| {
+            records
+                .iter()
+                .find(|record| record.gepard_sha256.eq_ignore_ascii_case(sha256))
+        })
 }
 
 pub(crate) fn curated_gepard_runner_for_hash(sha256: &str) -> Option<GepardRunnerProfile> {
@@ -186,7 +222,8 @@ pub(crate) fn recommended_profile_to_gepard_runner(
     profile: RecommendedProfileId,
 ) -> GepardRunnerProfile {
     match profile {
-        RecommendedProfileId::ManagedProtonCachyos11 => GepardRunnerProfile::ModernProton,
+        RecommendedProfileId::ManagedNndskRoProton
+        | RecommendedProfileId::ManagedProtonCachyos11 => GepardRunnerProfile::ModernProton,
         RecommendedProfileId::Wine716OldWow64ManagedDxvk => GepardRunnerProfile::Wine716Legacy,
     }
 }
@@ -202,11 +239,18 @@ pub(crate) fn observed_runtime_spec(
     probe: &RunnerProbe,
 ) -> Option<CompatibilityRuntimeSpec> {
     let runner = plan.runner();
-    if is_managed_proton(runner.resolved()) {
-        if probe_managed_proton_identity(probe) {
-            return Some(CompatibilityRuntimeSpec::ManagedProtonCachyos11);
+    if let Some(path_id) = managed_proton_id_for_path(runner.resolved().runner_path()) {
+        let ComponentProvenance::ArtifactReceipt(receipt) = &probe.identity.provenance else {
+            return None;
+        };
+        if !runner.resolved().is_proton() || receipt.identity.artifact_id.as_str() != path_id {
+            return None;
         }
-        return None;
+        return match path_id {
+            MANAGED_RUNNER_ID => Some(CompatibilityRuntimeSpec::ManagedNndskRoProton),
+            LEGACY_MANAGED_RUNNER_ID => Some(CompatibilityRuntimeSpec::ManagedProtonCachyos11),
+            _ => None,
+        };
     }
 
     let managed_dxvk =
@@ -223,64 +267,7 @@ pub(crate) fn assess_compatibility(
     subject: &SubjectObservation,
     runtime: Option<&AssessedRuntime<'_>>,
 ) -> CompatibilitySnapshot {
-    let SubjectObservation::Hash { sha256_lowercase } = subject else {
-        return CompatibilitySnapshot {
-            assessment: CompatibilityAssessment::Unknown,
-            recommendation: None,
-            subject: subject.clone(),
-        };
-    };
-
-    let Some(record) = find_shipped_record_by_hash(sha256_lowercase) else {
-        return CompatibilitySnapshot {
-            assessment: CompatibilityAssessment::Unknown,
-            recommendation: None,
-            subject: subject.clone(),
-        };
-    };
-
-    let recommendation = Some(RuntimeRecommendation {
-        profile: record.recommendation_profile,
-        evidence_id: record.evidence_id.clone(),
-        reason: RecommendationReason::ValidatedGepardHash,
-    });
-
-    if record.provenance != EvidenceProvenance::CuratedShipped {
-        return CompatibilitySnapshot {
-            assessment: CompatibilityAssessment::Unknown,
-            recommendation,
-            subject: subject.clone(),
-        };
-    }
-
-    let Some(runtime) = runtime else {
-        return CompatibilitySnapshot {
-            assessment: CompatibilityAssessment::Unknown,
-            recommendation,
-            subject: subject.clone(),
-        };
-    };
-
-    let observed = observed_runtime_spec(runtime.plan, runtime.probe);
-    let assessment = match (observed, &record.outcome) {
-        (
-            Some(spec),
-            CompatibilityAssessment::Validated {
-                evidence_id: expected_id,
-            },
-        ) if spec == record.runtime && *expected_id == record.evidence_id => {
-            CompatibilityAssessment::Validated {
-                evidence_id: record.evidence_id.clone(),
-            }
-        }
-        _ => CompatibilityAssessment::Unknown,
-    };
-
-    CompatibilitySnapshot {
-        assessment,
-        recommendation,
-        subject: subject.clone(),
-    }
+    assess_against_records(subject, runtime, shipped_compatibility_records())
 }
 
 pub(crate) fn assess_against_records(
@@ -296,10 +283,7 @@ pub(crate) fn assess_against_records(
         };
     };
 
-    let Some(record) = records
-        .iter()
-        .find(|record| record.gepard_sha256.eq_ignore_ascii_case(sha256_lowercase))
-    else {
+    let Some(record) = preferred_record_by_hash(records, sha256_lowercase) else {
         return CompatibilitySnapshot {
             assessment: CompatibilityAssessment::Unknown,
             recommendation: None,
@@ -313,36 +297,25 @@ pub(crate) fn assess_against_records(
         reason: RecommendationReason::ValidatedGepardHash,
     });
 
-    if record.provenance != EvidenceProvenance::CuratedShipped {
-        return CompatibilitySnapshot {
-            assessment: CompatibilityAssessment::Unknown,
-            recommendation,
-            subject: subject.clone(),
-        };
-    }
-
-    let Some(runtime) = runtime else {
-        return CompatibilitySnapshot {
-            assessment: CompatibilityAssessment::Unknown,
-            recommendation,
-            subject: subject.clone(),
-        };
-    };
-
-    let observed = observed_runtime_spec(runtime.plan, runtime.probe);
-    let assessment = match (observed, &record.outcome) {
-        (
-            Some(spec),
-            CompatibilityAssessment::Validated {
-                evidence_id: expected_id,
-            },
-        ) if spec == record.runtime && *expected_id == record.evidence_id => {
-            CompatibilityAssessment::Validated {
-                evidence_id: record.evidence_id.clone(),
-            }
-        }
-        _ => CompatibilityAssessment::Unknown,
-    };
+    // Recommendations choose the preferred current runtime, but validation must
+    // use the evidence for the runtime actually observed, including legacy ones.
+    let observed = runtime.and_then(|runtime| observed_runtime_spec(runtime.plan, runtime.probe));
+    let assessment = records
+        .iter()
+        .find(|candidate| {
+            candidate
+                .gepard_sha256
+                .eq_ignore_ascii_case(sha256_lowercase)
+                && Some(candidate.runtime) == observed
+                && candidate.provenance == EvidenceProvenance::CuratedShipped
+                && matches!(
+                    &candidate.outcome,
+                    CompatibilityAssessment::Validated { evidence_id }
+                        if *evidence_id == candidate.evidence_id
+                )
+        })
+        .map(|candidate| candidate.outcome.clone())
+        .unwrap_or(CompatibilityAssessment::Unknown);
 
     CompatibilitySnapshot {
         assessment,
@@ -402,6 +375,7 @@ fn recommendation_ipc(recommendation: &RuntimeRecommendation) -> CompatibilityRe
 
 fn recommended_profile_ipc(profile: RecommendedProfileId) -> String {
     match profile {
+        RecommendedProfileId::ManagedNndskRoProton => "managedNndskRoProton".to_string(),
         RecommendedProfileId::ManagedProtonCachyos11 => "managedProtonCachyos11".to_string(),
         RecommendedProfileId::Wine716OldWow64ManagedDxvk => {
             "wine716OldWow64ManagedDxvk".to_string()
@@ -411,6 +385,7 @@ fn recommended_profile_ipc(profile: RecommendedProfileId) -> String {
 
 fn recommendation_profile_label(profile: RecommendedProfileId) -> &'static str {
     match profile {
+        RecommendedProfileId::ManagedNndskRoProton => "nndsk-ro-proton administrado",
         RecommendedProfileId::ManagedProtonCachyos11 => "proton-cachyos-11 administrado",
         RecommendedProfileId::Wine716OldWow64ManagedDxvk => "Wine 7.16 old-WoW64 + DXVK 2.6.2",
     }
@@ -439,7 +414,19 @@ pub(crate) fn gepard_runtime_check(snapshot: &CompatibilitySnapshot) -> Option<R
             let record = record.expect("record");
             match &snapshot.assessment {
                 CompatibilityAssessment::Validated { evidence_id } => {
+                    let record = shipped_compatibility_records()
+                        .iter()
+                        .find(|candidate| {
+                            candidate.evidence_id == *evidence_id
+                                && candidate
+                                    .gepard_sha256
+                                    .eq_ignore_ascii_case(sha256_lowercase)
+                        })
+                        .unwrap_or(record);
                     let validated_label = match record.runtime {
+                        CompatibilityRuntimeSpec::ManagedNndskRoProton => {
+                            "Validated nndsk-ro-proton"
+                        }
                         CompatibilityRuntimeSpec::ManagedProtonCachyos11 => {
                             "Validated proton-cachyos-11"
                         }
@@ -461,6 +448,9 @@ pub(crate) fn gepard_runtime_check(snapshot: &CompatibilitySnapshot) -> Option<R
                 }
                 _ => {
                     let remediation = match record.recommendation_profile {
+                        RecommendedProfileId::ManagedNndskRoProton => {
+                            "Selecciona el nndsk-ro-proton administrado"
+                        }
                         RecommendedProfileId::ManagedProtonCachyos11 => {
                             "Selecciona el Proton-CachyOS 11 administrado"
                         }
@@ -579,7 +569,7 @@ mod tests {
     use std::fs;
     use std::path::PathBuf;
 
-    use crate::tools::runners::managed_proton_path;
+    use crate::tools::runners::{managed_proton_path, managed_proton_path_for_id};
     use crate::tools::runtime::probe::probe_runner;
     use crate::tools::runtime::resolver::{
         profile_from_legacy, resolve_runtime, DgVoodooState, LegacyProfileInput,
@@ -680,10 +670,115 @@ mod tests {
                 probe: &probe,
             }),
         );
-        assert!(matches!(
+        assert_eq!(
             snapshot.assessment,
-            CompatibilityAssessment::Validated { .. }
-        ));
+            CompatibilityAssessment::Validated {
+                evidence_id: honey_nndsk_evidence_id()
+            }
+        );
+        assert_eq!(
+            snapshot.recommendation.as_ref().unwrap().profile,
+            RecommendedProfileId::ManagedNndskRoProton
+        );
+        let ipc = compatibility_ipc(&snapshot);
+        assert_eq!(ipc.recommendation.unwrap().profile, "managedNndskRoProton");
+        assert!(gepard_runtime_check(&snapshot)
+            .unwrap()
+            .message
+            .contains("Validated nndsk-ro-proton"));
+    }
+
+    #[test]
+    fn legacy_honey_runtime_keeps_its_evidence_while_recommending_new_runtime() {
+        let proton_path = managed_proton_path_for_id(LEGACY_MANAGED_RUNNER_ID).unwrap();
+        let runner = ResolvedRunner::test_proton(
+            proton_path.clone(),
+            proton_path.parent().unwrap().to_path_buf(),
+            PathBuf::from("/usr/bin/umu-run"),
+        );
+        let probe = probe_runner(&runner);
+        let plan = resolve_plan(&runner, false, &probe);
+        assert_eq!(
+            observed_runtime_spec(&plan, &probe),
+            Some(CompatibilityRuntimeSpec::ManagedProtonCachyos11)
+        );
+        let subject = SubjectObservation::Hash {
+            sha256_lowercase: GEPARD_HONEY_SHA256.to_string(),
+        };
+        let snapshot = assess_compatibility(
+            &subject,
+            Some(&AssessedRuntime {
+                plan: &plan,
+                probe: &probe,
+            }),
+        );
+        assert_eq!(
+            snapshot.assessment,
+            CompatibilityAssessment::Validated {
+                evidence_id: honey_evidence_id()
+            }
+        );
+        assert_eq!(
+            snapshot.recommendation.as_ref().unwrap().profile,
+            RecommendedProfileId::ManagedNndskRoProton
+        );
+        let message = gepard_runtime_check(&snapshot).unwrap().message;
+        assert!(message.contains("Validated proton-cachyos-11"));
+        assert!(!message.contains("Validated nndsk-ro-proton"));
+    }
+
+    #[test]
+    fn managed_runtime_path_and_artifact_receipt_must_agree() {
+        let proton_path = managed_proton_path();
+        let runner = ResolvedRunner::test_proton(
+            proton_path.clone(),
+            proton_path.parent().unwrap().to_path_buf(),
+            PathBuf::from("/usr/bin/umu-run"),
+        );
+        let mut probe = probe_runner(&runner);
+        let plan = resolve_plan(&runner, false, &probe);
+        let ComponentProvenance::ArtifactReceipt(receipt) = &mut probe.identity.provenance else {
+            panic!("managed provenance");
+        };
+        receipt.identity.artifact_id =
+            super::super::model::ArtifactId::new(LEGACY_MANAGED_RUNNER_ID).unwrap();
+        assert_eq!(observed_runtime_spec(&plan, &probe), None);
+        let snapshot = assess_compatibility(
+            &SubjectObservation::Hash {
+                sha256_lowercase: GEPARD_HONEY_SHA256.to_string(),
+            },
+            Some(&AssessedRuntime {
+                plan: &plan,
+                probe: &probe,
+            }),
+        );
+        assert_eq!(snapshot.assessment, CompatibilityAssessment::Unknown);
+    }
+
+    #[test]
+    fn nndsk_runtime_does_not_inherit_the_wine_716_sakura_validation() {
+        let proton_path = managed_proton_path();
+        let runner = ResolvedRunner::test_proton(
+            proton_path.clone(),
+            proton_path.parent().unwrap().to_path_buf(),
+            PathBuf::from("/usr/bin/umu-run"),
+        );
+        let probe = probe_runner(&runner);
+        let plan = resolve_plan(&runner, false, &probe);
+        let snapshot = assess_compatibility(
+            &SubjectObservation::Hash {
+                sha256_lowercase: GEPARD_SAKURA_SHA256.to_string(),
+            },
+            Some(&AssessedRuntime {
+                plan: &plan,
+                probe: &probe,
+            }),
+        );
+        assert_eq!(snapshot.assessment, CompatibilityAssessment::Unknown);
+        assert_eq!(
+            snapshot.recommendation.unwrap().profile,
+            RecommendedProfileId::Wine716OldWow64ManagedDxvk
+        );
     }
 
     #[test]
@@ -776,7 +871,10 @@ mod tests {
         };
         let snapshot = assess_compatibility(&subject, None);
         assert_eq!(snapshot.assessment, CompatibilityAssessment::Unknown);
-        assert!(snapshot.recommendation.is_some());
+        assert_eq!(
+            snapshot.recommendation.unwrap().profile,
+            RecommendedProfileId::ManagedNndskRoProton
+        );
     }
 
     #[test]
@@ -797,7 +895,7 @@ mod tests {
         let subject = SubjectObservation::Hash {
             sha256_lowercase: GEPARD_HONEY_SHA256.to_string(),
         };
-        let proton_path = managed_proton_path();
+        let proton_path = managed_proton_path_for_id(LEGACY_MANAGED_RUNNER_ID).unwrap();
         let runner = ResolvedRunner::test_proton(
             proton_path.clone(),
             proton_path.parent().unwrap().to_path_buf(),
@@ -805,6 +903,10 @@ mod tests {
         );
         let probe = probe_runner(&runner);
         let plan = resolve_plan(&runner, false, &probe);
+        assert_eq!(
+            observed_runtime_spec(&plan, &probe),
+            Some(CompatibilityRuntimeSpec::ManagedProtonCachyos11)
+        );
         let snapshot = assess_against_records(
             &subject,
             Some(&AssessedRuntime {
@@ -832,6 +934,14 @@ mod tests {
             gepard_sha256: String,
             #[serde(rename = "gepardFileVersion")]
             gepard_file_version: String,
+            #[serde(rename = "gepardProductVersion")]
+            gepard_product_version: String,
+            runtime: String,
+            #[serde(rename = "recommendationProfile")]
+            recommendation_profile: String,
+            #[serde(rename = "recordedAt")]
+            recorded_at: String,
+            provenance: String,
         }
 
         let raw = fs::read_to_string(
@@ -842,12 +952,45 @@ mod tests {
         let fixture: Fixture = serde_json::from_str(&raw).expect("json");
         assert_eq!(fixture.schema_version, COMPATIBILITY_CATALOG_SCHEMA_VERSION);
         let shipped = shipped_compatibility_records();
-        assert_eq!(shipped.len(), fixture.records.len());
-        for (record, golden) in shipped.iter().zip(fixture.records.iter()) {
+        assert_eq!(shipped.len(), fixture.records.len() + 1);
+        for golden in &fixture.records {
+            let record = shipped
+                .iter()
+                .find(|record| record.evidence_id.as_str() == golden.evidence_id)
+                .expect("historical record preserved");
             assert_eq!(record.evidence_id.as_str(), golden.evidence_id);
             assert_eq!(record.gepard_sha256, golden.gepard_sha256);
             assert_eq!(record.gepard_file_version, golden.gepard_file_version);
+            assert_eq!(record.gepard_product_version, golden.gepard_product_version);
+            assert_eq!(record.recorded_at, golden.recorded_at);
+            assert_eq!(record.provenance, EvidenceProvenance::CuratedShipped);
+            assert_eq!(golden.provenance, "curatedShipped");
+            assert_eq!(
+                recommended_profile_ipc(record.recommendation_profile),
+                golden.recommendation_profile
+            );
+            assert_eq!(
+                match record.runtime {
+                    CompatibilityRuntimeSpec::ManagedNndskRoProton => "managedNndskRoProton",
+                    CompatibilityRuntimeSpec::ManagedProtonCachyos11 => "managedProtonCachyos11",
+                    CompatibilityRuntimeSpec::Wine716OldWow64ManagedDxvk =>
+                        "wine716OldWow64ManagedDxvk",
+                },
+                golden.runtime
+            );
         }
+        let new = find_shipped_record_by_hash(GEPARD_HONEY_SHA256).unwrap();
+        assert_eq!(new.evidence_id, honey_nndsk_evidence_id());
+        assert_eq!(new.recorded_at, "2026-10-06");
+        assert_eq!(new.runtime, CompatibilityRuntimeSpec::ManagedNndskRoProton);
+        assert_eq!(
+            new.recommendation_profile,
+            RecommendedProfileId::ManagedNndskRoProton
+        );
+        assert!(shipped
+            .iter()
+            .filter(|record| record.recorded_at == "2026-09-16")
+            .all(|record| record.runtime != CompatibilityRuntimeSpec::ManagedNndskRoProton));
     }
 
     #[test]
