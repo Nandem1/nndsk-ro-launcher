@@ -16,6 +16,16 @@ export default defineConfig({
     strictPort: true,
     host: host || false,
     hmr: host ? { protocol: 'ws', host, port: 5183 } : undefined,
+    // Tauri watches Rust itself. These generated/private trees may contain Wine
+    // drive symlinks and must not be traversed by the frontend watcher.
+    watch: {
+      ignored: [
+        '**/.audit/**',
+        '**/target/**',
+        '**/src-tauri/**',
+        '**/d7vk-spike-cache/**',
+      ],
+    },
   },
   envPrefix: ['VITE_', 'TAURI_ENV_*'],
   build: {
