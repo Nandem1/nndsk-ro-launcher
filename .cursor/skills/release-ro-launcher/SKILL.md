@@ -1,6 +1,6 @@
 ---
 name: release-ro-launcher
-description: Bump the single app version, tag, and publish RO-Launcher GitHub Releases for the Tauri updater. Use when the user asks to release, cut a version, bump patch/minor/major, tag vX.Y.Z, publish v0.1.0, or generate a new AppImage update.
+description: Choose the next RO-Launcher version from the release changes, synchronize version files, and prepare a signed GitHub Release draft for the Tauri updater. Use when the user asks for a release, a version bump, a vX.Y.Z tag, or a new AppImage update.
 ---
 
 # Release RO-Launcher
@@ -27,11 +27,48 @@ That URL exists only after the user publishes the draft. The plugin verifies the
 
 `v0.1.0` is already published. Do not retag it. The next cut is a bump.
 
+## Decide the next version
+
+When the user authorizes a release without specifying its version, **the model must
+choose major, minor or patch**, calculate the next X.Y.Z and briefly justify it.
+Do not default to patch or ask the user to choose the bump merely because no
+version was provided. An explicit user version/bump takes precedence.
+
+Review the complete intended release delta against the latest published launcher
+tag (not the latest runtime tag, a draft, or only the last commit). Include pending
+changes intended for that release; do not absorb unrelated user-owned changes.
+Read the actual behavior/configuration/migration impact, not just commit subjects
+or Conventional Commit prefixes. Use the highest applicable impact:
+
+- **Major:** incompatible public behavior, configuration/protocol/persistence
+  contracts, or removal that breaks supported existing usage without a compatible
+  path. State the broken contract and migration. Do not call a large diff or a new
+  default major when existing selections/data remain compatible.
+- **Minor:** new user-facing capability or supported workflow with compatible
+  existing data/behavior (for example a managed runtime download). A catalogue
+  change that preserves saved selections/prefixes is not by itself a forced
+  migration. Do not imply universal game compatibility from a new runtime.
+- **Patch:** fixes, hardening or internal/docs/test changes with no new public
+  capability or incompatible contract. Large fixes can still be patch changes.
+
+While the app is 0.x, treat an incompatible development-contract change as a minor
+bump and document its migration explicitly; do not declare 1.0/stability merely
+because a change is large. A first stable 1.0 requires that product milestone to
+be authorized and supported by acceptance evidence.
+
+Report `base tag → current version → bump → next version` with the decisive
+changes, then verify using `node scripts/bump-version.mjs --dry-run <bump>`.
+If only planning/preparing a release, stop at the dry-run: choosing a version does
+not authorize writing version files, committing, tagging, pushing or publishing.
+Preserve the existing authorization and draft-only boundaries below. If the
+intended release scope/base cannot be established, stop and explain that specific
+uncertainty rather than inventing a version.
+
 ## Later cuts
 
 1. `git status --short --branch` is clean and `main` matches `origin/main`.
 2. Quality CI on that commit is green (`ci.yml`, not `release.yml`). `ci.yml` must not run on version tags.
-3. `npm run version:bump -- patch` (or `minor` / `major` / an explicit X.Y.Z). Do not bump if show already equals the version they want to tag.
+3. Apply the justified decision above with `npm run version:bump -- <bump>` (or the user's explicit X.Y.Z). Do not bump if show already equals the version they want to tag.
 4. Commit only the five version files (plus nothing else) with a message like `Bump version to 0.1.1`. Tree-coupled version tests read `npm run version:show`. They must not be edited on a bump.
 5. Push `main` if the user asked. Wait for quality CI.
 6. Confirm with the user, then annotated tag only.

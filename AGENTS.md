@@ -13,6 +13,9 @@ Rich Presence. A fix is acceptable only if it keeps these contracts:
 - nndsk-ro-proton through managed UMU is the primary runtime. Preserve its validated Proton-CachyOS
   11 base and three compatibility changes; Wine 7.16 remains the per-server backward-compatibility
   fallback. Do not silently migrate existing runner selections or prefixes.
+- Offer only nndsk-ro-proton and the pinned Wine 7.16 Staging/TkG amd64 artifact for new
+  selections/downloads. Preserve saved out-of-catalog paths as legacy selections; do not advertise
+  arbitrary system/Steam runners, adopt their directories, or rewrite their prefixes.
 - Runner selection is per server. A non-empty `server.runner` overrides the global default and the
   UI must show the effective runner rather than implying the global one is active.
 - SakuraRO's validated Gepard `26.9.3.1` hash uses portable Wine 7.16 legacy/old-WoW64 plus managed
@@ -67,6 +70,9 @@ Rich Presence. A fix is acceptable only if it keeps these contracts:
 App version is one X.Y.Z written to five files. Do not edit those files by hand. Follow
 [`.cursor/skills/release-ro-launcher/SKILL.md`](.cursor/skills/release-ro-launcher/SKILL.md)
 and [`docs/features/UPDATER.md`](docs/features/UPDATER.md).
+When a release is authorized without an explicit version, the model chooses and justifies
+major/minor/patch from the full delta since the latest published launcher tag, following the skill.
+Planning a version alone never authorizes a bump, tag, push or publication.
 
 ```bash
 npm run version:show

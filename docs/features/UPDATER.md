@@ -39,19 +39,22 @@ No subas el privado, la contraseña ni un Application Secret / bot token.
 ## Ciclo de release
 
 La versión de la app es un solo `X.Y.Z`. El skill [release-ro-launcher](../../.cursor/skills/release-ro-launcher/SKILL.md) y `npm run version:bump` la escriben en los cinco ficheros. No la edites a mano.
+Si el usuario no fija versión, el modelo debe elegir y justificar major/minor/patch
+según el delta completo desde el último tag publicado del launcher. El criterio
+vive en la skill; preparar una versión no autoriza todavía el bump ni publicar.
 
 `v0.1.0` ya está publicado. El siguiente corte es un bump. No muevas ese tag.
 
 Cortes siguientes:
 
-1. `npm run version:bump -- patch` (o `minor` / `major` / `X.Y.Z`).
+1. Elegir y justificar el bump con la skill, verificar su dry-run y, una vez autorizado, ejecutar `npm run version:bump -- <bump>` (o el `X.Y.Z` explícito del usuario).
 2. Commit del bump.
 3. Push de `main` y CI de calidad verde. `ci.yml` no corre en tags `v*.*.*`.
 4. Tag `vX.Y.Z` (debe coincidir con `npm run version:show`).
 5. Push del tag. Actions corre `.github/workflows/release.yml`.
 6. Revisa el GitHub Release en borrador (`latest.json`, AppImage, `.sig`).
 7. Escribe las notas que verá el updater en `latest.json` (`notes`).
-8. Publica el release cuando el draft esté bien.
+8. El usuario publica el release cuando el draft esté bien; el agente no lo publica.
 
 El job limpia `DISCORD_APPLICATION_ID` heredado, exige el ID numérico y la clave de firma,
 compila sidecars en release, firma el AppImage y comprueba `ro-inputd` / `ro-sessiond` en `usr/bin`.
