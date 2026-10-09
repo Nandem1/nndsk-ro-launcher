@@ -85,7 +85,7 @@ export function RunnerSelector() {
             ? 'Importando runtime...'
             : 'Importar y usar nndsk-ro-proton'}
         </Button>
-        <p className="mt-1 text-[9px] leading-relaxed text-zinc-500">
+        <p className="mt-1 text-micro leading-relaxed text-muted">
           nndsk-ro-proton y Wine 7.16 Staging/TkG amd64 se descargan y verifican
           por SHA-256 al preparar el entorno. Son los dos runners ofrecidos. La
           importación local es opcional y cambia sólo el predeterminado global,
@@ -93,28 +93,26 @@ export function RunnerSelector() {
         </p>
       </div>
       {savingRunner && (
-        <p className="mt-1.5 text-[10px] text-zinc-500">
-          Guardando selección...
-        </p>
+        <p className="mt-1.5 text-caption text-muted">Guardando selección...</p>
       )}
       {(error || pickerError) && (
-        <p role="alert" className="mt-1.5 text-[10px] text-red-400">
+        <p role="alert" className="mt-1.5 text-caption text-bad-bright">
           {pickerError || error}
         </p>
       )}
       {!detected && selectedRunner && (
-        <p className="mt-1.5 text-[10px] leading-relaxed text-amber-400/80">
+        <p className="mt-1.5 text-caption leading-relaxed text-accent-bright/80">
           Tu selección anterior está fuera del catálogo ofrecido y se conserva
           sin migrar su prefix. Para un entorno nuevo, selecciona uno de los dos
           runners administrados.
         </p>
       )}
       {server && serverRunner && (
-        <div className="mt-2 rounded-md border border-amber-500/15 bg-amber-500/5 px-2.5 py-2">
-          <p className="text-[10px] leading-relaxed text-amber-300/90">
+        <div className="mt-2 rounded-control-compact border border-accent/15 bg-accent/5 px-2.5 py-2">
+          <p className="text-caption leading-relaxed text-accent-light/90">
             Runner efectivo de {server.name}: {serverRunnerName}
           </p>
-          <p className="mt-0.5 text-[9px] leading-relaxed text-zinc-500">
+          <p className="mt-0.5 text-micro leading-relaxed text-muted">
             Propio del servidor; el predeterminado global no lo reemplaza.
           </p>
         </div>

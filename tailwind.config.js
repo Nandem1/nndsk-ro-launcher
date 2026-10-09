@@ -3,6 +3,8 @@ import { colorNames } from './scripts/design-token-map.mjs'
 /** @type {import('tailwindcss').Config} */
 export default {
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
+  // Shadows own their colors; avoid shadow-panel also becoming a color utility.
+  corePlugins: { boxShadowColor: false },
   theme: {
     extend: {
       colors: Object.fromEntries(
@@ -53,11 +55,6 @@ export default {
         'dot-warn': 'var(--shadow-dot-warn)',
         'dot-bad': 'var(--shadow-dot-bad)',
         'check-warn': 'var(--shadow-check-warn)',
-        // Transitional aliases: removed by the mechanical migration.
-        glass: 'var(--shadow-panel)',
-        'glow-amber': 'var(--shadow-glow-warn)',
-        'glow-emerald': 'var(--shadow-glow-ok)',
-        'glow-red': 'var(--shadow-glow-bad)',
       },
       transitionTimingFunction: {
         'out-quart': 'cubic-bezier(0.25, 1, 0.5, 1)',

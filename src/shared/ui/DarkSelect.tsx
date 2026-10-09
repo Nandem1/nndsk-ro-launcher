@@ -181,7 +181,7 @@ export function DarkSelect({
               width: menuPosition.width,
               maxHeight: menuPosition.maxHeight,
             }}
-            className={`z-[200] py-1 rounded-lg border border-white/[0.08] bg-zinc-950/90 backdrop-blur-sm shadow-glass overflow-y-auto overscroll-contain animate-scale-in ${
+            className={`z-[200] py-1 rounded-control border border-overlay-light/[0.08] bg-surface/90 backdrop-blur-panel shadow-panel overflow-y-auto overscroll-contain animate-scale-in ${
               menuPosition.openUp ? 'origin-bottom' : 'origin-top'
             }`}
           >
@@ -196,11 +196,11 @@ export function DarkSelect({
                     tabIndex={index === activeIndex ? 0 : -1}
                     onMouseMove={() => setActiveIndex(index)}
                     onClick={() => chooseOption(index)}
-                    className={`w-full text-left transition-colors truncate ${compact ? 'px-2 py-1.5 text-[11px]' : 'px-3 py-2 text-sm'}
+                    className={`w-full text-left transition-colors truncate ${compact ? 'px-2 py-1.5 text-detail' : 'px-3 py-2 text-sm'}
                       ${
                         isSelected
-                          ? 'bg-amber-600/25 text-amber-200'
-                          : 'text-zinc-200 hover:bg-zinc-800/80 hover:text-zinc-100'
+                          ? 'bg-accent-strong/25 text-accent-soft'
+                          : 'text-ink-bright hover:bg-panel-raised/80 hover:text-ink'
                       }`}
                   >
                     {option.label}
@@ -231,18 +231,18 @@ export function DarkSelect({
             openMenu(event.key === 'ArrowUp' ? options.length - 1 : undefined)
           }
         }}
-        className={`w-full flex items-center justify-between border text-left focus:outline-none focus:border-amber-500/60 focus:ring-1 focus:ring-amber-500/20
+        className={`w-full flex items-center justify-between border text-left focus:outline-none focus:border-accent/60 focus:ring-1 focus:ring-accent/20
           transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed
           ${
             keycap
-              ? 'border-amber-500/20 bg-amber-500/[0.04] font-medium text-amber-100/90 hover:border-amber-500/40 hover:bg-amber-500/[0.07] disabled:hover:border-amber-500/20'
-              : 'border-zinc-700/80 bg-zinc-950 text-zinc-100 hover:border-zinc-600 disabled:hover:border-zinc-700/80'
+              ? 'border-accent/20 bg-accent/[0.04] font-medium text-accent-ink/90 hover:border-accent/40 hover:bg-accent/[0.07] disabled:hover:border-accent/20'
+              : 'border-line/80 bg-surface text-ink hover:border-line-strong disabled:hover:border-line/80'
           }
-          ${compact ? 'gap-1 rounded-md px-2 py-1 text-[11px]' : 'gap-2 rounded-lg px-3 py-2 text-sm'}`}
+          ${compact ? 'gap-1 rounded-control-compact px-2 py-1 text-detail' : 'gap-2 rounded-control px-3 py-2 text-sm'}`}
       >
         <span className="truncate">{selected?.label ?? placeholder}</span>
         <ChevronDown
-          className={`w-3.5 h-3.5 text-zinc-500 shrink-0 transition-transform duration-200 ease-out-quart ${open ? 'rotate-180' : ''}`}
+          className={`w-3.5 h-3.5 text-muted shrink-0 transition-transform duration-200 ease-out-quart ${open ? 'rotate-180' : ''}`}
           aria-hidden
         />
       </button>

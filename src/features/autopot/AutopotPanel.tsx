@@ -35,7 +35,9 @@ function StatBar({
   const empty = max <= 0
   const pct = statPercent(cur, max)
   const gradient =
-    tone === 'red' ? 'from-red-600 to-red-400' : 'from-sky-600 to-sky-400'
+    tone === 'red'
+      ? 'from-bad-strong to-bad-bright'
+      : 'from-info-strong to-info-bright'
 
   const flashClass = flash
     ? tone === 'red'
@@ -46,7 +48,7 @@ function StatBar({
   return (
     <div className={`space-y-0.5 ${flashClass}`}>
       <div
-        className={`flex justify-between text-[10px] ${empty ? 'text-zinc-700' : 'text-zinc-500'}`}
+        className={`flex justify-between text-caption ${empty ? 'text-line' : 'text-muted'}`}
       >
         <span>{tone === 'red' ? 'HP' : 'SP'}</span>
         <span>
@@ -56,11 +58,11 @@ function StatBar({
         </span>
       </div>
       <div
-        className={`h-2 rounded-full overflow-hidden ${empty ? 'bg-zinc-900/80 border border-dashed border-zinc-800/80' : 'bg-zinc-800'}`}
+        className={`h-2 rounded-pill overflow-hidden ${empty ? 'bg-panel/80 border border-dashed border-panel-raised/80' : 'bg-panel-raised'}`}
       >
         {!empty && (
           <div
-            className={`h-full bg-gradient-to-r ${gradient} transition-all duration-300`}
+            className={`h-full bg-progress-gradient ${gradient} transition-all duration-300`}
             style={{ width: `${pct}%` }}
           />
         )}
@@ -176,19 +178,22 @@ export function AutopotPanel() {
       tone={tone}
       className="h-full"
       leading={
-        <FlaskConical className="w-3 h-3 text-zinc-600 shrink-0" aria-hidden />
+        <FlaskConical
+          className="w-3 h-3 text-line-strong shrink-0"
+          aria-hidden
+        />
       }
     >
       <div className="flex-1 min-h-0 overflow-y-auto space-y-2 pr-0.5">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
             <p
-              className={`truncate text-sm font-semibold ${hasCharacter ? 'text-amber-100/95' : 'text-zinc-100'}`}
+              className={`truncate text-sm font-semibold ${hasCharacter ? 'text-accent-ink/95' : 'text-ink'}`}
             >
               {displayName}
             </p>
             <p
-              className={`text-[10px] ${launching ? 'text-zinc-500 animate-pulse-dot' : 'text-zinc-600'}`}
+              className={`text-caption ${launching ? 'text-muted animate-pulse-dot' : 'text-line-strong'}`}
             >
               {statusText}
             </p>
@@ -201,17 +206,17 @@ export function AutopotPanel() {
           />
         </div>
 
-        <div className="space-y-1.5 rounded-lg bg-zinc-950/40 border border-zinc-800/60 px-2.5 py-2">
+        <div className="space-y-1.5 rounded-control bg-surface/40 border border-panel-raised/60 px-2.5 py-2">
           <StatBar cur={hpCur} max={hpMax} tone="red" flash={flashHp} />
           <StatBar cur={spCur} max={spMax} tone="blue" flash={flashSp} />
         </div>
 
-        <div className="flex items-center justify-between gap-2 rounded-lg border border-amber-500/15 bg-amber-500/5 px-2.5 py-2">
+        <div className="flex items-center justify-between gap-2 rounded-control border border-accent/15 bg-accent/5 px-2.5 py-2">
           <div className="min-w-0">
-            <p className="text-[11px] font-medium text-amber-100/90">
+            <p className="text-detail font-medium text-accent-ink/90">
               Modo proactivo
             </p>
-            <p className="text-[10px] leading-snug text-zinc-500">
+            <p className="text-caption leading-snug text-muted">
               Envía HP entre recuperaciones para reducir la reacción con
               latencia alta.
             </p>
@@ -225,7 +230,7 @@ export function AutopotPanel() {
         </div>
 
         <div className="flex items-center gap-2">
-          <span className="text-[10px] text-zinc-600 uppercase tracking-wide shrink-0">
+          <span className="text-caption text-line-strong uppercase tracking-wide shrink-0">
             Lectura
           </span>
           <input
@@ -238,9 +243,9 @@ export function AutopotPanel() {
             onChange={(event) =>
               void updateField({ delayMs: Number(event.target.value) })
             }
-            className="flex-1 accent-amber-500 disabled:opacity-50"
+            className="flex-1 accent-accent disabled:opacity-50"
           />
-          <span className="text-[10px] text-zinc-500 w-10 text-right shrink-0">
+          <span className="text-caption text-muted w-10 text-right shrink-0">
             {status.active
               ? status.effectiveDelayMs
               : Math.max(config.delayMs, minimumDelayMs)}
@@ -250,14 +255,14 @@ export function AutopotPanel() {
 
         <div className="space-y-1">
           <div className="flex items-center justify-between gap-2">
-            <span className="text-[10px] text-zinc-600 uppercase tracking-wide">
+            <span className="text-caption text-line-strong uppercase tracking-wide">
               Perfil de memoria
             </span>
             <button
               type="button"
               disabled={!available || status.active || busy}
               onClick={() => setShowMemoryScanner(true)}
-              className="inline-flex items-center gap-1 text-[10px] text-amber-500/80 hover:text-amber-300 disabled:text-zinc-700"
+              className="inline-flex items-center gap-1 text-caption text-accent/80 hover:text-accent-light disabled:text-line"
             >
               <Search className="h-3 w-3" aria-hidden />
               Encontrar
@@ -299,7 +304,7 @@ export function AutopotPanel() {
 
         <div className="grid grid-cols-2 gap-1.5">
           <div className="space-y-1">
-            <span className="text-[10px] text-zinc-600 uppercase tracking-wide">
+            <span className="text-caption text-line-strong uppercase tracking-wide">
               HP
             </span>
             <div className="flex gap-1">
@@ -327,16 +332,16 @@ export function AutopotPanel() {
                         DEFAULT_AUTOPOT_CONFIG.hpPercent,
                     })
                   }
-                  className="input-no-spinner w-full rounded-md border border-zinc-700/80 bg-zinc-950/60 py-1 pl-1.5 pr-4 text-center text-[11px] text-zinc-200 outline-none transition-colors focus:border-amber-500/60 focus:ring-1 focus:ring-amber-500/20 disabled:opacity-50"
+                  className="input-no-spinner w-full rounded-control-compact border border-line/80 bg-surface/60 py-1 pl-1.5 pr-4 text-center text-detail text-ink-bright outline-none transition-colors focus:border-accent/60 focus:ring-1 focus:ring-accent/20 disabled:opacity-50"
                 />
-                <span className="pointer-events-none absolute inset-y-0 right-1.5 flex items-center text-[9px] text-zinc-600">
+                <span className="pointer-events-none absolute inset-y-0 right-1.5 flex items-center text-micro text-line-strong">
                   %
                 </span>
               </div>
             </div>
           </div>
           <div className="space-y-1">
-            <span className="text-[10px] text-zinc-600 uppercase tracking-wide">
+            <span className="text-caption text-line-strong uppercase tracking-wide">
               SP
             </span>
             <div className="flex gap-1">
@@ -364,9 +369,9 @@ export function AutopotPanel() {
                         DEFAULT_AUTOPOT_CONFIG.spPercent,
                     })
                   }
-                  className="input-no-spinner w-full rounded-md border border-zinc-700/80 bg-zinc-950/60 py-1 pl-1.5 pr-4 text-center text-[11px] text-zinc-200 outline-none transition-colors focus:border-amber-500/60 focus:ring-1 focus:ring-amber-500/20 disabled:opacity-50"
+                  className="input-no-spinner w-full rounded-control-compact border border-line/80 bg-surface/60 py-1 pl-1.5 pr-4 text-center text-detail text-ink-bright outline-none transition-colors focus:border-accent/60 focus:ring-1 focus:ring-accent/20 disabled:opacity-50"
                 />
-                <span className="pointer-events-none absolute inset-y-0 right-1.5 flex items-center text-[9px] text-zinc-600">
+                <span className="pointer-events-none absolute inset-y-0 right-1.5 flex items-center text-micro text-line-strong">
                   %
                 </span>
               </div>
@@ -374,16 +379,16 @@ export function AutopotPanel() {
           </div>
         </div>
 
-        <p className="text-[10px] leading-snug min-h-[calc(1em*1.375)]">
+        <p className="text-caption leading-snug min-h-[calc(1em*1.375)]">
           {error && available ? (
-            <span className="text-red-400/90">{error}</span>
+            <span className="text-bad-bright/90">{error}</span>
           ) : available && effectiveMemoryAccess && !memoryReady ? (
-            <span className="text-amber-500/90">
+            <span className="text-accent/90">
               {memoryAccessLabel(effectiveMemoryAccess)}
               {memoryAction ? ` ${memoryAction}` : ''}
             </span>
           ) : showProfileHint ? (
-            <span className="text-amber-500/90">
+            <span className="text-accent/90">
               La dirección del perfil no es válida; usa Encontrar o revisa el
               perfil.
             </span>

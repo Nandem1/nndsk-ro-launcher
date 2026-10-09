@@ -32,7 +32,7 @@ const STRATEGY_OPTIONS = [
 
 function FieldLabel({ children }: { children: string }) {
   return (
-    <span className="text-[11px] text-zinc-500 uppercase tracking-wider">
+    <span className="text-detail text-muted uppercase tracking-wider">
       {children}
     </span>
   )
@@ -59,9 +59,9 @@ function TextInput({
       onChange={(event) => onChange(event.target.value)}
       placeholder={placeholder}
       spellCheck={false}
-      className={`bg-zinc-950/60 border border-zinc-700/80 rounded-lg px-3 py-2.5 text-sm text-zinc-100
-        placeholder:text-zinc-600 focus:outline-none focus:border-amber-500/60 focus:ring-1 focus:ring-amber-500/20
-        ${monospace ? 'font-mono text-[12px]' : ''}`}
+      className={`bg-surface/60 border border-line/80 rounded-control px-3 py-2.5 text-sm text-ink
+        placeholder:text-line-strong focus:outline-none focus:border-accent/60 focus:ring-1 focus:ring-accent/20
+        ${monospace ? 'font-mono text-label' : ''}`}
     />
   )
 }
@@ -88,7 +88,7 @@ function ExecutablePicker({
       <div className="flex items-center justify-between gap-2">
         <FieldLabel>{label}</FieldLabel>
         {optional && (
-          <span className="text-[10px] text-zinc-600">Opcional</span>
+          <span className="text-caption text-line-strong">Opcional</span>
         )}
       </div>
       <div className="flex gap-1.5 min-w-0">
@@ -96,14 +96,14 @@ function ExecutablePicker({
           type="button"
           onClick={onPick}
           disabled={busy}
-          className="min-w-0 flex-1 flex items-center justify-between gap-3 bg-zinc-950/60 border border-zinc-700/80
-            rounded-lg px-3 py-2.5 text-sm text-left hover:border-amber-500/40 transition-colors
+          className="min-w-0 flex-1 flex items-center justify-between gap-3 bg-surface/60 border border-line/80
+            rounded-control px-3 py-2.5 text-sm text-left hover:border-accent/40 transition-colors
             disabled:opacity-50 disabled:cursor-wait"
         >
-          <span className={path ? 'text-zinc-100 truncate' : 'text-zinc-600'}>
+          <span className={path ? 'text-ink truncate' : 'text-line-strong'}>
             {busy ? 'Abriendo...' : path ? basename(path) : placeholder}
           </span>
-          <span className="text-xs text-amber-400 shrink-0">Examinar</span>
+          <span className="text-xs text-accent-bright shrink-0">Examinar</span>
         </button>
         {path && onClear && (
           <IconButton
@@ -118,7 +118,7 @@ function ExecutablePicker({
       </div>
       {path && (
         <p
-          className="text-[10px] text-zinc-600 font-mono truncate px-1"
+          className="text-caption text-line-strong font-mono truncate px-1"
           title={path}
         >
           {path}
@@ -148,8 +148,8 @@ function ArgEditor({
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
         spellCheck={false}
-        className="resize-y bg-zinc-950/60 border border-zinc-700/80 rounded-lg px-3 py-2 text-[11px] leading-relaxed
-          font-mono text-zinc-200 placeholder:text-zinc-700 focus:outline-none focus:border-amber-500/60 focus:ring-1 focus:ring-amber-500/20"
+        className="resize-y bg-surface/60 border border-line/80 rounded-control px-3 py-2 text-detail leading-relaxed
+          font-mono text-ink-bright placeholder:text-line focus:outline-none focus:border-accent/60 focus:ring-1 focus:ring-accent/20"
       />
     </label>
   )
@@ -238,7 +238,7 @@ export function ServerConfigModal({ mode, server, onSave, onClose }: Props) {
 
   return (
     <div
-      className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+      className="fixed inset-0 bg-overlay-dark/60 backdrop-blur-panel flex items-center justify-center z-50 p-4"
       role="presentation"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget && !isBusy('save')) onClose()
@@ -248,15 +248,15 @@ export function ServerConfigModal({ mode, server, onSave, onClose }: Props) {
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="border border-white/[0.08] bg-gradient-to-b from-zinc-800/95 to-zinc-900/95 rounded-2xl
-          w-[560px] max-w-full max-h-[92vh] flex flex-col shadow-glass shadow-2xl animate-scale-in overflow-hidden"
+        className="border border-overlay-light/[0.08] bg-panel-gradient from-panel-raised/95 to-panel/95 rounded-modal
+          w-[560px] max-w-full max-h-[92vh] flex flex-col shadow-panel shadow-modal animate-scale-in overflow-hidden"
       >
-        <div className="flex items-start justify-between gap-3 px-6 pt-5 pb-4 border-b border-white/[0.06]">
+        <div className="flex items-start justify-between gap-3 px-6 pt-5 pb-4 border-b border-overlay-light/[0.06]">
           <div>
-            <h3 id={titleId} className="text-zinc-100 font-semibold text-lg">
+            <h3 id={titleId} className="text-ink font-semibold text-lg">
               {title}
             </h3>
-            <p className="text-xs text-zinc-500 mt-1">
+            <p className="text-xs text-muted mt-1">
               Cliente y contrato de lanzamiento.
             </p>
           </div>
@@ -277,7 +277,7 @@ export function ServerConfigModal({ mode, server, onSave, onClose }: Props) {
           className="min-h-0 overflow-y-auto px-6 py-4 flex flex-col gap-5"
         >
           <section className="flex flex-col gap-3">
-            <h4 className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider">
+            <h4 className="text-detail font-semibold text-ink-soft uppercase tracking-wider">
               Cliente
             </h4>
             <label className="flex flex-col gap-1.5">
@@ -307,15 +307,15 @@ export function ServerConfigModal({ mode, server, onSave, onClose }: Props) {
             />
           </section>
 
-          <section className="flex flex-col gap-3 border-t border-white/[0.06] pt-4">
-            <h4 className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider">
+          <section className="flex flex-col gap-3 border-t border-overlay-light/[0.06] pt-4">
+            <h4 className="text-detail font-semibold text-ink-soft uppercase tracking-wider">
               Entorno
             </h4>
-            <div className="rounded-lg border border-amber-500/15 bg-amber-500/5 px-3 py-2.5">
-              <p className="text-xs text-zinc-300">
+            <div className="rounded-control border border-accent/15 bg-accent/5 px-3 py-2.5">
+              <p className="text-xs text-ink-dim">
                 Entorno Ragnarok administrado automáticamente
               </p>
-              <p className="mt-1 text-[10px] leading-relaxed text-zinc-500">
+              <p className="mt-1 text-caption leading-relaxed text-muted">
                 Este servidor tendrá su propio entorno aislado. El launcher
                 descargará el runtime predeterminado y preparará las
                 dependencias del runner elegido al jugar por primera vez.
@@ -328,15 +328,15 @@ export function ServerConfigModal({ mode, server, onSave, onClose }: Props) {
                 options={runnerOptions}
                 onChange={(value) => setField('runner', value)}
               />
-              <p className="text-[10px] leading-relaxed text-zinc-500">
+              <p className="text-caption leading-relaxed text-muted">
                 Al fijar uno, el launcher usa un prefix distinto para cada
                 runner. El entorno anterior no se modifica.
               </p>
             </div>
           </section>
 
-          <section className="flex flex-col gap-3 border-t border-white/[0.06] pt-4">
-            <h4 className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider">
+          <section className="flex flex-col gap-3 border-t border-overlay-light/[0.06] pt-4">
+            <h4 className="text-detail font-semibold text-ink-soft uppercase tracking-wider">
               Lanzamiento
             </h4>
             <div className="flex flex-col gap-1.5">
@@ -349,7 +349,7 @@ export function ServerConfigModal({ mode, server, onSave, onClose }: Props) {
                 }
               />
               {draft.strategy === 'patcher' && !draft.patcherPath && (
-                <span className="text-[10px] text-amber-400/80">
+                <span className="text-caption text-accent-bright/80">
                   Esta estrategia requiere seleccionar un patcher.
                 </span>
               )}
@@ -369,22 +369,22 @@ export function ServerConfigModal({ mode, server, onSave, onClose }: Props) {
                 placeholder={'--server=sakura\n${username}'}
               />
             </div>
-            <p className="text-[10px] text-zinc-600 leading-relaxed">
+            <p className="text-caption text-line-strong leading-relaxed">
               Una línea equivale a un argumento completo. Para credenciales usa
               plantillas como{' '}
-              <code className="text-zinc-500">{'${username}'}</code>; no guardes
+              <code className="text-muted">{'${username}'}</code>; no guardes
               valores secretos en esta configuración.
             </p>
-            <label className="flex items-start gap-2 rounded-lg border border-white/[0.05] bg-zinc-950/30 px-3 py-2.5">
+            <label className="flex items-start gap-2 rounded-control border border-overlay-light/[0.05] bg-surface/30 px-3 py-2.5">
               <input
                 type="checkbox"
                 checked={draft.requireWebview2}
                 onChange={(event) =>
                   setField('requireWebview2', event.target.checked)
                 }
-                className="mt-0.5 accent-amber-500"
+                className="mt-0.5 accent-accent"
               />
-              <span className="text-[10px] leading-relaxed text-zinc-500">
+              <span className="text-caption leading-relaxed text-muted">
                 Forzar Microsoft Edge WebView2. Úsalo si el patcher tiene una
                 interfaz web y el análisis PE aparece como inconcluso.
               </span>
@@ -392,9 +392,9 @@ export function ServerConfigModal({ mode, server, onSave, onClose }: Props) {
           </section>
         </form>
 
-        <div className="px-6 py-4 border-t border-white/[0.06] bg-zinc-950/20">
+        <div className="px-6 py-4 border-t border-overlay-light/[0.06] bg-surface/20">
           {shownError && (
-            <p role="alert" className="text-xs text-red-400 mb-3">
+            <p role="alert" className="text-xs text-bad-bright mb-3">
               {shownError}
             </p>
           )}

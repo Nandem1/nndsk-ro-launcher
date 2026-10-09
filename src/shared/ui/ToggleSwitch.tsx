@@ -13,8 +13,8 @@ export function ToggleSwitch({
 }: ToggleSwitchProps) {
   const onClass =
     tone === 'emerald'
-      ? 'bg-emerald-500/80 border-emerald-400/50 shadow-glow-emerald'
-      : 'bg-amber-500/80 border-amber-400/50 shadow-glow-amber'
+      ? 'bg-ok/80 border-ok-bright/50 shadow-glow-ok'
+      : 'bg-accent/80 border-accent-bright/50 shadow-glow-warn'
 
   return (
     <button
@@ -23,12 +23,12 @@ export function ToggleSwitch({
       aria-checked={checked}
       disabled={disabled}
       onClick={() => onChange(!checked)}
-      className={`relative w-9 h-5 rounded-full border transition-[background-color,border-color,box-shadow] duration-200 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed ${
-        checked ? onClass : 'bg-zinc-800 border-zinc-700/80'
+      className={`relative w-9 h-5 rounded-pill border transition-[background-color,border-color,box-shadow] duration-200 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed ${
+        checked ? onClass : 'bg-panel-raised border-line/80'
       }`}
     >
       <span
-        className={`absolute top-0.5 left-0.5 w-3.5 h-3.5 rounded-full bg-white shadow transition-transform duration-200 ease-spring ${
+        className={`absolute top-0.5 left-0.5 w-3.5 h-3.5 rounded-pill bg-overlay-light shadow-control transition-transform duration-200 ease-spring ${
           checked ? 'translate-x-4' : 'translate-x-0'
         }`}
       />

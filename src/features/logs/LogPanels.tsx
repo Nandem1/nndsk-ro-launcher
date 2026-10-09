@@ -21,15 +21,15 @@ function LogTab({
     <button
       type="button"
       onClick={onClick}
-      className={`px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wider transition-colors inline-flex items-center gap-1 ${
+      className={`px-2 py-0.5 rounded-control-compact text-caption font-semibold uppercase tracking-wider transition-colors inline-flex items-center gap-1 ${
         active
-          ? 'bg-amber-500/15 text-amber-300 border border-amber-500/25'
-          : 'text-zinc-500 hover:text-zinc-300 border border-transparent'
+          ? 'bg-accent/15 text-accent-light border border-accent/25'
+          : 'text-muted hover:text-ink-dim border border-transparent'
       }`}
     >
       {children}
       {badge != null && badge > 0 && (
-        <span className="px-1 min-w-[14px] text-center rounded bg-red-500/20 text-red-400 text-[9px] leading-tight">
+        <span className="px-1 min-w-[14px] text-center rounded-inline bg-bad/20 text-bad-bright text-micro leading-tight">
           {badge}
         </span>
       )}
@@ -80,7 +80,7 @@ export function UnifiedLogPanel() {
             Tools
           </LogTab>
           {isRunning && channel === 'game' && toolErrorCount > 0 && (
-            <span className="text-[9px] text-zinc-600 self-center ml-0.5">
+            <span className="text-micro text-line-strong self-center ml-0.5">
               · {toolErrorCount} en Tools
             </span>
           )}

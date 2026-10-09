@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import postcss from 'postcss'
 import valueParser from 'postcss-value-parser'
-import cssesc from 'cssesc'
+import selectorParser from 'postcss-selector-parser'
 
 // Compare compiled declarations after resolving local/Tailwind/theme variables.
 // Keep selector + variant checks as well as the requested global value sets.
@@ -56,10 +56,17 @@ function snapshot(file, replacements = {}) {
     if (rule.selector === ':root') return
     const variables = new Map(globals)
     rule.walkDecls(/^--/, (decl) => variables.set(decl.prop, decl.value))
-    let selector = rule.selector.replace(/\s+/g, ' ').trim()
-    for (const [before, after] of Object.entries(replacements)) {
-      selector = selector.replaceAll(cssesc(before, { isIdentifier: true }), cssesc(after, { isIdentifier: true }))
-    }
+    const selector = selectorParser((selectors) => {
+      selectors.walkClasses((node) => {
+        let name = node.value
+        for (const [before, after] of Object.entries(replacements).sort(([a], [b]) => b.length - a.length)) {
+          const escaped = before.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+          name = name.replace(new RegExp(`(?<![\\w-])${escaped}(?![\\w-])`, 'g'), () => after)
+        }
+        node.value = name
+        if (node.raws) delete node.raws.value
+      })
+    }).processSync(rule.selector).replace(/\s+/g, ' ').trim()
     const context = []
     for (let parent = rule.parent; parent?.type !== 'root'; parent = parent?.parent) {
       if (parent?.type === 'atrule') context.unshift(`@${parent.name} ${parent.params}`)

@@ -15,11 +15,11 @@ export function resolveToolTone(
 }
 
 const TONE_CLASSES: Record<PanelTone, string> = {
-  neutral: 'border-white/[0.06]',
-  idle: 'border-white/[0.04] opacity-60',
-  success: 'border-emerald-500/30 shadow-glow-emerald',
-  warning: 'border-amber-500/30 shadow-glow-amber',
-  danger: 'border-red-500/30 shadow-glow-red',
+  neutral: 'border-overlay-light/[0.06]',
+  idle: 'border-overlay-light/[0.04] opacity-60',
+  success: 'border-ok/30 shadow-glow-ok',
+  warning: 'border-accent/30 shadow-glow-warn',
+  danger: 'border-bad/30 shadow-glow-bad',
 }
 
 interface PanelProps {
@@ -46,15 +46,15 @@ export function Panel({
   const headerPad = hero ? 'px-4 py-3' : compact ? 'px-3 py-1.5' : 'px-4 py-2.5'
   const bodyPad = hero ? 'px-4 py-3' : compact ? 'px-3 py-2' : 'px-4 py-3'
   const titleClass = hero
-    ? 'text-[11px] font-semibold text-zinc-400 uppercase tracking-[0.16em] shrink-0'
-    : 'text-[10px] font-semibold text-zinc-500 uppercase tracking-[0.14em] shrink-0'
+    ? 'text-detail font-semibold text-ink-soft uppercase tracking-[0.16em] shrink-0'
+    : 'text-caption font-semibold text-muted uppercase tracking-[0.14em] shrink-0'
 
   return (
     <section
-      className={`rounded-xl border bg-gradient-to-b from-zinc-800/30 to-zinc-900/50 backdrop-blur-sm shadow-glass flex flex-col min-h-0 transition-[border-color,box-shadow,opacity,padding] duration-300 ${TONE_CLASSES[tone]} ${className}`}
+      className={`rounded-panel border bg-panel-gradient from-panel-raised/30 to-panel/50 backdrop-blur-panel shadow-panel flex flex-col min-h-0 transition-[border-color,box-shadow,opacity,padding] duration-300 ${TONE_CLASSES[tone]} ${className}`}
     >
       <div
-        className={`flex items-center justify-between gap-2 border-b border-white/[0.05] shrink-0 transition-[padding] duration-300 ${headerPad}`}
+        className={`flex items-center justify-between gap-2 border-b border-overlay-light/[0.05] shrink-0 transition-[padding] duration-300 ${headerPad}`}
       >
         <div className="flex items-center gap-2 min-w-0">
           <h2 className={titleClass}>{title}</h2>

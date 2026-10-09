@@ -47,7 +47,7 @@ export function LaunchFieldsModal({
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-overlay-dark/70 p-4 backdrop-blur-panel"
       role="presentation"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onCancel()
@@ -58,12 +58,12 @@ export function LaunchFieldsModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="max-h-[90vh] w-[390px] overflow-y-auto rounded-2xl border border-white/[0.08] bg-zinc-900 p-5 shadow-2xl"
+        className="max-h-[90vh] w-[390px] overflow-y-auto rounded-modal border border-overlay-light/[0.08] bg-panel p-5 shadow-modal"
       >
-        <h3 id={titleId} className="text-base font-semibold text-zinc-100">
+        <h3 id={titleId} className="text-base font-semibold text-ink">
           Iniciar {serverName}
         </h3>
-        <p className="mt-1 text-xs leading-relaxed text-zinc-500">
+        <p className="mt-1 text-xs leading-relaxed text-muted">
           Estos valores se usan sólo para este arranque. No se guardan en la
           configuración y el launcher los redacta de la salida que captura.
         </p>
@@ -71,7 +71,7 @@ export function LaunchFieldsModal({
         <div className="mt-4 flex flex-col gap-3">
           {fields.map((field, index) => (
             <label key={field} className="flex flex-col gap-1.5">
-              <span className="text-[11px] uppercase tracking-wider text-zinc-500">
+              <span className="text-detail uppercase tracking-wider text-muted">
                 {field}
               </span>
               <input
@@ -86,21 +86,21 @@ export function LaunchFieldsModal({
                     [field]: event.target.value,
                   }))
                 }
-                className="rounded-lg border border-zinc-700/80 bg-zinc-950/70 px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-amber-500/60"
+                className="rounded-control border border-line/80 bg-surface/70 px-3 py-2.5 text-sm text-ink outline-none focus:border-accent/60"
               />
             </label>
           ))}
         </div>
 
         <div className="mt-3 flex items-start justify-between gap-3">
-          <p className="text-[10px] leading-relaxed text-amber-400/80">
+          <p className="text-caption leading-relaxed text-accent-bright/80">
             Los valores se ocultan por defecto. El protocolo del cliente puede
             exponerlos temporalmente en los argumentos del proceso de Windows.
           </p>
           <button
             type="button"
             onClick={() => setShowValues((current) => !current)}
-            className="shrink-0 text-[10px] text-zinc-500 hover:text-zinc-200"
+            className="shrink-0 text-caption text-muted hover:text-ink-bright"
           >
             {showValues ? 'Ocultar' : 'Mostrar'}
           </button>
@@ -113,14 +113,14 @@ export function LaunchFieldsModal({
               setValues({})
               onCancel()
             }}
-            className="flex-1 rounded-xl border border-zinc-700 py-2.5 text-sm text-zinc-400 hover:text-zinc-100"
+            className="flex-1 rounded-panel border border-line py-2.5 text-sm text-ink-soft hover:text-ink"
           >
             Cancelar
           </button>
           <button
             type="submit"
             disabled={!complete}
-            className="flex-1 rounded-xl bg-amber-500 py-2.5 text-sm font-semibold text-zinc-950 disabled:opacity-40"
+            className="flex-1 rounded-panel bg-accent py-2.5 text-sm font-semibold text-surface disabled:opacity-40"
           >
             Continuar
           </button>

@@ -336,7 +336,7 @@ export function MemoryScannerModal({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-overlay-dark/70 p-4 backdrop-blur-panel"
       role="presentation"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) cancel()
@@ -347,18 +347,16 @@ export function MemoryScannerModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="w-[410px] rounded-2xl border border-white/[0.08] bg-zinc-900 p-5 shadow-2xl"
+        className="w-[410px] rounded-modal border border-overlay-light/[0.08] bg-panel p-5 shadow-modal"
       >
-        <h3 id={titleId} className="text-base font-semibold text-zinc-100">
+        <h3 id={titleId} className="text-base font-semibold text-ink">
           Encontrar memoria de {serverName}
         </h3>
-        <p className="mt-1 text-xs leading-relaxed text-zinc-500">
-          {description}
-        </p>
+        <p className="mt-1 text-xs leading-relaxed text-muted">{description}</p>
 
         {step === 'initial' || step === 'refine' ? (
           <label className="mt-4 flex flex-col gap-1.5">
-            <span className="text-[11px] uppercase tracking-wider text-zinc-500">
+            <span className="text-detail uppercase tracking-wider text-muted">
               {step === 'initial' ? 'HP actual' : 'Nuevo HP actual'}
             </span>
             <input
@@ -371,12 +369,12 @@ export function MemoryScannerModal({
               disabled={busy}
               onChange={(event) => setHp(event.target.value)}
               placeholder={step === 'initial' ? 'Ej. 13619' : 'Ej. 13430'}
-              className="input-no-spinner rounded-lg border border-zinc-700/80 bg-zinc-950/70 px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-amber-500/60 disabled:opacity-50"
+              className="input-no-spinner rounded-control border border-line/80 bg-surface/70 px-3 py-2.5 text-sm text-ink outline-none focus:border-accent/60 disabled:opacity-50"
             />
           </label>
         ) : step === 'name' ? (
           <label className="mt-4 flex flex-col gap-1.5">
-            <span className="text-[11px] uppercase tracking-wider text-zinc-500">
+            <span className="text-detail uppercase tracking-wider text-muted">
               Nombre exacto
             </span>
             <input
@@ -388,12 +386,12 @@ export function MemoryScannerModal({
               onChange={(event) => setName(event.target.value)}
               placeholder="Ej. NombrePJ"
               spellCheck={false}
-              className="rounded-lg border border-zinc-700/80 bg-zinc-950/70 px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-amber-500/60 disabled:opacity-50"
+              className="rounded-control border border-line/80 bg-surface/70 px-3 py-2.5 text-sm text-ink outline-none focus:border-accent/60 disabled:opacity-50"
             />
           </label>
         ) : step === 'level' || step === 'levelRefine' ? (
           <label className="mt-4 flex flex-col gap-1.5">
-            <span className="text-[11px] uppercase tracking-wider text-zinc-500">
+            <span className="text-detail uppercase tracking-wider text-muted">
               {step === 'level' ? 'Nivel actual' : 'Nuevo nivel'}
             </span>
             <input
@@ -406,12 +404,12 @@ export function MemoryScannerModal({
               disabled={busy}
               onChange={(event) => setLevel(event.target.value)}
               placeholder={step === 'level' ? 'Ej. 99' : 'Ej. 100'}
-              className="input-no-spinner rounded-lg border border-zinc-700/80 bg-zinc-950/70 px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-amber-500/60 disabled:opacity-50"
+              className="input-no-spinner rounded-control border border-line/80 bg-surface/70 px-3 py-2.5 text-sm text-ink outline-none focus:border-accent/60 disabled:opacity-50"
             />
           </label>
         ) : step === 'map' || step === 'mapRefine' ? (
           <label className="mt-4 flex flex-col gap-1.5">
-            <span className="text-[11px] uppercase tracking-wider text-zinc-500">
+            <span className="text-detail uppercase tracking-wider text-muted">
               {step === 'map' ? 'Mapa actual' : 'Nuevo mapa'}
             </span>
             <input
@@ -423,46 +421,46 @@ export function MemoryScannerModal({
               onChange={(event) => setMapName(event.target.value)}
               placeholder={step === 'map' ? 'Ej. prontera' : 'Ej. izlude'}
               spellCheck={false}
-              className="rounded-lg border border-zinc-700/80 bg-zinc-950/70 px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-amber-500/60 disabled:opacity-50"
+              className="rounded-control border border-line/80 bg-surface/70 px-3 py-2.5 text-sm text-ink outline-none focus:border-accent/60 disabled:opacity-50"
             />
           </label>
         ) : step === 'confirmed' && resolvedHpBase ? (
-          <div className="mt-4 space-y-2 rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3">
+          <div className="mt-4 space-y-2 rounded-panel border border-ok/20 bg-ok/5 p-3">
             <div className="flex items-center justify-between gap-3">
-              <span className="text-[11px] text-zinc-500">HP base</span>
-              <code className="text-xs text-emerald-300">{resolvedHpBase}</code>
+              <span className="text-detail text-muted">HP base</span>
+              <code className="text-xs text-ok-soft">{resolvedHpBase}</code>
             </div>
             <div className="flex items-center justify-between gap-3">
-              <span className="text-[11px] text-zinc-500">
+              <span className="text-detail text-muted">
                 Nombre {detectedName ? `'${detectedName.characterName}'` : ''}
               </span>
-              <code className="text-xs text-zinc-300">
+              <code className="text-xs text-ink-dim">
                 {detectedName?.nameAddress ?? 'No configurado'}
               </code>
             </div>
             {detectedLevel && (
               <div className="flex items-center justify-between gap-3">
-                <span className="text-[11px] text-zinc-500">Nivel Discord</span>
-                <code className="text-xs text-zinc-300">
+                <span className="text-detail text-muted">Nivel Discord</span>
+                <code className="text-xs text-ink-dim">
                   {detectedLevel.levelAddress}
                 </code>
               </div>
             )}
             {detectedMap && (
               <div className="flex items-center justify-between gap-3">
-                <span className="text-[11px] text-zinc-500">
+                <span className="text-detail text-muted">
                   Mapa '{detectedMap.mapName}'
                 </span>
-                <code className="text-xs text-zinc-300">
+                <code className="text-xs text-ink-dim">
                   {detectedMap.mapAddress}
                 </code>
               </div>
             )}
             {confirmed && (
               <>
-                <div className="flex items-center justify-between gap-3 text-[11px]">
-                  <span className="text-zinc-500">Valores confirmados</span>
-                  <span className="text-zinc-200">
+                <div className="flex items-center justify-between gap-3 text-detail">
+                  <span className="text-muted">Valores confirmados</span>
+                  <span className="text-ink-bright">
                     HP {confirmed.currentHp.toLocaleString()} /{' '}
                     {confirmed.maxHp.toLocaleString()} · SP{' '}
                     {confirmed.currentSp.toLocaleString()} /{' '}
@@ -470,10 +468,10 @@ export function MemoryScannerModal({
                   </span>
                 </div>
                 <div className="flex items-center justify-between gap-3">
-                  <span className="text-[11px] text-zinc-500">
+                  <span className="text-detail text-muted">
                     Buffer de estados
                   </span>
-                  <code className="text-xs text-zinc-300">
+                  <code className="text-xs text-ink-dim">
                     {confirmed.statusBuffer}
                   </code>
                 </div>
@@ -483,17 +481,17 @@ export function MemoryScannerModal({
         ) : null}
 
         {busy && (
-          <p className="mt-3 text-[11px] text-amber-400/80 animate-pulse-dot">
+          <p className="mt-3 text-detail text-accent-bright/80 animate-pulse-dot">
             {busyLabel}
           </p>
         )}
-        {error && <p className="mt-3 text-[11px] text-red-400">{error}</p>}
+        {error && <p className="mt-3 text-detail text-bad-bright">{error}</p>}
 
         <div className="mt-5 flex gap-2">
           <button
             type="button"
             onClick={cancel}
-            className="flex-1 rounded-xl border border-zinc-700 py-2.5 text-sm text-zinc-400 hover:text-zinc-100"
+            className="flex-1 rounded-panel border border-line py-2.5 text-sm text-ink-soft hover:text-ink"
           >
             Cancelar
           </button>
@@ -502,7 +500,7 @@ export function MemoryScannerModal({
               type="button"
               disabled={busy || !resolvedHpBase}
               onClick={() => void save()}
-              className="flex-1 rounded-xl bg-emerald-500 py-2.5 text-sm font-semibold text-zinc-950 disabled:opacity-40"
+              className="flex-1 rounded-panel bg-ok py-2.5 text-sm font-semibold text-surface disabled:opacity-40"
             >
               Guardar direcciones
             </button>
@@ -519,7 +517,7 @@ export function MemoryScannerModal({
                   }
                   setStep('confirmed')
                 }}
-                className="flex-1 rounded-xl border border-zinc-700 py-2.5 text-xs text-zinc-400 hover:text-zinc-100 disabled:opacity-40"
+                className="flex-1 rounded-panel border border-line py-2.5 text-xs text-ink-soft hover:text-ink disabled:opacity-40"
               >
                 {existingHpBase && !confirmed
                   ? 'Recalibrar HP'
@@ -528,7 +526,7 @@ export function MemoryScannerModal({
               <button
                 type="submit"
                 disabled={busy || !name.trim()}
-                className="flex-1 rounded-xl bg-amber-500 py-2.5 text-xs font-semibold text-zinc-950 disabled:opacity-40"
+                className="flex-1 rounded-panel bg-accent py-2.5 text-xs font-semibold text-surface disabled:opacity-40"
               >
                 Buscar nombre
               </button>
@@ -539,7 +537,7 @@ export function MemoryScannerModal({
                 type="button"
                 disabled={busy}
                 onClick={skipPresence}
-                className="flex-1 rounded-xl border border-zinc-700 py-2.5 text-xs text-zinc-400 hover:text-zinc-100 disabled:opacity-40"
+                className="flex-1 rounded-panel border border-line py-2.5 text-xs text-ink-soft hover:text-ink disabled:opacity-40"
               >
                 Saltar
               </button>
@@ -550,7 +548,7 @@ export function MemoryScannerModal({
                   setError(null)
                   setStep('level')
                 }}
-                className="flex-1 rounded-xl bg-amber-500 py-2.5 text-xs font-semibold text-zinc-950 disabled:opacity-40"
+                className="flex-1 rounded-panel bg-accent py-2.5 text-xs font-semibold text-surface disabled:opacity-40"
               >
                 Ubicar Discord
               </button>
@@ -564,7 +562,7 @@ export function MemoryScannerModal({
                 type="button"
                 disabled={busy}
                 onClick={skipPresence}
-                className="flex-1 rounded-xl border border-zinc-700 py-2.5 text-xs text-zinc-400 hover:text-zinc-100 disabled:opacity-40"
+                className="flex-1 rounded-panel border border-line py-2.5 text-xs text-ink-soft hover:text-ink disabled:opacity-40"
               >
                 Saltar
               </button>
@@ -576,7 +574,7 @@ export function MemoryScannerModal({
                     ? parsedLevel === null
                     : !parsedMap)
                 }
-                className="flex-1 rounded-xl bg-amber-500 py-2.5 text-xs font-semibold text-zinc-950 disabled:opacity-40"
+                className="flex-1 rounded-panel bg-accent py-2.5 text-xs font-semibold text-surface disabled:opacity-40"
               >
                 {step === 'level' || step === 'map' ? 'Buscar' : 'Comparar'}
               </button>
@@ -585,7 +583,7 @@ export function MemoryScannerModal({
             <button
               type="submit"
               disabled={busy || parsedHp === null}
-              className="flex-1 rounded-xl bg-amber-500 py-2.5 text-sm font-semibold text-zinc-950 disabled:opacity-40"
+              className="flex-1 rounded-panel bg-accent py-2.5 text-sm font-semibold text-surface disabled:opacity-40"
             >
               {step === 'initial' ? 'Buscar' : 'Comparar'}
             </button>

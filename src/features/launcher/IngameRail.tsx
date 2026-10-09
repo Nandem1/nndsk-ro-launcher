@@ -44,12 +44,12 @@ export function IngameRail() {
   }
 
   return (
-    <section className="h-full rounded-xl border border-white/[0.06] bg-gradient-to-b from-zinc-800/30 to-zinc-900/50 backdrop-blur-sm shadow-glass flex flex-col items-center py-3 gap-3 animate-rail-collapse">
+    <section className="h-full rounded-panel border border-overlay-light/[0.06] bg-panel-gradient from-panel-raised/30 to-panel/50 backdrop-blur-panel shadow-panel flex flex-col items-center py-3 gap-3 animate-rail-collapse">
       <div
-        className="relative w-10 h-10 rounded-xl border border-white/[0.08] bg-zinc-950/50 shadow-glass flex items-center justify-center"
+        className="relative w-10 h-10 rounded-panel border border-overlay-light/[0.08] bg-surface/50 shadow-panel flex items-center justify-center"
         title={`${clients.length} cliente${clients.length === 1 ? '' : 's'} activo${clients.length === 1 ? '' : 's'}`}
       >
-        <span className="text-sm font-bold text-amber-200/90">{initial}</span>
+        <span className="text-sm font-bold text-accent-soft/90">{initial}</span>
         <span className="absolute -top-0.5 -right-0.5">
           <StatusDot status={launching ? 'warning' : 'ok'} pulse />
         </span>

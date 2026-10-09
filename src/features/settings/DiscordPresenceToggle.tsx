@@ -22,14 +22,14 @@ export function DiscordPresenceToggle() {
       }
       className="shrink-0"
     >
-      <p className="text-[10px] leading-relaxed text-zinc-500">
+      <p className="text-caption leading-relaxed text-muted">
         Publica servidor, personaje, nivel y mapa en tu perfil de Discord.
       </p>
       {saving && (
-        <p className="mt-1 text-[10px] text-zinc-500">Guardando selección...</p>
+        <p className="mt-1 text-caption text-muted">Guardando selección...</p>
       )}
       {error && !saving && (
-        <p role="alert" className="mt-1 text-[10px] text-red-400">
+        <p role="alert" className="mt-1 text-caption text-bad-bright">
           {error}
         </p>
       )}

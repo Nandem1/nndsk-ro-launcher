@@ -143,7 +143,7 @@ export function AutobuffRulesEditor({
       <div className="shrink-0 space-y-1.5">
         {PRESET_GROUPS.map((group) => (
           <div key={group.label}>
-            <p className="mb-0.5 text-[10px] uppercase tracking-wide text-zinc-600">
+            <p className="mb-0.5 text-caption uppercase tracking-wide text-line-strong">
               {group.label}
             </p>
             <div className="flex flex-wrap gap-1">
@@ -171,14 +171,14 @@ export function AutobuffRulesEditor({
         </Button>
       </div>
 
-      <div className="min-h-14 flex-1 space-y-1 overflow-y-auto rounded-lg border border-zinc-800/60 bg-zinc-950/40 p-1.5">
+      <div className="min-h-14 flex-1 space-y-1 overflow-y-auto rounded-control border border-panel-raised/60 bg-surface/40 p-1.5">
         {rules.length === 0 ? (
-          <p className="px-1 py-2 text-[10px] text-zinc-600">
+          <p className="px-1 py-2 text-caption text-line-strong">
             Añade un preset o una regla manual.
           </p>
         ) : (
           <>
-            <div className="grid grid-cols-[16px_minmax(0,1fr)_68px_84px_64px_20px] items-center gap-1.5 px-2 text-[9px] uppercase tracking-wide text-zinc-600">
+            <div className="grid grid-cols-[16px_minmax(0,1fr)_68px_84px_64px_20px] items-center gap-1.5 px-2 text-micro uppercase tracking-wide text-line-strong">
               <span />
               <span>Buff</span>
               <span className="text-center">Tecla</span>
@@ -189,7 +189,7 @@ export function AutobuffRulesEditor({
             {rules.map((rule) => (
               <div
                 key={rule.id}
-                className="group grid grid-cols-[16px_minmax(0,1fr)_68px_84px_64px_20px] items-center gap-1.5 rounded-md border border-white/[0.04] bg-zinc-950/35 px-2 py-1 transition-colors hover:border-white/[0.07] hover:bg-zinc-900/45"
+                className="group grid grid-cols-[16px_minmax(0,1fr)_68px_84px_64px_20px] items-center gap-1.5 rounded-control-compact border border-overlay-light/[0.04] bg-surface/35 px-2 py-1 transition-colors hover:border-overlay-light/[0.07] hover:bg-panel/45"
               >
                 <Checkbox
                   checked={rule.enabled}
@@ -203,7 +203,7 @@ export function AutobuffRulesEditor({
                   onChange={(event) =>
                     updateRule(rule.id, { label: event.target.value })
                   }
-                  className="min-w-0 rounded border border-transparent bg-transparent px-1.5 py-1 text-[10px] font-medium text-zinc-300 outline-none transition-colors hover:bg-white/[0.025] focus:border-amber-500/25 focus:bg-zinc-950/60 focus:ring-1 focus:ring-amber-500/10"
+                  className="min-w-0 rounded-inline border border-transparent bg-transparent px-1.5 py-1 text-caption font-medium text-ink-dim outline-none transition-colors hover:bg-overlay-light/[0.025] focus:border-accent/25 focus:bg-surface/60 focus:ring-1 focus:ring-accent/10"
                 />
                 <DarkSelect
                   compact
@@ -228,10 +228,10 @@ export function AutobuffRulesEditor({
                         ),
                       })
                     }
-                    className="min-w-0 flex-1 rounded border border-transparent bg-zinc-950/40 px-1 py-1 text-right text-[10px] text-zinc-300 outline-none transition-colors hover:bg-white/[0.025] focus:border-amber-500/25 focus:bg-zinc-950/60 focus:ring-1 focus:ring-amber-500/10 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
+                    className="min-w-0 flex-1 rounded-inline border border-transparent bg-surface/40 px-1 py-1 text-right text-caption text-ink-dim outline-none transition-colors hover:bg-overlay-light/[0.025] focus:border-accent/25 focus:bg-surface/60 focus:ring-1 focus:ring-accent/10 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
                     aria-label={`Cooldown de ${rule.label} en ms`}
                   />
-                  <span className="text-[9px] text-zinc-600">ms</span>
+                  <span className="text-micro text-line-strong">ms</span>
                 </div>
                 <input
                   type="number"
@@ -244,7 +244,7 @@ export function AutobuffRulesEditor({
                       priority: Math.max(0, Number(event.target.value) || 0),
                     })
                   }
-                  className="min-w-0 rounded border border-transparent bg-zinc-950/40 px-1 py-1 text-center text-[10px] text-zinc-300 outline-none transition-colors hover:bg-white/[0.025] focus:border-amber-500/25 focus:bg-zinc-950/60 focus:ring-1 focus:ring-amber-500/10 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
+                  className="min-w-0 rounded-inline border border-transparent bg-surface/40 px-1 py-1 text-center text-caption text-ink-dim outline-none transition-colors hover:bg-overlay-light/[0.025] focus:border-accent/25 focus:bg-surface/60 focus:ring-1 focus:ring-accent/10 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
                   aria-label={`Prioridad de ${rule.label}`}
                 />
                 <button
@@ -253,7 +253,7 @@ export function AutobuffRulesEditor({
                   onClick={() =>
                     onChange(rules.filter((item) => item.id !== rule.id))
                   }
-                  className="flex h-5 w-5 items-center justify-center rounded text-zinc-700 opacity-50 transition-[color,background-color,opacity] hover:bg-red-500/10 hover:text-red-400 hover:opacity-100 group-hover:opacity-80 disabled:opacity-30"
+                  className="flex h-5 w-5 items-center justify-center rounded-inline text-line opacity-50 transition-[color,background-color,opacity] hover:bg-bad/10 hover:text-bad-bright hover:opacity-100 group-hover:opacity-80 disabled:opacity-30"
                   title="Eliminar regla"
                   aria-label={`Eliminar ${rule.label}`}
                 >

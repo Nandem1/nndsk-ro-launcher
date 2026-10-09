@@ -60,20 +60,22 @@ export function SpammerPanel() {
       hero={hero}
       tone={tone}
       className="h-full"
-      leading={<Zap className="w-3 h-3 text-zinc-600 shrink-0" aria-hidden />}
+      leading={
+        <Zap className="w-3 h-3 text-line-strong shrink-0" aria-hidden />
+      }
     >
       <div className="flex-1 min-h-0 overflow-y-auto space-y-2 pr-0.5">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
             <p
               className={`text-sm font-semibold truncate ${
-                status.spamming ? 'text-amber-200' : 'text-zinc-100'
+                status.spamming ? 'text-accent-soft' : 'text-ink'
               }`}
             >
               {statusLabel}
             </p>
             <p
-              className={`text-[10px] ${launching ? 'text-zinc-500 animate-pulse-dot' : 'text-zinc-600'}`}
+              className={`text-caption ${launching ? 'text-muted animate-pulse-dot' : 'text-line-strong'}`}
             >
               {statusText}
             </p>
@@ -117,9 +119,9 @@ export function SpammerPanel() {
           onChange={(gearSwitch) => void updateField({ gearSwitch })}
         />
 
-        <p className="text-[10px] leading-snug min-h-[calc(1em*1.375)]">
+        <p className="text-caption leading-snug min-h-[calc(1em*1.375)]">
           {error && available ? (
-            <span className="text-red-400/90">{error}</span>
+            <span className="text-bad-bright/90">{error}</span>
           ) : null}
         </p>
       </div>

@@ -6,26 +6,26 @@ export type ButtonVariant =
 export type ButtonSize = 'xs' | 'sm' | 'md' | 'lg'
 
 const BASE_CLASSES =
-  'inline-flex items-center justify-center gap-1.5 rounded-lg font-medium select-none transition-[transform,background-color,border-color,color,box-shadow] duration-150 ease-out-quart focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/40 disabled:opacity-50 disabled:pointer-events-none motion-safe:hover:-translate-y-px motion-safe:active:translate-y-0 motion-safe:active:scale-[0.97]'
+  'inline-flex items-center justify-center gap-1.5 rounded-control font-medium select-none transition-[transform,background-color,border-color,color,box-shadow] duration-150 ease-out-quart focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:opacity-50 disabled:pointer-events-none motion-safe:hover:-translate-y-px motion-safe:active:translate-y-0 motion-safe:active:scale-[0.97]'
 
 const VARIANT_CLASSES: Record<ButtonVariant, string> = {
   primary:
-    'border border-amber-500/30 bg-amber-500/10 text-amber-100 hover:bg-amber-500/15 hover:border-amber-500/50 hover:shadow-glow-amber',
+    'border border-accent/30 bg-accent/10 text-accent-ink hover:bg-accent/15 hover:border-accent/50 hover:shadow-glow-warn',
   secondary:
-    'border border-zinc-700/60 bg-zinc-900/40 text-zinc-300 hover:border-amber-500/40 hover:text-amber-300 hover:bg-amber-500/5',
+    'border border-line/60 bg-panel/40 text-ink-dim hover:border-accent/40 hover:text-accent-light hover:bg-accent/5',
   ghost:
-    'border border-transparent text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.04]',
+    'border border-transparent text-muted hover:text-ink-dim hover:bg-overlay-light/[0.04]',
   danger:
-    'border border-red-500/30 bg-red-500/10 text-red-300 hover:bg-red-500/15 hover:border-red-500/50 hover:shadow-glow-red',
+    'border border-bad/30 bg-bad/10 text-bad-soft hover:bg-bad/15 hover:border-bad/50 hover:shadow-glow-bad',
   success:
-    'border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/15 hover:border-emerald-500/50 hover:shadow-glow-emerald',
+    'border border-ok/30 bg-ok/10 text-ok-soft hover:bg-ok/15 hover:border-ok/50 hover:shadow-glow-ok',
 }
 
 const SIZE_CLASSES: Record<ButtonSize, string> = {
-  xs: 'text-[10px] px-2 py-0.5',
-  sm: 'text-[11px] px-3 py-1.5',
+  xs: 'text-caption px-2 py-0.5',
+  sm: 'text-detail px-3 py-1.5',
   md: 'text-sm px-4 py-2',
-  lg: 'text-sm font-semibold py-2.5 px-4 rounded-xl',
+  lg: 'text-sm font-semibold py-2.5 px-4 rounded-panel',
 }
 
 export function buttonClasses(
@@ -63,7 +63,7 @@ const ICON_SIZE_CLASSES: Record<ButtonSize, string> = {
   xs: 'w-5 h-5',
   sm: 'w-7 h-7',
   md: 'w-8 h-8',
-  lg: 'w-10 h-10 rounded-xl',
+  lg: 'w-10 h-10 rounded-panel',
 }
 
 interface IconButtonProps extends ComponentPropsWithoutRef<'button'> {

@@ -106,7 +106,7 @@
   }
 
   body {
-    @apply bg-zinc-950 text-zinc-100 antialiased;
+    @apply bg-surface text-ink antialiased;
     color-scheme: dark;
     background-image: var(--body-illumination);
   }
@@ -121,11 +121,11 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    @apply bg-zinc-700 rounded-full;
+    @apply bg-line rounded-pill;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    @apply bg-zinc-600;
+    @apply bg-line-strong;
   }
 
   .input-no-spinner {

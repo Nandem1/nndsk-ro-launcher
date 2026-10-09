@@ -30,14 +30,14 @@ export function UpdateBanner() {
   const clientsActive = clientsBlockUpdate({ launchStatus, clients })
   const tone =
     kind === 'failed'
-      ? 'border-red-500/30 bg-red-500/10 text-red-100'
+      ? 'border-bad/30 bg-bad/10 text-bad-ink'
       : kind === 'readyToRestart'
-        ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-100'
-        : 'border-amber-500/30 bg-amber-500/10 text-amber-100'
+        ? 'border-ok/30 bg-ok/10 text-ok-ink'
+        : 'border-accent/30 bg-accent/10 text-accent-ink'
 
   return (
     <div
-      className={`mx-3 mt-3 flex shrink-0 items-center gap-3 rounded-lg border px-3 py-2 ${tone}`}
+      className={`mx-3 mt-3 flex shrink-0 items-center gap-3 rounded-control border px-3 py-2 ${tone}`}
     >
       {kind === 'failed' ? (
         <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden />
@@ -46,7 +46,7 @@ export function UpdateBanner() {
       )}
       <div className="min-w-0 flex-1">
         <p className="text-xs font-semibold">{copy.line}</p>
-        <p className="truncate text-[10px] opacity-70">
+        <p className="truncate text-caption opacity-70">
           {clientsActive && (copy.canInstall || copy.canRelaunch)
             ? 'Cierra los clientes del juego antes de instalar'
             : (copy.detail ?? `Versión actual ${snapshot.currentVersion}`)}

@@ -72,18 +72,18 @@ export function LaunchButton() {
     ) : null
 
   return (
-    <div className="flex flex-col gap-2 shrink-0 border-t border-white/[0.06] pt-3">
+    <div className="flex flex-col gap-2 shrink-0 border-t border-overlay-light/[0.06] pt-3">
       {status === 'setting-up' && setupProgress && (
         <div className="space-y-1">
-          <div className="flex justify-between gap-2 text-[10px] text-zinc-500">
+          <div className="flex justify-between gap-2 text-caption text-muted">
             <span className="truncate">{setupProgress.step}</span>
             <span className="shrink-0 tabular-nums">
               {setupProgress.percent}%
             </span>
           </div>
-          <div className="w-full bg-zinc-800 rounded-full h-1.5 overflow-hidden">
+          <div className="w-full bg-panel-raised rounded-pill h-1.5 overflow-hidden">
             <div
-              className="h-full bg-gradient-to-r from-amber-600 via-amber-300 to-amber-400 rounded-full transition-all duration-500"
+              className="h-full bg-progress-gradient from-accent-strong via-accent-light to-accent-bright rounded-pill transition-all duration-500"
               style={{ width: `${setupProgress.percent}%` }}
             />
           </div>
@@ -121,12 +121,12 @@ export function LaunchButton() {
         {labels[status]}
       </Button>
       {depsError && status !== 'error' && (
-        <p className="text-red-400 text-[11px] text-center px-2 leading-relaxed">
+        <p className="text-bad-bright text-detail text-center px-2 leading-relaxed">
           {depsError}
         </p>
       )}
       {status === 'error' && error && (
-        <p className="text-red-400 text-[11px] text-center px-2 leading-relaxed">
+        <p className="text-bad-bright text-detail text-center px-2 leading-relaxed">
           {error}
         </p>
       )}

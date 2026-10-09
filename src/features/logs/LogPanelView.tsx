@@ -65,20 +65,20 @@ export function LogPanelView({
             {errorLines.length > 0 && (
               <button
                 onClick={copyErrors}
-                className="text-[10px] text-red-400/80 hover:text-red-300 transition-colors uppercase tracking-wider"
+                className="text-caption text-bad-bright/80 hover:text-bad-soft transition-colors uppercase tracking-wider"
               >
                 {copiedErrors ? '¡Copiado!' : `Errores (${errorLines.length})`}
               </button>
             )}
             <button
               onClick={copyAll}
-              className="text-[10px] text-zinc-500 hover:text-zinc-300 transition-colors uppercase tracking-wider"
+              className="text-caption text-muted hover:text-ink-dim transition-colors uppercase tracking-wider"
             >
               {copiedAll ? '¡Copiado!' : 'Copiar'}
             </button>
             <button
               onClick={onClear}
-              className="text-[10px] text-zinc-500 hover:text-zinc-300 transition-colors uppercase tracking-wider"
+              className="text-caption text-muted hover:text-ink-dim transition-colors uppercase tracking-wider"
             >
               Limpiar
             </button>
@@ -86,9 +86,9 @@ export function LogPanelView({
         ) : undefined
       }
     >
-      <div className="flex-1 min-h-0 bg-zinc-950/50 rounded-lg border border-white/[0.04] overflow-y-auto font-mono text-[11px] leading-relaxed px-3 py-2">
+      <div className="flex-1 min-h-0 bg-surface/50 rounded-control border border-overlay-light/[0.04] overflow-y-auto font-mono text-detail leading-relaxed px-3 py-2">
         {logs.length === 0 ? (
-          <p className="text-zinc-600 select-none">{emptyLabel}</p>
+          <p className="text-line-strong select-none">{emptyLabel}</p>
         ) : (
           logs.map((line, i) => (
             <div key={i} className={`break-all ${logLineClass(line)}`}>

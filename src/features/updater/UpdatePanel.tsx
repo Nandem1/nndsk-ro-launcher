@@ -51,19 +51,19 @@ export function UpdatePanel() {
       }
       className="shrink-0"
     >
-      <p className="text-[10px] leading-relaxed text-zinc-400">{copy.line}</p>
+      <p className="text-caption leading-relaxed text-ink-soft">{copy.line}</p>
       {copy.detail && (
-        <p className="mt-1 text-[10px] leading-relaxed text-zinc-500">
+        <p className="mt-1 text-caption leading-relaxed text-muted">
           {copy.detail}
         </p>
       )}
       {clientsActive && (copy.canInstall || copy.canRelaunch) && (
-        <p role="alert" className="mt-1 text-[10px] text-amber-300/90">
+        <p role="alert" className="mt-1 text-caption text-accent-light/90">
           Cierra los clientes del juego antes de instalar
         </p>
       )}
       {error && (
-        <p role="alert" className="mt-1 text-[10px] text-red-400">
+        <p role="alert" className="mt-1 text-caption text-bad-bright">
           {error}
         </p>
       )}

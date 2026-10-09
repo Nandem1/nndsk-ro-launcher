@@ -38,10 +38,10 @@ function StatusLine({
     <div className="min-w-0" title={hint ?? undefined}>
       <div className="flex items-center gap-2 min-w-0">
         <StatusDot status={dotStatus} />
-        <p className="text-[11px] text-zinc-400 truncate">{label}</p>
+        <p className="text-detail text-ink-soft truncate">{label}</p>
       </div>
       {hint && (
-        <p className="text-[10px] text-zinc-500 leading-snug pl-4 truncate">
+        <p className="text-caption text-muted leading-snug pl-4 truncate">
           {hint}
         </p>
       )}
@@ -377,7 +377,7 @@ export function AdvancedSettings() {
       className="shrink-0"
     >
       <div
-        className={`space-y-1 rounded-lg ${hasIssue ? 'bg-amber-500/5 px-2 py-1.5 -mx-0.5' : ''}`}
+        className={`space-y-1 rounded-control ${hasIssue ? 'bg-accent/5 px-2 py-1.5 -mx-0.5' : ''}`}
       >
         {lines.map((line) => (
           <StatusLine
@@ -390,28 +390,28 @@ export function AdvancedSettings() {
         <div className="flex gap-2 pt-1 pl-4">
           <button
             type="button"
-            className="text-[10px] text-zinc-400 hover:text-zinc-200"
+            className="text-caption text-ink-soft hover:text-ink-bright"
             onClick={() => void exportObservations()}
           >
             Exportar observaciones
           </button>
           <button
             type="button"
-            className="text-[10px] text-zinc-400 hover:text-zinc-200"
+            className="text-caption text-ink-soft hover:text-ink-bright"
             onClick={() => void deleteObservations()}
           >
             Borrar
           </button>
         </div>
-        <div className="mt-2 space-y-1.5 pl-4 border-t border-zinc-800/80 pt-2">
-          <p className="text-[10px] text-zinc-500">
+        <div className="mt-2 space-y-1.5 pl-4 border-t border-panel-raised/80 pt-2">
+          <p className="text-caption text-muted">
             Cliente en ejecución:{' '}
             {runningClientId ? runningClientId.slice(0, 8) : 'ninguno'}
             {activeRunId ? ` · run ${activeRunId.slice(0, 8)}` : ''}
           </p>
-          <div className="flex flex-wrap gap-1.5 text-[10px]">
+          <div className="flex flex-wrap gap-1.5 text-caption">
             <select
-              className="bg-zinc-900 border border-zinc-700 rounded px-1 py-0.5"
+              className="bg-panel border border-line rounded-inline px-1 py-0.5"
               value={arm}
               onChange={(e) => setArm(e.target.value as 'a' | 'b')}
             >
@@ -419,30 +419,30 @@ export function AdvancedSettings() {
               <option value="b">Brazo B</option>
             </select>
             <input
-              className="w-24 bg-zinc-900 border border-zinc-700 rounded px-1 py-0.5"
+              className="w-24 bg-panel border border-line rounded-inline px-1 py-0.5"
               value={sceneId}
               onChange={(e) => setSceneId(e.target.value)}
               placeholder="scene"
             />
             <input
-              className="w-16 bg-zinc-900 border border-zinc-700 rounded px-1 py-0.5"
+              className="w-16 bg-panel border border-line rounded-inline px-1 py-0.5"
               value={loadDescriptor}
               onChange={(e) => setLoadDescriptor(e.target.value)}
               placeholder="load"
             />
             <input
               type="number"
-              className="w-14 bg-zinc-900 border border-zinc-700 rounded px-1 py-0.5"
+              className="w-14 bg-panel border border-line rounded-inline px-1 py-0.5"
               value={width}
               onChange={(e) => setWidth(Number(e.target.value))}
             />
             <input
               type="number"
-              className="w-14 bg-zinc-900 border border-zinc-700 rounded px-1 py-0.5"
+              className="w-14 bg-panel border border-line rounded-inline px-1 py-0.5"
               value={height}
               onChange={(e) => setHeight(Number(e.target.value))}
             />
-            <label className="flex items-center gap-1 text-zinc-400">
+            <label className="flex items-center gap-1 text-ink-soft">
               <input
                 type="checkbox"
                 checked={fullscreen}
@@ -452,14 +452,14 @@ export function AdvancedSettings() {
             </label>
             <input
               type="number"
-              className="w-12 bg-zinc-900 border border-zinc-700 rounded px-1 py-0.5"
+              className="w-12 bg-panel border border-line rounded-inline px-1 py-0.5"
               value={warmupSeconds}
               onChange={(e) => setWarmupSeconds(Number(e.target.value))}
               title="warmup s"
             />
             <input
               type="number"
-              className="w-12 bg-zinc-900 border border-zinc-700 rounded px-1 py-0.5"
+              className="w-12 bg-panel border border-line rounded-inline px-1 py-0.5"
               value={captureSeconds}
               onChange={(e) => setCaptureSeconds(Number(e.target.value))}
               title="capture s"
@@ -469,7 +469,7 @@ export function AdvancedSettings() {
             <button
               type="button"
               disabled={benchmarkBusy || !server || !runningClientId}
-              className="text-[10px] text-zinc-400 hover:text-zinc-200 disabled:opacity-40"
+              className="text-caption text-ink-soft hover:text-ink-bright disabled:opacity-40"
               onClick={() => void attachBenchmark()}
             >
               Adjuntar
@@ -477,7 +477,7 @@ export function AdvancedSettings() {
             <button
               type="button"
               disabled={benchmarkBusy || !runId}
-              className="text-[10px] text-zinc-400 hover:text-zinc-200 disabled:opacity-40"
+              className="text-caption text-ink-soft hover:text-ink-bright disabled:opacity-40"
               onClick={() => void beginCapture()}
             >
               Iniciar captura
@@ -485,7 +485,7 @@ export function AdvancedSettings() {
             <button
               type="button"
               disabled={benchmarkBusy || !runId}
-              className="text-[10px] text-zinc-400 hover:text-zinc-200 disabled:opacity-40"
+              className="text-caption text-ink-soft hover:text-ink-bright disabled:opacity-40"
               onClick={() => void finishCapture()}
             >
               Terminar captura
@@ -493,7 +493,7 @@ export function AdvancedSettings() {
             <button
               type="button"
               disabled={benchmarkBusy || !runId}
-              className="text-[10px] text-zinc-400 hover:text-zinc-200 disabled:opacity-40"
+              className="text-caption text-ink-soft hover:text-ink-bright disabled:opacity-40"
               onClick={() => void importCsv()}
             >
               Importar CSV
@@ -501,7 +501,7 @@ export function AdvancedSettings() {
             <button
               type="button"
               disabled={benchmarkBusy || !runId}
-              className="text-[10px] text-zinc-400 hover:text-zinc-200 disabled:opacity-40"
+              className="text-caption text-ink-soft hover:text-ink-bright disabled:opacity-40"
               onClick={() => void setVisual('passed')}
             >
               Visual OK
@@ -509,7 +509,7 @@ export function AdvancedSettings() {
             <button
               type="button"
               disabled={benchmarkBusy || !runId}
-              className="text-[10px] text-zinc-400 hover:text-zinc-200 disabled:opacity-40"
+              className="text-caption text-ink-soft hover:text-ink-bright disabled:opacity-40"
               onClick={() => void setVisual('failed')}
             >
               Visual fallo
@@ -517,14 +517,14 @@ export function AdvancedSettings() {
             <button
               type="button"
               disabled={benchmarkBusy || !runId}
-              className="text-[10px] text-zinc-400 hover:text-zinc-200 disabled:opacity-40"
+              className="text-caption text-ink-soft hover:text-ink-bright disabled:opacity-40"
               onClick={() => void setVisual('skipped')}
             >
               Visual omitir
             </button>
           </div>
           {benchmarkRuns.length > 0 && (
-            <div className="max-h-24 overflow-y-auto space-y-0.5 text-[10px] text-zinc-500">
+            <div className="max-h-24 overflow-y-auto space-y-0.5 text-caption text-muted">
               {benchmarkRuns.map((run) => (
                 <div key={run.runId} className="flex items-center gap-2">
                   <label className="flex items-center gap-0.5">
@@ -573,14 +573,14 @@ export function AdvancedSettings() {
                 compareLeft.size === 0 ||
                 compareRight.size === 0
               }
-              className="text-[10px] text-zinc-400 hover:text-zinc-200 disabled:opacity-40"
+              className="text-caption text-ink-soft hover:text-ink-bright disabled:opacity-40"
               onClick={() => void runCompare()}
             >
               Comparar
             </button>
             <button
               type="button"
-              className="text-[10px] text-zinc-400 hover:text-zinc-200"
+              className="text-caption text-ink-soft hover:text-ink-bright"
               onClick={() => void exportBenchmarks()}
             >
               Exportar benchmarks
@@ -592,14 +592,14 @@ export function AdvancedSettings() {
                 compareLeft.size === 0 ||
                 compareRight.size === 0
               }
-              className="text-[10px] text-zinc-400 hover:text-zinc-200 disabled:opacity-40"
+              className="text-caption text-ink-soft hover:text-ink-bright disabled:opacity-40"
               onClick={() => void exportComparison()}
             >
               Exportar comparación
             </button>
             <button
               type="button"
-              className="text-[10px] text-zinc-400 hover:text-zinc-200"
+              className="text-caption text-ink-soft hover:text-ink-bright"
               onClick={() => void deleteBenchmarks()}
             >
               Borrar benchmarks
@@ -607,7 +607,7 @@ export function AdvancedSettings() {
           </div>
           {comparisonLine && (
             <p
-              className="text-[10px] text-zinc-400"
+              className="text-caption text-ink-soft"
               title={comparisonLine.hint}
             >
               {comparisonLine.label}
