@@ -20,6 +20,7 @@ pub(crate) fn payload_ready(descriptor: &ArtifactDescriptor, root: &Path) -> boo
         PayloadValidatorId::UmuZipapp => umu_zipapp_ready(root),
         PayloadValidatorId::DxvkPrefixDlls => dxvk_prefix_dlls_ready(root),
         PayloadValidatorId::ProtonCachyosSlr => proton_cachyos_slr_ready(root),
+        PayloadValidatorId::WineTkg716 => wine716_modules_ready(root, &WINE716_MODULES),
         PayloadValidatorId::NndskRoProton => {
             proton_cachyos_slr_ready(root)
                 && ["proton", "files/bin/wine", "files/bin/wineserver"]
@@ -39,6 +40,60 @@ struct ModuleIdentity {
     sha256: &'static str,
     size: u64,
     mode: u32,
+}
+
+// Original Kron4ek 7.16 artifact: these also match the validated local TkG install.
+const WINE716_MODULES: [ModuleIdentity; 6] = [
+    ModuleIdentity {
+        path: "bin/wine",
+        size: 12_020,
+        mode: 0o755,
+        sha256: "0fb1461d7db1b83c15418d7d320eccf2c9c1cf09d8d97b862db96d7b58d8d331",
+    },
+    ModuleIdentity {
+        path: "bin/wine64",
+        size: 13_352,
+        mode: 0o755,
+        sha256: "10f12041dba2ee48d700a6b7d3fc8370c00466601b6ef88e4a901cf06a2df4ba",
+    },
+    ModuleIdentity {
+        path: "bin/wineserver",
+        size: 738_032,
+        mode: 0o755,
+        sha256: "d4ed4b7600247d5bee4d2790e2c0f810b3655985432e4fae5d704e64a0f358b1",
+    },
+    ModuleIdentity {
+        path: "wine-tkg-config.txt",
+        size: 4_788,
+        mode: 0o744,
+        sha256: "71c69694612df0f62a7b5d5252d96d383ff49d566f7806283e00a03b1e27572a",
+    },
+    ModuleIdentity {
+        path: "lib/wine/i386-unix/ntdll.so",
+        size: 668_636,
+        mode: 0o755,
+        sha256: "c5abd03471e51c84a4324f571c6b3d35d0eca482a07c37738b7d7dde395d4642",
+    },
+    ModuleIdentity {
+        path: "lib/wine/x86_64-unix/ntdll.so",
+        size: 737_144,
+        mode: 0o755,
+        sha256: "0779d6de1994a6114b575847c911d1a206ffa8b1732bdf247dfd3a3a9053af6d",
+    },
+];
+
+fn wine716_modules_ready(root: &Path, modules: &[ModuleIdentity]) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    modules.iter().all(|module| {
+        let path = root.join(module.path);
+        regular_path_inside_root(root, &path)
+            && path.metadata().is_ok_and(|metadata| {
+                metadata.len() == module.size
+                    && metadata.permissions().mode() & 0o777 == module.mode
+            })
+            && super::fetch::digest_file(&path, ExpectedDigest::Sha256(module.sha256))
+                .is_ok_and(|hash| hash == module.sha256)
+    })
 }
 
 // These are the six source-built modules in the accepted, checksum-pinned archive.
@@ -506,6 +561,41 @@ mod tests {
         std::fs::rename(parent, &renamed).unwrap();
         std::os::unix::fs::symlink(&renamed, parent).unwrap();
         assert!(!fixture.ready());
+    }
+
+    #[test]
+    fn wine716_readiness_rejects_changed_modes_bytes_missing_architecture_and_symlinks() {
+        use sha2::{Digest, Sha256};
+        let fixture = ManifestFixture::new();
+        let digest = Box::leak(format!("{:x}", Sha256::digest(b"wine")).into_boxed_str());
+        let modules: Vec<_> = WINE716_MODULES
+            .iter()
+            .map(|module| ModuleIdentity {
+                path: module.path,
+                sha256: digest,
+                size: 4,
+                mode: module.mode,
+            })
+            .collect();
+        for module in &modules {
+            let path = fixture.root.join(module.path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, b"wine").unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(module.mode)).unwrap();
+        }
+        assert!(wine716_modules_ready(&fixture.root, &modules));
+        let loader = fixture.root.join("bin/wine");
+        std::fs::set_permissions(&loader, std::fs::Permissions::from_mode(0o644)).unwrap();
+        assert!(!wine716_modules_ready(&fixture.root, &modules));
+        std::fs::set_permissions(&loader, std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::fs::write(&loader, b"fake").unwrap();
+        assert!(!wine716_modules_ready(&fixture.root, &modules));
+        std::fs::write(&loader, b"wine").unwrap();
+        let unix32 = fixture.root.join("lib/wine/i386-unix/ntdll.so");
+        std::fs::remove_file(&unix32).unwrap();
+        assert!(!wine716_modules_ready(&fixture.root, &modules));
+        std::os::unix::fs::symlink(&loader, &unix32).unwrap();
+        assert!(!wine716_modules_ready(&fixture.root, &modules));
     }
 
     fn unique_suffix() -> u128 {

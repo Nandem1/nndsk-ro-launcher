@@ -11,10 +11,11 @@ use crate::utils::{emit_log, OperationGuard};
 pub const MANAGED_RUNNER_ID: &str = artifacts::MANAGED_RUNNER_ID;
 pub const MANAGED_RUNNER_LABEL: &str = artifacts::MANAGED_RUNNER_LABEL;
 pub(crate) const LEGACY_MANAGED_RUNNER_ID: &str = artifacts::LEGACY_MANAGED_RUNNER_ID;
-pub(crate) const LEGACY_MANAGED_RUNNER_LABEL: &str = artifacts::LEGACY_MANAGED_RUNNER_LABEL;
 pub(crate) const LOCAL_MANAGED_RUNNER_ID: &str = artifacts::LOCAL_MANAGED_RUNNER_ID;
 pub(crate) const MANAGED_DXVK_ID: &str = artifacts::MANAGED_DXVK_ID;
 pub(crate) const UMU_ID: &str = artifacts::UMU_ID;
+pub(crate) const MANAGED_WINE716_ID: &str = artifacts::MANAGED_WINE716_ID;
+pub(crate) const MANAGED_WINE716_LABEL: &str = artifacts::MANAGED_WINE716_LABEL;
 
 pub fn managed_runtime_dir() -> PathBuf {
     runtime_dir()
@@ -26,6 +27,21 @@ pub fn managed_runner_root() -> PathBuf {
 
 pub fn managed_proton_path() -> PathBuf {
     managed_runner_root().join("proton")
+}
+
+pub(crate) fn managed_wine716_path() -> PathBuf {
+    managed_runtime_dir()
+        .join(MANAGED_WINE716_ID)
+        .join("bin/wine")
+}
+
+pub(crate) fn is_managed_wine716_path(path: &Path) -> bool {
+    // Never adopt a similarly named user-owned portable install under runners/.
+    path == managed_wine716_path()
+}
+
+pub(crate) fn managed_wine716_ready() -> bool {
+    catalog_descriptor(MANAGED_WINE716_ID).is_some_and(artifact_ready)
 }
 
 pub(crate) fn managed_proton_path_for_id(id: &str) -> Option<PathBuf> {
@@ -96,6 +112,7 @@ pub(crate) async fn ensure_selected_runtime(
 ) -> Result<(), String> {
     match selected_runtime_requirement(server_runner, default_runner) {
         RuntimeRequirement::Managed(id) => ensure_runtime_for_id(app, Some(id)).await,
+        RuntimeRequirement::ManagedWine716 => ensure_wine716(app).await,
         RuntimeRequirement::UmuOnly => ensure_runtime_for_id(app, None).await,
         RuntimeRequirement::None => Ok(()),
     }
@@ -104,6 +121,7 @@ pub(crate) async fn ensure_selected_runtime(
 #[derive(Debug, PartialEq, Eq)]
 enum RuntimeRequirement {
     Managed(&'static str),
+    ManagedWine716,
     UmuOnly,
     None,
 }
@@ -123,6 +141,9 @@ fn selected_runtime_requirement(
     let id = selected
         .map(|path| managed_proton_id_for_path(Path::new(path)))
         .unwrap_or(Some(MANAGED_RUNNER_ID));
+    if selected.is_some_and(|path| is_managed_wine716_path(Path::new(path))) {
+        return RuntimeRequirement::ManagedWine716;
+    }
     if let Some(id) = id {
         return RuntimeRequirement::Managed(id);
     }
@@ -164,6 +185,22 @@ async fn ensure_runtime_for_id(app: &AppHandle, id: Option<&str>) -> Result<(), 
         )?;
     }
     Ok(())
+}
+
+async fn ensure_wine716(app: &AppHandle) -> Result<(), String> {
+    let root = managed_runtime_dir();
+    std::fs::create_dir_all(&root)
+        .map_err(|error| format!("No se pudo preparar el runtime Wine: {error}"))?;
+    let operation = OperationGuard::acquire("runtime", &root)?;
+    // This is a direct legacy Wine runner: never download UMU or Proton for it.
+    artifacts::download_managed_runtime(
+        app,
+        catalog_descriptor(MANAGED_WINE716_ID).unwrap(),
+        operation,
+        1,
+        38,
+    )
+    .await
 }
 
 /// Instala DXVK sólo cuando un Wine legacy lo necesita. Los usuarios de Proton no descargan este
@@ -245,6 +282,43 @@ mod tests {
                 Some(managed_proton_path().to_str().unwrap())
             ),
             RuntimeRequirement::Managed(LOCAL_MANAGED_RUNNER_ID)
+        );
+    }
+
+    #[test]
+    fn managed_wine716_provisions_only_itself_and_respects_server_precedence() {
+        let wine = managed_wine716_path();
+        let proton = managed_proton_path();
+        assert_eq!(
+            selected_runtime_requirement(
+                Some(wine.to_str().unwrap()),
+                Some(proton.to_str().unwrap())
+            ),
+            RuntimeRequirement::ManagedWine716
+        );
+        assert_eq!(
+            selected_runtime_requirement(
+                Some(proton.to_str().unwrap()),
+                Some(wine.to_str().unwrap())
+            ),
+            RuntimeRequirement::Managed(MANAGED_RUNNER_ID)
+        );
+        assert_eq!(
+            selected_runtime_requirement(None, Some(wine.to_str().unwrap())),
+            RuntimeRequirement::ManagedWine716
+        );
+        assert!(managed_proton_id_for_path(&wine).is_none());
+        let portable = crate::utils::app_data_dir()
+            .join("runners")
+            .join(MANAGED_WINE716_ID)
+            .join("bin/wine");
+        assert!(!is_managed_wine716_path(&portable));
+        assert_eq!(
+            selected_runtime_requirement(
+                Some(portable.to_str().unwrap()),
+                Some(proton.to_str().unwrap())
+            ),
+            RuntimeRequirement::None
         );
     }
 }

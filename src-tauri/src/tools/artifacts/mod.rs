@@ -21,8 +21,8 @@ pub(crate) use descriptor::{
     catalog_all, catalog_descriptor, decode_hex_digest, expected_digest_hex, ArtifactDescriptor,
     ArtifactKind, ArtifactSource, ExpectedDigest, DXVK_SHA256, LEGACY_MANAGED_RUNNER_ID,
     LEGACY_MANAGED_RUNNER_LABEL, LOCAL_MANAGED_RUNNER_ID, MANAGED_DXVK_ID, MANAGED_RUNNER_ID,
-    MANAGED_RUNNER_LABEL, NNDSK_RUNTIME_SHA256, NNDSK_RUNTIME_SOURCE_COMMIT, PROTON_SHA512, UMU_ID,
-    UMU_SHA256,
+    MANAGED_RUNNER_LABEL, MANAGED_WINE716_ID, MANAGED_WINE716_LABEL, NNDSK_RUNTIME_SHA256,
+    NNDSK_RUNTIME_SOURCE_COMMIT, PROTON_SHA512, UMU_ID, UMU_SHA256,
 };
 pub(crate) use fetch::{
     download_pinned_https, pinned_https_url_allowed, verify_archive_file, PinnedHttpsFile,
@@ -135,9 +135,12 @@ pub(crate) async fn ensure_catalog_artifact(
         }
         return Ok(());
     }
-    if descriptor.kind == ArtifactKind::NndskRoProton {
+    if matches!(
+        descriptor.kind,
+        ArtifactKind::NndskRoProton | ArtifactKind::WineTkg716
+    ) {
         return Err(
-            "nndsk-ro-proton requiere el instalador transaccional con ownership de la operación"
+            "El runner requiere el instalador transaccional con ownership de la operación"
                 .to_string(),
         );
     }

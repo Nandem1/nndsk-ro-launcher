@@ -131,7 +131,7 @@ describe('RunnerSelector runtime import', () => {
       screen.getByRole('button', { name: 'Importar y usar nndsk-ro-proton' }),
     ).toBeEnabled()
     expect(
-      screen.getByText(/se descarga y verifica por SHA-256 al preparar el/),
+      screen.getByText(/se descargan y verifican por SHA-256 al preparar el/),
     ).toBeInTheDocument()
   })
 
@@ -144,6 +144,25 @@ describe('RunnerSelector runtime import', () => {
     expect(
       screen.getByRole('button', { name: 'nndsk-ro-proton 0.1.0-dev.2' }),
     ).toBeDisabled()
+  })
+
+  it('conserva una selección antigua fuera del catálogo sin presentarla como missing', () => {
+    useSettingsStore.setState({
+      runners: [current],
+      selectedRunner: '/old/wine/bin/wine',
+    })
+    render(<RunnerSelector />)
+    expect(
+      screen.getByRole('button', {
+        name: 'Selección anterior conservada · /old/wine/bin/wine',
+      }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(/se conserva sin migrar su prefix/),
+    ).toBeInTheDocument()
+    expect(useSettingsStore.getState().selectedRunner).toBe(
+      '/old/wine/bin/wine',
+    )
   })
 
   it('reports a native dialog error without starting an import', async () => {

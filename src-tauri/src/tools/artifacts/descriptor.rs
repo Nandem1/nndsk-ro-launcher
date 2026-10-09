@@ -2,6 +2,10 @@ use crate::tools::runtime::ArtifactArchitecture;
 
 pub const MANAGED_RUNNER_ID: &str = "nndsk-ro-proton-0.1.0-dev.2";
 pub const MANAGED_RUNNER_LABEL: &str = "nndsk-ro-proton 0.1.0-dev.2";
+pub(crate) const MANAGED_WINE716_ID: &str = "wine-7.16-staging-tkg-amd64";
+pub(crate) const MANAGED_WINE716_LABEL: &str = "Wine 7.16 Staging/TkG amd64 · old-WoW64";
+pub(crate) const WINE716_SHA256: &str =
+    "6d9e960b93afa273c329a42116ffe7a4f0fc738f8b8b9c0242082ea3f58e971e";
 pub(crate) const LOCAL_MANAGED_RUNNER_ID: &str = "nndsk-ro-proton-0.1.0-dev.1";
 pub(crate) const LEGACY_MANAGED_RUNNER_ID: &str = "ro-proton-cachyos-11.0-20260702-slr";
 pub(crate) const LEGACY_MANAGED_RUNNER_LABEL: &str = "proton-cachyos-11.0-20260702-slr-x86_64";
@@ -22,7 +26,7 @@ pub(crate) const DXVK_SHA256: &str =
     "17761876556afd55736cb895d184f5a1c55d43350f1b1e3b129f8d28706d7992";
 
 const PROTON_ARCHIVE_NAME: &str = "proton-cachyos-11.0-20260702-slr-x86_64.tar.xz";
-const PROTON_ARCHIVE_ROOT: &str = "proton-cachyos-11.0-20260702-slr-x86_64";
+const PROTON_ARCHIVE_ROOT: &str = LEGACY_MANAGED_RUNNER_LABEL;
 const PROTON_URL: &str =
     "https://github.com/CachyOS/proton-cachyos/releases/download/cachyos-11.0-20260702-slr/proton-cachyos-11.0-20260702-slr-x86_64.tar.xz";
 const PROTON_SIZE: u64 = 328_233_608;
@@ -62,6 +66,7 @@ pub(crate) struct ArtifactDescriptor {
 pub(crate) enum ArtifactKind {
     ProtonCachyos,
     NndskRoProton,
+    WineTkg716,
     UmuLauncher,
     Dxvk,
 }
@@ -103,6 +108,7 @@ pub(crate) enum ArchiveLayout {
 pub(crate) enum PayloadValidatorId {
     ProtonCachyosSlr,
     NndskRoProton,
+    WineTkg716,
     UmuZipapp,
     DxvkPrefixDlls,
 }
@@ -217,12 +223,32 @@ const DXVK_DESCRIPTOR: ArtifactDescriptor = ArtifactDescriptor {
     payload: PayloadValidatorId::DxvkPrefixDlls,
 };
 
-static CATALOG: [ArtifactDescriptor; 5] = [
+const WINE716_DESCRIPTOR: ArtifactDescriptor = ArtifactDescriptor {
+    id: MANAGED_WINE716_ID,
+    kind: ArtifactKind::WineTkg716,
+    version: "7.16",
+    source: ArtifactSource::Https {
+        url: "https://github.com/Kron4ek/Wine-Builds/releases/download/7.16/wine-7.16-staging-tkg-amd64.tar.xz",
+    },
+    expected_size: 57_117_116,
+    digest: ExpectedDigest::Sha256(WINE716_SHA256),
+    archive: ArchiveLayout::TarXz {
+        archive_name: "wine-7.16-staging-tkg-amd64.tar.xz",
+        root: "wine-7.16-staging-tkg-amd64",
+    },
+    platform: "linux-x86_64",
+    architectures: &[ArtifactArchitecture::X86, ArtifactArchitecture::X86_64],
+    recipe_revision: 1,
+    payload: PayloadValidatorId::WineTkg716,
+};
+
+static CATALOG: [ArtifactDescriptor; 6] = [
     UMU_DESCRIPTOR,
     PROTON_DESCRIPTOR,
     DXVK_DESCRIPTOR,
     NNDSK_RUNTIME_DESCRIPTOR,
     NNDSK_LOCAL_DESCRIPTOR,
+    WINE716_DESCRIPTOR,
 ];
 
 #[allow(dead_code)]
@@ -326,5 +352,21 @@ mod tests {
         assert_ne!(public.id, local.id);
         assert_ne!(public.digest, local.digest);
         assert_eq!(public.recipe_revision, local.recipe_revision);
+    }
+
+    #[test]
+    fn wine716_is_the_exact_legacy_staging_tkg_amd64_release() {
+        let wine = catalog_descriptor(MANAGED_WINE716_ID).unwrap();
+        assert_eq!(wine.kind, ArtifactKind::WineTkg716);
+        assert_eq!(wine.expected_size, 57_117_116);
+        assert_eq!(wine.digest, ExpectedDigest::Sha256(WINE716_SHA256));
+        assert_eq!(wine.archive.archive_root(), MANAGED_WINE716_ID);
+        assert_eq!(
+            wine.architectures,
+            &[ArtifactArchitecture::X86, ArtifactArchitecture::X86_64]
+        );
+        assert!(
+            matches!(wine.source, ArtifactSource::Https { url } if url.ends_with("/7.16/wine-7.16-staging-tkg-amd64.tar.xz"))
+        );
     }
 }

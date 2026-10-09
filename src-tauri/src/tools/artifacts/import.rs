@@ -119,8 +119,11 @@ pub(crate) async fn download_managed_runtime(
     progress_start: u32,
     progress_end: u32,
 ) -> Result<(), String> {
-    if descriptor.kind != super::ArtifactKind::NndskRoProton {
-        return Err("La descarga transaccional requiere un runtime nndsk-ro-proton".to_string());
+    if !matches!(
+        descriptor.kind,
+        super::ArtifactKind::NndskRoProton | super::ArtifactKind::WineTkg716
+    ) {
+        return Err("La descarga transaccional requiere un runner del catálogo".to_string());
     }
     let destination = runtime_dir();
     let final_dir = destination.join(descriptor.id);
@@ -585,5 +588,38 @@ mod tests {
             std::fs::remove_dir_all(root).unwrap();
         }
         result.expect("the exact accepted archive must pass the install pipeline");
+    }
+
+    #[test]
+    #[ignore = "requires RO_LAUNCHER_TEST_WINE716_ARCHIVE and multilib, imports to an isolated directory; only executes --version"]
+    fn wine716_real_archive_is_reusable_and_keeps_legacy_sync_and_layout() {
+        use crate::utils::{resolve_runner, WineSyncMode};
+        let fixture = Fixture::new();
+        let source = PathBuf::from(
+            std::env::var_os("RO_LAUNCHER_TEST_WINE716_ARCHIVE")
+                .expect("set exact Wine 7.16 TkG archive"),
+        );
+        let descriptor = catalog_descriptor(super::super::descriptor::MANAGED_WINE716_ID).unwrap();
+        let installed = import_archive_at(descriptor, &source, &fixture.destination).unwrap();
+        assert_eq!(
+            artifact_cache_state_at(descriptor, &installed),
+            ArtifactCacheState::Ready
+        );
+        let marker = std::fs::read(installed.join(MARKER_FILE)).unwrap();
+        assert_eq!(
+            import_archive_at(descriptor, &source, &fixture.destination).unwrap(),
+            installed
+        );
+        assert_eq!(std::fs::read(installed.join(MARKER_FILE)).unwrap(), marker);
+        let runner = resolve_runner(installed.join("bin/wine").to_str().unwrap()).unwrap();
+        assert_eq!(
+            runner.reported_version().as_deref(),
+            Some("wine-7.16.r0.gaa2eb6ee ( TkG Staging Esync Fsync )")
+        );
+        assert!(runner.is_wine_7_16());
+        assert_eq!(runner.wine_sync_mode(), WineSyncMode::Fsync);
+        assert!(installed.join("lib/wine/i386-unix/ntdll.so").is_file());
+        assert!(installed.join("lib/wine/x86_64-unix/ntdll.so").is_file());
+        assert!(!installed.join("proton").exists());
     }
 }

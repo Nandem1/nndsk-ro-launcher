@@ -3,6 +3,7 @@ import { useEffect, useId, useState } from 'react'
 import { X } from 'lucide-react'
 import { useAsyncAction } from '../../shared/hooks/useAsyncAction'
 import { basename, nameFromExePath } from '../../shared/path'
+import { runnerSelectionOptions } from '../../shared/resolveRunner'
 import type { ServerConfig } from '../../shared/types'
 import { Button, IconButton } from '../../shared/ui/Button'
 import { DarkSelect } from '../../shared/ui/DarkSelect'
@@ -169,14 +170,8 @@ export function ServerConfigModal({ mode, server, onSave, onClose }: Props) {
       value: '',
       label: `Predeterminado${selectedRunner ? ` · ${basename(selectedRunner)}` : ''}`,
     },
-    ...runners.map((runner) => ({ value: runner.path, label: runner.name })),
+    ...runnerSelectionOptions(runners, draft.runner),
   ]
-  if (draft.runner && !runners.some((runner) => runner.path === draft.runner)) {
-    runnerOptions.push({
-      value: draft.runner,
-      label: `No detectado · ${draft.runner}`,
-    })
-  }
 
   const title = mode === 'add' ? 'Agregar servidor' : 'Editar servidor'
   const saveLabel = mode === 'add' ? 'Agregar' : 'Guardar cambios'

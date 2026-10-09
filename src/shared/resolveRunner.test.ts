@@ -4,6 +4,7 @@ import {
   launchConfigKey,
   runtimeStatusKey,
   withResolvedRunner,
+  runnerSelectionOptions,
 } from './resolveRunner'
 
 const server: ServerConfig = {
@@ -11,6 +12,39 @@ const server: ServerConfig = {
   name: 'RO',
   executablePath: '/games/ro/ragexe.exe',
 }
+
+describe('runnerSelectionOptions', () => {
+  const runners = [
+    { id: 'nndsk', name: 'nndsk-ro-proton', path: '/managed/nndsk/proton' },
+    {
+      id: 'wine716',
+      name: 'Wine 7.16 Staging/TkG amd64',
+      path: '/managed/wine716/bin/wine',
+    },
+  ]
+  it('ofrece sólo el catálogo sin inventar rutas externas', () => {
+    expect(runnerSelectionOptions(runners, '')).toEqual([
+      { value: runners[0].path, label: runners[0].name },
+      { value: runners[1].path, label: runners[1].name },
+    ])
+    expect(runnerSelectionOptions(runners, runners[1].path)).toHaveLength(2)
+  })
+  it('conserva la selección guardada sin relabelar su path ni añadir otros runners', () => {
+    const options = runnerSelectionOptions(runners, '/old/wine/bin/wine')
+    expect(options).toHaveLength(3)
+    expect(options[2]).toEqual({
+      value: '/old/wine/bin/wine',
+      label: 'Selección anterior conservada · /old/wine/bin/wine',
+    })
+    expect(runners).toHaveLength(2)
+    expect(
+      withResolvedRunner(
+        { ...server, runner: options[2].value },
+        runners[0].path,
+      ).runner,
+    ).toBe('/old/wine/bin/wine')
+  })
+})
 
 describe('withResolvedRunner', () => {
   it('normaliza el prefix y conserva un runner explícito por servidor', () => {

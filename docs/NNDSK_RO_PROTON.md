@@ -1,6 +1,6 @@
 # nndsk-ro-proton integration
 
-The product default is `nndsk-ro-proton 0.1.0-dev.2`. Wine 7.16 old-WoW64 remains
+The product default is `nndsk-ro-proton 0.1.0-dev.2`. Wine 7.16 Staging/TkG amd64 old-WoW64 remains
 the separate, hash-specific SakuraRO compatibility profile with managed DXVK
 2.6.2. A nonempty server runner override still takes precedence over the global
 setting. Existing user selections are not silently changed by discovery.
@@ -29,6 +29,13 @@ COW tracking requires the recorded Linux userfaultfd/pagemap features and
 TPM storage or Windows-equivalent isolation.
 
 ## Automatic download and optional offline import
+
+New runner selections offer exactly two products: this runtime and the pinned
+[Wine 7.16 Staging/TkG amd64](WINE_716_RUNTIME.md). System Wine, arbitrary Steam
+Proton and previous managed versions are not advertised as additional choices.
+Saved out-of-catalog paths remain visible as preserved legacy selections, without
+silently migrating their prefixes. Internal UMU/DXVK and historical artifact
+descriptors are dependencies/compatibility records, not additional offered runners.
 
 The versioned [runtime prerelease](https://github.com/Nandem1/nndsk-ro-proton/releases/tag/v0.1.0-dev.2)
 provides the binary, sources/notices, manifest, preservation inventory and

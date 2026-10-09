@@ -720,6 +720,7 @@ mod tests {
                 crate::tools::artifacts::LEGACY_MANAGED_RUNNER_ID,
                 crate::tools::artifacts::UMU_ID,
                 crate::tools::artifacts::MANAGED_DXVK_ID,
+                crate::tools::artifacts::MANAGED_WINE716_ID,
             ])
         );
     }

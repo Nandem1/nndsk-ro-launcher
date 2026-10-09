@@ -12,6 +12,13 @@ const proton: RunnerInfo = {
 const runners = [proton]
 
 describe('resolveRunnerAfterLoad', () => {
+  it('conserva una ruta antigua aunque ya no se ofrezca en el catálogo', () => {
+    const old = '/runners/wine-7.16-staging-tkg-amd64/bin/wine'
+    expect(resolveRunnerAfterLoad(old, runners)).toEqual({
+      path: old,
+      persist: false,
+    })
+  })
   it('no migra una selección dev.1 al paquete público dev.2', () => {
     const preserved: RunnerInfo = {
       id: 'nndsk-ro-proton-0.1.0-dev.1',

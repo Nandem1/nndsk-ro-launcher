@@ -7,6 +7,7 @@ import { Button } from '../../shared/ui/Button'
 import { runSafely } from '../../shared/async'
 import { isLauncherBusy, useLauncherStore } from '../launcher/launcher.store'
 import { useSelectedServer } from '../servers/useSelectedServer'
+import { runnerSelectionOptions } from '../../shared/resolveRunner'
 
 export function RunnerSelector() {
   const {
@@ -26,19 +27,11 @@ export function RunnerSelector() {
   const launcherBusy = isLauncherBusy(launcherStatus) || activeClients > 0
   const serverRunner = server?.runner?.trim() ?? ''
   const serverRunnerName =
-    runners.find((runner) => runner.path === serverRunner)?.name ?? serverRunner
+    runners.find((runner) => runner.path === serverRunner)?.name ??
+    `Selección anterior conservada · ${serverRunner}`
 
   const detected = runners.some((runner) => runner.path === selectedRunner)
-  const options = runners.map((runner) => ({
-    value: runner.path,
-    label: runner.name,
-  }))
-  if (selectedRunner && !detected) {
-    options.push({
-      value: selectedRunner,
-      label: `No detectado · ${selectedRunner}`,
-    })
-  }
+  const options = runnerSelectionOptions(runners, selectedRunner)
 
   const importBusy = pickingArchive || importingRuntime
 
@@ -93,9 +86,10 @@ export function RunnerSelector() {
             : 'Importar y usar nndsk-ro-proton'}
         </Button>
         <p className="mt-1 text-[9px] leading-relaxed text-zinc-500">
-          nndsk-ro-proton se descarga y verifica por SHA-256 al preparar el
-          entorno. La importación local es opcional y cambia sólo el
-          predeterminado global, no los runners propios de cada servidor.
+          nndsk-ro-proton y Wine 7.16 Staging/TkG amd64 se descargan y verifican
+          por SHA-256 al preparar el entorno. Son los dos runners ofrecidos. La
+          importación local es opcional y cambia sólo el predeterminado global,
+          no los runners propios de cada servidor.
         </p>
       </div>
       {savingRunner && (
@@ -110,8 +104,9 @@ export function RunnerSelector() {
       )}
       {!detected && selectedRunner && (
         <p className="mt-1.5 text-[10px] leading-relaxed text-amber-400/80">
-          La ruta guardada ya no está disponible. Selecciona un runner detectado
-          para poder preparar o iniciar clientes.
+          Tu selección anterior está fuera del catálogo ofrecido y se conserva
+          sin migrar su prefix. Para un entorno nuevo, selecciona uno de los dos
+          runners administrados.
         </p>
       )}
       {server && serverRunner && (

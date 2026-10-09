@@ -1,4 +1,22 @@
-import type { ServerConfig } from './types'
+import type { RunnerInfo, ServerConfig } from './types'
+
+/** Catálogo ofrecido más la selección anterior, sin convertirla en una migración. */
+export function runnerSelectionOptions(
+  runners: RunnerInfo[],
+  savedPath: string,
+) {
+  const options = runners.map((runner) => ({
+    value: runner.path,
+    label: runner.name,
+  }))
+  if (savedPath && !runners.some((runner) => runner.path === savedPath)) {
+    options.push({
+      value: savedPath,
+      label: `Selección anterior conservada · ${savedPath}`,
+    })
+  }
+  return options
+}
 
 export function resolveRunner(
   server: ServerConfig,

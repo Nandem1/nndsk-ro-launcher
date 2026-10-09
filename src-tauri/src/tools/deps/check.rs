@@ -6,8 +6,8 @@ use crate::models::dependency::{DependencyStatus, RuntimeCheck, RuntimeCheckSeve
 use crate::models::server::ServerConfig;
 use crate::tools::prefix::{DxvkProvision, MANAGED_DXVK_COMPONENT};
 use crate::tools::runners::{
-    managed_dxvk_ready, managed_proton_id_for_path, managed_proton_path, managed_proton_ready,
-    managed_runtime_ready_for_id, MANAGED_RUNNER_ID,
+    is_managed_wine716_path, managed_dxvk_ready, managed_proton_id_for_path, managed_proton_path,
+    managed_proton_ready, managed_runtime_ready_for_id, managed_wine716_ready, MANAGED_RUNNER_ID,
 };
 use crate::tools::runtime::{
     assess_compatibility, build_runtime_plan_summary, compatibility_ipc, gepard_runtime_check,
@@ -42,7 +42,11 @@ pub async fn check_dependencies(
     let managed_id = selected
         .map(|path| managed_proton_id_for_path(Path::new(path)))
         .unwrap_or(Some(MANAGED_RUNNER_ID));
-    if managed_id.is_some_and(|id| !managed_runtime_ready_for_id(id)) {
+    if managed_id.is_some_and(|id| !managed_runtime_ready_for_id(id))
+        || selected.is_some_and(|path| {
+            is_managed_wine716_path(Path::new(path)) && !managed_wine716_ready()
+        })
+    {
         return managed_runtime_pending(server.as_ref(), runner.as_deref());
     }
     let ctx = resolve_context(server.as_ref(), runner.clone()).await?;
@@ -455,6 +459,8 @@ fn managed_runtime_pending(
         server.and_then(|server| server.runner.as_deref()),
         selected_runner,
     );
+    let pending_wine =
+        effective_runner.is_some_and(|path| is_managed_wine716_path(Path::new(path)));
     let managed_id = effective_runner
         .map(|path| managed_proton_id_for_path(Path::new(path)))
         .unwrap_or(Some(MANAGED_RUNNER_ID));
@@ -518,6 +524,8 @@ fn managed_runtime_pending(
         && !needs_local_import;
     let runtime_warning = if needs_local_import {
         "El runtime local anterior no está instalado. Importa su paquete verificado o selecciona explícitamente nndsk-ro-proton 0.1.0-dev.2, disponible por descarga; el entorno existente se conservará".to_string()
+    } else if pending_wine {
+        "Wine 7.16 Staging/TkG amd64 se descargará y verificará por SHA-256 al preparar el entorno; no requiere UMU ni descargar Proton. Necesita las librerías del host de 32 y 64 bits".to_string()
     } else {
         "Runtime administrado pendiente. Al preparar el entorno se comprobarán UMU y Proton; solo se descargará lo que falte o no pase la validación".to_string()
     };
@@ -557,7 +565,11 @@ fn managed_runtime_pending(
         prefix_ok: false,
         prefix_warning,
         dxvk_ok: false,
-        dxvk_warning: Some("DXVK está incluido en el runtime administrado".to_string()),
+        dxvk_warning: Some(if pending_wine {
+            "DXVK 2.6.2 se descargará y verificará para Wine 7.16".to_string()
+        } else {
+            "DXVK está incluido en el runtime administrado".to_string()
+        }),
         runner_kind: expected_runner_kind.to_string(),
         runner_ok: false,
         runner_warning: Some(runtime_warning.clone()),
@@ -630,6 +642,30 @@ fn proton_dxvk_available(proton_root: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::effective_runner_path;
+
+    #[test]
+    fn missing_managed_wine_reports_a_downloadable_wine_not_a_proton_failure() {
+        let path = crate::tools::runners::managed_wine716_path();
+        let server = serde_json::from_value(serde_json::json!({
+            "id": "pending-wine-test", "name": "Pending Wine", "executablePath": "/test/game.exe"
+        }))
+        .unwrap();
+        let pending =
+            super::managed_runtime_pending(Some(&server), Some(path.to_str().unwrap())).unwrap();
+        assert_eq!(pending.runner_kind, "wine");
+        assert!(!pending.runner_ok);
+        assert!(!pending.ready_to_launch);
+        assert!(pending
+            .runner_warning
+            .as_deref()
+            .unwrap()
+            .contains("Wine 7.16 Staging/TkG amd64 se descargará"));
+        assert!(pending
+            .dxvk_warning
+            .as_deref()
+            .unwrap()
+            .contains("DXVK 2.6.2 se descargará"));
+    }
 
     #[test]
     fn empty_server_runner_does_not_mask_the_global_selection() {
