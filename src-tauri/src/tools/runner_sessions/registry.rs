@@ -20,6 +20,7 @@ use crate::utils::{RunnerInvocation, RunnerKind, WineContext};
 
 use super::bootstrap::bootstrap_prefix_for_supervisor;
 use super::client::{kill_child_by_identity, spawn_supervisor, SessionRedactions};
+use super::diagnostics::RunnerOutputHub;
 use super::diagnostics::{emit_session_line, path_log_token};
 use super::protocol::{canonicalize_prefix_path, invocation_to_spec, SessionProtocol};
 
@@ -128,6 +129,9 @@ pub struct OperationLease {
 }
 
 impl OperationLease {
+    pub(crate) fn output(&self) -> Arc<RunnerOutputHub> {
+        Arc::clone(&self.session.output)
+    }
     pub fn supervisor_identity(&self) -> ProcessIdentity {
         self.session.supervisor_identity
     }
@@ -263,6 +267,7 @@ struct RunnerSessionInner {
     supervisor_identity: ProcessIdentity,
     child: Mutex<Option<Child>>,
     redactions: SessionRedactions,
+    output: Arc<RunnerOutputHub>,
     active_requests: AtomicU32,
     operation_leases: AtomicU32,
     client_leases: AtomicU32,
@@ -490,6 +495,7 @@ impl RunnerSessionRegistry {
                 supervisor_identity,
                 child: Mutex::new(Some(spawned.child)),
                 redactions: spawned.redactions,
+                output: spawned.output,
                 active_requests: AtomicU32::new(0),
                 operation_leases: AtomicU32::new(1),
                 client_leases: AtomicU32::new(0),
@@ -1157,6 +1163,98 @@ mod integration {
         crate::tools::runtime::session_anchor_from_context(
             &test_wine_context(&std::env::temp_dir()),
         )
+    }
+
+    #[tokio::test]
+    async fn first_run_supervisor_accepts_missing_data_and_prefix_parents_without_creating_them() {
+        const CHILD: &str = "RO_FIRST_RUN_TEST_CHILD";
+        if std::env::var_os(CHILD).is_none() {
+            let home = test_prefix();
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "tools::runner_sessions::registry::integration::first_run_supervisor_accepts_missing_data_and_prefix_parents_without_creating_them", "--nocapture"])
+                .env_clear()
+                .env("HOME", &home)
+                .env("XDG_DATA_HOME", home.join(".local/share"))
+                .env("XDG_CACHE_HOME", home.join(".cache"))
+                .env("XDG_CONFIG_HOME", home.join(".config"))
+                .env("PATH", "/usr/bin:/bin")
+                .env(CHILD, "1")
+                .output().unwrap();
+            assert!(
+                output.status.success(),
+                "isolated first-run failed: {}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert!(!home.join(".local/share/ro-launcher").exists());
+            std::fs::remove_dir_all(home).unwrap();
+            return;
+        }
+        let home = std::path::PathBuf::from(std::env::var_os("HOME").unwrap());
+        let data = home.join(".local/share/ro-launcher");
+        let prefix = data.join("prefixes/new-managed-prefix");
+        assert!(!data.exists());
+        let registry =
+            RunnerSessionRegistry::with_sidecar_for_test(workspace_debug_sessiond().unwrap());
+        let ctx = test_wine_context(&prefix);
+        let game = GameProcessHandle::new();
+        let mut op = crate::tools::runner_sessions::RunnerOperation::begin(
+            None,
+            &registry,
+            &game,
+            &ctx,
+            &placeholder_anchor(),
+        )
+        .await
+        .expect("first-run session must not require a pre-created prefixes root");
+        assert!(
+            !data.exists(),
+            "session ownership is not filesystem provisioning"
+        );
+        // An installer can print its cause and then exit zero without creating any files.
+        let mut invocation = test_invocation(
+            &prefix,
+            "/bin/sh",
+            &[
+                "-c",
+                "printf 'ERROR: bootstrap fixture failure\\n' >&2; exit 0",
+            ],
+        );
+        invocation.cwd = home.clone();
+        assert_eq!(op.run(invocation, "bootstrap fixture").await.unwrap(), 0);
+        op.quiesce().await.unwrap();
+        assert!(op
+            .annotate_failure("initialization failed".into())
+            .contains("ERROR: bootstrap fixture failure"));
+        assert!(ro_tools_linux::find_prefix_processes(&ctx.prefix).is_empty());
+        assert!(registry.shutdown_all().await.is_empty());
+        if unsafe { libc::geteuid() } != 0 {
+            use std::os::unix::fs::PermissionsExt;
+            // An unwritable existing ancestor is not permission to create/adopt elsewhere.
+            std::fs::set_permissions(&home, std::fs::Permissions::from_mode(0o555)).unwrap();
+            let result = std::fs::create_dir_all(&prefix);
+            std::fs::set_permissions(&home, std::fs::Permissions::from_mode(0o755)).unwrap();
+            assert_eq!(
+                result.unwrap_err().kind(),
+                std::io::ErrorKind::PermissionDenied
+            );
+            assert!(!data.exists());
+        }
+        // A failed/cancelled setup can retry with the same still-missing directory.
+        let retry =
+            RunnerSessionRegistry::with_sidecar_for_test(workspace_debug_sessiond().unwrap());
+        let mut op = crate::tools::runner_sessions::RunnerOperation::begin(
+            None,
+            &retry,
+            &game,
+            &ctx,
+            &placeholder_anchor(),
+        )
+        .await
+        .unwrap();
+        op.quiesce().await.unwrap();
+        assert_eq!(op.annotate_failure("retry failure".into()), "retry failure");
+        assert!(!data.exists());
     }
 
     #[tokio::test]

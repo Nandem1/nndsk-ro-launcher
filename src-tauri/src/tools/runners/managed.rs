@@ -110,6 +110,17 @@ pub(crate) async fn ensure_selected_runtime(
     server_runner: Option<&str>,
     default_runner: Option<&str>,
 ) -> Result<(), String> {
+    let mut checks = crate::tools::deps::host::host_checks(
+        crate::tools::deps::host::selection_uses_proton(server_runner, default_runner),
+        false,
+    )
+    .await;
+    checks.extend(crate::tools::deps::host::selected_wine716_loader_check(
+        crate::tools::deps::host::selection_uses_managed_wine716(server_runner, default_runner),
+    ));
+    if let Some(error) = crate::tools::deps::host::host_blocker(&checks) {
+        return Err(error);
+    }
     match selected_runtime_requirement(server_runner, default_runner) {
         RuntimeRequirement::Managed(id) => ensure_runtime_for_id(app, Some(id)).await,
         RuntimeRequirement::ManagedWine716 => ensure_wine716(app).await,

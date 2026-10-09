@@ -168,6 +168,47 @@ describe('useLaunchGame', () => {
     expect(launchMock).toHaveBeenCalledTimes(1)
   })
 
+  it('preserves the bootstrap cause and retries without replacing it with missing registry files', async () => {
+    const incomplete = {
+      ...readyStatus(),
+      readyToLaunch: false,
+      prefixOk: false,
+      prefixWarning: 'Falta system.reg · Falta user.reg',
+    }
+    checkMock.mockResolvedValue(incomplete)
+    const primary =
+      'Inicialización UMU/Steam Runtime/Proton: ERROR: Digest mismatched'
+    setupMock.mockRejectedValueOnce(new Error(primary))
+    const { result } = renderHook(() => useLaunchGame(server))
+    await act(async () => result.current.handlePrepareEnvironment())
+    expect(useLauncherStore.getState().error).toBe(primary)
+    expect(checkMock).toHaveBeenCalledTimes(1)
+    expect(launchMock).not.toHaveBeenCalled()
+    checkMock
+      .mockResolvedValueOnce(incomplete)
+      .mockResolvedValueOnce(readyStatus())
+    await act(async () => result.current.handlePrepareEnvironment())
+    expect(setupMock).toHaveBeenCalledTimes(2)
+    expect(useLauncherStore.getState().error).toBeNull()
+    expect(launchMock).not.toHaveBeenCalled()
+  })
+
+  it('shows the actionable host blocker before secondary prefix diagnostics', async () => {
+    checkMock.mockResolvedValue({
+      ...readyStatus(),
+      readyToLaunch: false,
+      canSetup: false,
+      runnerWarning: 'host-python: UMU necesita Python 3.10+',
+      prefixWarning: 'Falta system.reg',
+    })
+    const { result } = renderHook(() => useLaunchGame(server))
+    await act(async () => result.current.handlePrepareEnvironment())
+    expect(useLauncherStore.getState().error).toBe(
+      'host-python: UMU necesita Python 3.10+',
+    )
+    expect(setupMock).not.toHaveBeenCalled()
+  })
+
   it('prepares from the button without opening launch fields or starting the game', async () => {
     const withFields: ServerConfig = {
       ...server,

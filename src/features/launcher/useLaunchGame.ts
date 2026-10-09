@@ -101,7 +101,8 @@ export function useLaunchGame(server: ServerConfig | null) {
     if (!deps.readyToLaunch) {
       if (!deps.canSetup) {
         throw new Error(
-          deps.prefixWarning ??
+          deps.runnerWarning ??
+            deps.prefixWarning ??
             'El entorno no está listo y no puede repararse automáticamente',
         )
       }
@@ -130,7 +131,8 @@ export function useLaunchGame(server: ServerConfig | null) {
       applyCurrentStatus(deps)
       if (!deps.readyToLaunch) {
         throw new Error(
-          deps.prefixWarning ??
+          deps.runnerWarning ??
+            deps.prefixWarning ??
             'El entorno siguió incompleto después de configurarlo',
         )
       }

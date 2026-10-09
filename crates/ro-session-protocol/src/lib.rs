@@ -3,6 +3,43 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
+/// Canonical session identity, including a not-yet-provisioned prefix and its parents.
+/// This only resolves paths; it never grants authority to create or adopt a directory.
+/// Stop on inaccessible ancestors, files, dangling links or ambiguous missing `..` paths.
+pub fn canonicalize_prefix_path(path: &std::path::Path) -> Option<std::path::PathBuf> {
+    use std::path::Component;
+    if !path.is_absolute() {
+        return None;
+    }
+    let mut ancestor = path;
+    let mut missing = Vec::new();
+    loop {
+        match std::fs::canonicalize(ancestor) {
+            Ok(mut canonical) => {
+                if !canonical.is_dir() {
+                    return None;
+                }
+                for component in missing.into_iter().rev() {
+                    canonical.push(component);
+                }
+                return Some(canonical);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                // ENOENT can also mean a dangling symlink: don't reinterpret it as missing.
+                if std::fs::symlink_metadata(ancestor).is_ok() {
+                    return None;
+                }
+                let Component::Normal(name) = ancestor.components().next_back()? else {
+                    return None;
+                };
+                missing.push(name.to_os_string());
+                ancestor = ancestor.parent()?;
+            }
+            Err(_) => return None,
+        }
+    }
+}
+
 pub const PROTOCOL_VERSION: u16 = 1;
 pub const MAX_MESSAGE_BYTES: usize = 1_048_576;
 pub const MAX_LAUNCH_ARGS: usize = 4096;
@@ -169,6 +206,34 @@ pub fn clamp_grace_ms(grace_ms: u64) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn missing_prefix_identity_is_stable_before_and_after_provisioning() {
+        let home = std::env::temp_dir().join(format!("ro-prefix-identity-{}", std::process::id()));
+        std::fs::create_dir(&home).unwrap();
+        let prefix = home.join(".local/share/ro-launcher/prefixes/isolated");
+        let before = canonicalize_prefix_path(&prefix).unwrap();
+        assert!(!prefix.parent().unwrap().exists());
+        std::fs::create_dir_all(&prefix).unwrap();
+        assert_eq!(before, canonicalize_prefix_path(&prefix).unwrap());
+        std::fs::remove_dir_all(home).unwrap();
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn missing_prefix_rejects_ambiguous_traversal_files_and_dangling_links() {
+        use std::os::unix::fs::symlink;
+        let root = std::env::temp_dir().join(format!("ro-prefix-boundary-{}", std::process::id()));
+        std::fs::create_dir(&root).unwrap();
+        std::fs::write(root.join("file"), b"do not alter").unwrap();
+        symlink(root.join("absent"), root.join("dangling")).unwrap();
+        assert!(canonicalize_prefix_path(&root.join("file/child")).is_none());
+        assert!(canonicalize_prefix_path(&root.join("dangling/child")).is_none());
+        assert!(canonicalize_prefix_path(&root.join("missing/../child")).is_none());
+        assert!(canonicalize_prefix_path(std::path::Path::new("relative/prefix")).is_none());
+        assert_eq!(std::fs::read(root.join("file")).unwrap(), b"do not alter");
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     fn sample_spec() -> ProcessSpec {
         ProcessSpec {

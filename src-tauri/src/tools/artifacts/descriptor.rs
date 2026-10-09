@@ -16,12 +16,12 @@ const LOCAL_NNDSK_RUNTIME_SHA256: &str =
     "75b0c916ccf6e7fcd64ed2afe576c2c0bc6a75ef63a8d74ad6dd9bee629d4d9f";
 const NNDSK_RUNTIME_URL: &str = "https://github.com/Nandem1/nndsk-ro-proton/releases/download/v0.1.0-dev.2/nndsk-ro-proton-0.1.0-dev.2-linux-x86_64.tar.zst";
 pub(crate) const MANAGED_DXVK_ID: &str = "dxvk-2.6.2";
-pub(crate) const UMU_ID: &str = "umu-launcher-1.4.0";
+pub(crate) const UMU_ID: &str = "umu-launcher-1.4.4";
 
 pub(crate) const PROTON_SHA512: &str =
     "c8a050077b1d420e5b691dc487eaa998fe03b99b7e05e6ee3e16c8d4bd9f4c9ff5d9f80e5f6cd1a3f6bb5194bf1481fca9f91999f710d505b68ad97aa5592c7b";
 pub(crate) const UMU_SHA256: &str =
-    "138ce4b8843608a257d4bee88191ca78a989778bcefd8abb3c1d1aaac3ac6fb8";
+    "eb590691841f7fad3fc3ad8fd5db4ccb87849fe7948e62b28ece7a4ee48cc851";
 pub(crate) const DXVK_SHA256: &str =
     "17761876556afd55736cb895d184f5a1c55d43350f1b1e3b129f8d28706d7992";
 
@@ -32,12 +32,12 @@ const PROTON_URL: &str =
 const PROTON_SIZE: u64 = 328_233_608;
 const PROTON_VERSION: &str = "11.0-20260702-slr";
 
-const UMU_ARCHIVE_NAME: &str = "umu-launcher-1.4.0-zipapp.tar";
+const UMU_ARCHIVE_NAME: &str = "umu-launcher-1.4.4-zipapp.tar";
 const UMU_ARCHIVE_ROOT: &str = "umu";
 const UMU_URL: &str =
-    "https://github.com/Open-Wine-Components/umu-launcher/releases/download/1.4.0/umu-launcher-1.4.0-zipapp.tar";
+    "https://github.com/Open-Wine-Components/umu-launcher/releases/download/1.4.4/umu-launcher-1.4.4-zipapp.tar";
 const UMU_SIZE: u64 = 430_080;
-const UMU_VERSION: &str = "1.4.0";
+const UMU_VERSION: &str = "1.4.4";
 
 const DXVK_ARCHIVE_NAME: &str = "dxvk-2.6.2.tar.gz";
 const DXVK_ARCHIVE_ROOT: &str = "dxvk-2.6.2";

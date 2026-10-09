@@ -94,12 +94,7 @@ pub fn invocation_to_spec(
 }
 
 pub fn canonicalize_prefix_path(path: &Path) -> Option<PathBuf> {
-    if let Ok(canonical) = std::fs::canonicalize(path) {
-        return Some(canonical);
-    }
-    let parent = path.parent()?;
-    let canonical_parent = std::fs::canonicalize(parent).ok()?;
-    path.file_name().map(|name| canonical_parent.join(name))
+    ro_session_protocol::canonicalize_prefix_path(path)
 }
 
 fn utf8_path(path: &Path, field: &str) -> Result<String, SessionError> {

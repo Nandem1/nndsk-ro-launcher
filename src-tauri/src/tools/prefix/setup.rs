@@ -95,28 +95,38 @@ pub async fn setup_runtime_prefix(
     }
     .await;
 
-    if result.is_err() && clean_managed_start && root.exists() && !root.is_symlink() {
-        match op.quiesce().await {
-            Ok(()) => {
-                if let Err(error) = std::fs::remove_dir_all(root) {
-                    let _ = emit_log(
-                        app,
-                        format!(
-                            "No se pudo limpiar el entorno inicial incompleto {}: {error}",
-                            root.display()
-                        ),
-                    );
+    if let Err(primary) = result {
+        // Always quiesce on failure, also for repairs/custom prefixes. Only an initially
+        // empty managed prefix grants deletion authority; never adopt partial foreign data.
+        let cleanup = op.quiesce().await;
+        let primary = op.annotate_failure(primary);
+        if clean_managed_start && root.exists() && !root.is_symlink() {
+            match &cleanup {
+                Ok(()) => {
+                    if let Err(error) = std::fs::remove_dir_all(root) {
+                        let _ = emit_log(
+                            app,
+                            format!(
+                                "No se pudo limpiar el entorno inicial incompleto {}: {error}",
+                                root.display()
+                            ),
+                        );
+                    }
                 }
-            }
-            Err(error) => {
-                let _ = emit_log(
+                Err(error) => {
+                    let _ = emit_log(
                     app,
                     format!(
                         "El entorno inicial incompleto se conservó porque no pudo apagarse con seguridad: {error}"
                     ),
                 );
+                }
             }
         }
+        return Err(match cleanup {
+            Ok(()) => primary,
+            Err(error) => format!("{primary}\nLimpieza pendiente: {error}; el entorno se conservó"),
+        });
     }
     if result.is_ok() {
         emit_progress(app, "¡Listo!", 100)?;
@@ -196,10 +206,11 @@ pub async fn reset_runtime_prefix(
                         )
                     })
                     .unwrap_or_default();
-                return Err(format!(
+                return Err(op.annotate_failure(format!(
                     "{error}. No se restauró el entorno anterior porque el entorno nuevo no pudo apagarse por completo: {cleanup_error}.{backup_note}"
-                ));
+                )));
             }
+            let error = op.annotate_failure(error);
             if root.exists() {
                 if root.is_symlink() {
                     return Err(format!(
@@ -248,11 +259,7 @@ async fn setup_resolved_prefix(
     std::fs::create_dir_all(prefix).map_err(|e| e.to_string())?;
 
     emit_progress(app, "Inicializando entorno...", 45)?;
-    op.run_ok(
-        resolved.create_prefix_invocation(prefix)?,
-        "inicialización del prefix",
-    )
-    .await?;
+    initialize_prefix(op).await?;
 
     emit_progress(app, "Preparando Wine Gecko...", 50)?;
     install_gecko_for_runner(app, op).await?;
@@ -293,6 +300,45 @@ async fn setup_resolved_prefix(
     audio::ensure_audio_driver(Some(app), op).await?;
 
     emit_progress(app, "Cerrando los procesos de preparación...", 98)?;
+    Ok(())
+}
+
+async fn initialize_prefix(op: &RunnerOperation) -> Result<(), String> {
+    let ctx = op.ctx();
+    let code = op
+        .run(
+            ctx.resolved.create_prefix_invocation(&ctx.prefix)?,
+            "inicialización del prefix",
+        )
+        .await?;
+    if code == 0 && !ctx.resolved.is_proton() {
+        // Wine 7.16 saves registry files on server shutdown, after wineboot's controller exits.
+        // Setup already holds exclusive prefix ownership. Flush before testing on-disk readiness;
+        // keep the session lease for subsequent provisioning commands.
+        op.run_shutdown_ok(
+            ctx.resolved.shutdown_invocation(&ctx.prefix)?,
+            "sincronización inicial del registro Wine",
+        )
+        .await?;
+    }
+    validate_prefix_initialization(&ctx.prefix, ctx.resolved.is_proton(), code)
+}
+
+fn validate_prefix_initialization(prefix: &str, proton: bool, code: i32) -> Result<(), String> {
+    let stage = if proton {
+        "Inicialización UMU/Steam Runtime/Proton"
+    } else {
+        "Inicialización Wine del prefix"
+    };
+    if code != 0 {
+        return Err(format!(
+            "{stage} falló con código: {code}. No se continuará con los componentes del prefix"
+        ));
+    }
+    if !inspect_prefix(prefix).structure_ok {
+        // UMU can log a Python exception and still exit zero. Exit status alone is not readiness.
+        return Err(format!("{stage} salió con código 0 pero no creó un prefix válido. Revisa la causa del runner a continuación; los archivos faltantes son un síntoma, no la causa"));
+    }
     Ok(())
 }
 
@@ -756,6 +802,163 @@ mod tests {
         fs::write(&wine, format!("#!/bin/sh\nprintf '%s\\n' '{version}'\n")).unwrap();
         fs::set_permissions(&wine, fs::Permissions::from_mode(0o755)).unwrap();
         ResolvedRunner::test_wine(wine, wineserver)
+    }
+
+    #[test]
+    fn initialization_requires_both_zero_exit_and_complete_structure() {
+        let root = test_dir("initialization");
+        let prefix = root.to_str().unwrap();
+        // Empty data root, empty prefix, and partial prefix are never a successful bootstrap.
+        assert!(validate_prefix_initialization(prefix, true, 0)
+            .unwrap_err()
+            .contains("UMU/Steam Runtime/Proton"));
+        fs::create_dir_all(root.join("drive_c/windows")).unwrap();
+        fs::write(root.join("system.reg"), "test").unwrap();
+        assert!(validate_prefix_initialization(prefix, true, 0).is_err());
+        fs::create_dir_all(root.join("dosdevices")).unwrap();
+        std::os::unix::fs::symlink("../drive_c", root.join("dosdevices/c:")).unwrap();
+        fs::write(root.join("user.reg"), "test").unwrap();
+        assert!(validate_prefix_initialization(prefix, true, 0).is_ok());
+        assert!(validate_prefix_initialization(prefix, true, 1)
+            .unwrap_err()
+            .contains("código: 1"));
+        assert!(validate_prefix_initialization(prefix, false, 23)
+            .unwrap_err()
+            .contains("Inicialización Wine"));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    // Explicit integration, never part of CI. Read-only artifact cache is passed by the operator;
+    // all application state is isolated in a subprocess, including the prefix identity resolver.
+    #[tokio::test]
+    #[ignore = "requires real runtime artifacts and, for Proton, network/Steam Runtime"]
+    async fn real_runner_clean_home_initialization_and_retry() {
+        const CHILD: &str = "RO_FIRST_RUN_REAL_CHILD";
+        if std::env::var_os(CHILD).is_none() {
+            let root = test_dir("real-home");
+            fs::create_dir_all(&root).unwrap();
+            let mut cmd = std::process::Command::new(std::env::current_exe().unwrap());
+            cmd.env_clear()
+                .args([
+                    "--exact",
+                    "tools::prefix::setup::tests::real_runner_clean_home_initialization_and_retry",
+                    "--ignored",
+                    "--nocapture",
+                ])
+                .env("HOME", &root)
+                .env("XDG_DATA_HOME", root.join(".local/share"))
+                .env("XDG_CACHE_HOME", root.join(".cache"))
+                .env("XDG_CONFIG_HOME", root.join(".config"))
+                .env("PATH", "/usr/local/bin:/usr/bin:/bin")
+                .env(CHILD, "1");
+            for name in [
+                "RO_FIRST_RUN_RUNNER",
+                "RO_FIRST_RUN_UMU",
+                "RO_FIRST_RUN_SESSIOND",
+                "RO_FIRST_RUN_APPDIR",
+                "DISPLAY",
+                "XAUTHORITY",
+                "XDG_RUNTIME_DIR",
+                "DBUS_SESSION_BUS_ADDRESS",
+            ] {
+                if let Some(value) = std::env::var_os(name) {
+                    cmd.env(name, value);
+                }
+            }
+            if let Some(appdir) = std::env::var_os("RO_FIRST_RUN_APPDIR") {
+                let dir = std::path::PathBuf::from(&appdir);
+                cmd.env("APPDIR", &dir)
+                    .env("PYTHONHOME", dir.join("usr"))
+                    .env("PYTHONPATH", dir.join("usr/share/pyshared"))
+                    .env("LD_LIBRARY_PATH", dir.join("usr/lib"))
+                    .env(
+                        "PATH",
+                        format!(
+                            "{}:/usr/local/bin:/usr/bin:/bin",
+                            dir.join("usr/bin").display()
+                        ),
+                    );
+            }
+            let status = cmd.status().unwrap();
+            println!("Isolated HOME preserved for inspection: {}", root.display());
+            assert!(status.success());
+            return;
+        }
+        let runner = std::path::PathBuf::from(
+            std::env::var_os("RO_FIRST_RUN_RUNNER")
+                .expect("set RO_FIRST_RUN_RUNNER to an absolute cached runner entrypoint"),
+        );
+        let resolved = if runner.file_name().unwrap() == "proton" {
+            ResolvedRunner::test_proton(
+                runner.clone(),
+                runner.parent().unwrap().to_path_buf(),
+                std::path::PathBuf::from(
+                    std::env::var_os("RO_FIRST_RUN_UMU").expect("set RO_FIRST_RUN_UMU"),
+                ),
+            )
+        } else {
+            resolve_runner(runner.to_str().unwrap()).unwrap()
+        };
+        let probe = crate::tools::runtime::probe_runner(&resolved);
+        let server = serde_json::from_value(serde_json::json!({"id": "first-run", "name": "first-run", "executablePath": "/unused/game.exe", "prefixMode": "isolated"})).unwrap();
+        let identity = crate::tools::runtime::resolve_prefix_binding(
+            Some(&server),
+            &resolved,
+            &probe,
+            resolved.is_wine_7_16(),
+        )
+        .unwrap();
+        let ctx = WineContext {
+            prefix: identity.location.path.clone(),
+            location: identity.location.clone(),
+            identity,
+            resolved,
+            probe,
+        };
+        let anchor = crate::tools::runtime::session_anchor_from_context(&ctx);
+        assert!(!crate::utils::app_data_dir().exists());
+        let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+        let sidecar = std::env::var_os("RO_FIRST_RUN_SESSIOND")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| workspace.join("target/debug/ro-sessiond"));
+        let sessions = RunnerSessionRegistry::with_sidecar_for_test(sidecar);
+        let game = GameProcessHandle::new();
+        for attempt in 0..2 {
+            let mut op = RunnerOperation::begin(None, &sessions, &game, &ctx, &anchor)
+                .await
+                .unwrap();
+            let root = Path::new(&ctx.prefix);
+            let _guard = OperationGuard::acquire("prefix", root).unwrap();
+            ensure_managed_reset_allowed(&ctx.location).unwrap();
+            fs::create_dir_all(root).unwrap();
+            let result = initialize_prefix(&op).await;
+            op.quiesce().await.unwrap();
+            println!(
+                "attempt={attempt} result={:?}",
+                result
+                    .as_ref()
+                    .map_err(|error| op.annotate_failure(error.clone()))
+            );
+            result.unwrap();
+            // Record ownership only: this initialization smoke doesn't provision components.
+            write_prefix_manifest(
+                &ctx.prefix,
+                &PrefixManifest {
+                    schema_version: PREFIX_SCHEMA_VERSION,
+                    scope: ctx.location.scope,
+                    server_id: ctx.location.server_id.clone(),
+                    runner_kind: ctx.resolved.kind_label().into(),
+                    runner_path: ctx.resolved.runner_path().to_string_lossy().into_owned(),
+                    components: vec![],
+                },
+            )
+            .unwrap();
+            assert!(
+                find_prefix_processes(&ctx.prefix).is_empty(),
+                "setup failure/success must leave no prefix processes"
+            );
+        }
+        assert!(sessions.shutdown_all().await.is_empty());
     }
 
     #[test]

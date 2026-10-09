@@ -644,6 +644,14 @@ pub fn ensure_custom_setup_allowed(location: &PrefixLocation) -> Result<(), Stri
     if root.is_symlink() {
         return Err("El WINEPREFIX personalizado no puede ser un symlink".to_string());
     }
+    if root.exists() && !root.is_dir() {
+        return Err("El WINEPREFIX personalizado no es un directorio".to_string());
+    }
+    if !root.exists() && !root.parent().is_some_and(Path::is_dir) {
+        return Err(
+            "El directorio padre del WINEPREFIX personalizado no existe; créalo o elige otra ruta. El launcher no creará parents externos".to_string(),
+        );
+    }
     if prefix_marker_path(&location.path).is_symlink() {
         return Err("El manifiesto del entorno no puede ser un symlink".to_string());
     }
@@ -679,6 +687,32 @@ mod tests {
     use super::*;
     use serde::Deserialize;
     use std::sync::atomic::{AtomicU64, Ordering};
+
+    #[test]
+    fn custom_setup_never_bootstraps_missing_external_parents() {
+        let root = test_prefix("custom-missing-parents");
+        std::fs::create_dir(&root).unwrap();
+        let mut location = PrefixLocation {
+            path: root
+                .join("external/parents/prefix")
+                .to_string_lossy()
+                .into_owned(),
+            scope: PrefixScope::Custom,
+            managed: false,
+            server_id: None,
+        };
+        assert!(ensure_custom_setup_allowed(&location)
+            .unwrap_err()
+            .contains("padre"));
+        assert!(!root.join("external").exists());
+        location.path = root.join("prefix").to_string_lossy().into_owned();
+        assert!(ensure_custom_setup_allowed(&location).is_ok());
+        assert!(
+            !root.join("prefix").exists(),
+            "validation must not create the custom prefix"
+        );
+        std::fs::remove_dir(&root).unwrap();
+    }
 
     #[derive(Deserialize)]
     #[serde(rename_all = "camelCase")]

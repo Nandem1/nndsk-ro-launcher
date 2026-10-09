@@ -81,21 +81,32 @@ impl Drop for OperationGuard {
 }
 
 fn normalize_path(path: &Path) -> PathBuf {
-    if let Ok(canonical) = std::fs::canonicalize(path) {
-        return canonical;
-    }
-    let Some(parent) = path.parent() else {
-        return path.to_path_buf();
-    };
-    let canonical_parent = std::fs::canonicalize(parent).unwrap_or_else(|_| parent.to_path_buf());
-    path.file_name()
-        .map(|name| canonical_parent.join(name))
-        .unwrap_or(canonical_parent)
+    ro_session_protocol::canonicalize_prefix_path(path).unwrap_or_else(|| path.to_path_buf())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[cfg(unix)]
+    fn missing_parents_under_a_home_alias_keep_the_same_lock_after_creation() {
+        let root = std::env::temp_dir().join(format!("ro-lock-alias-{}", std::process::id()));
+        std::fs::create_dir(&root).unwrap();
+        std::fs::create_dir(root.join("home")).unwrap();
+        std::os::unix::fs::symlink(root.join("home"), root.join("alias")).unwrap();
+        let prefix = root.join("alias/.local/share/ro-launcher/prefixes/new");
+        let guard = OperationGuard::acquire("prefix", &prefix).unwrap();
+        std::fs::create_dir_all(&prefix).unwrap();
+        assert!(OperationGuard::acquire(
+            "prefix",
+            &root.join("home/.local/share/ro-launcher/prefixes/new")
+        )
+        .is_err());
+        drop(guard);
+        assert!(OperationGuard::acquire("prefix", &prefix).is_ok());
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn serializes_the_same_namespace_and_path() {

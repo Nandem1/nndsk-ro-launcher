@@ -611,12 +611,17 @@ impl ResolvedRunner {
     }
 
     pub fn create_prefix_invocation(&self, prefix_path: &str) -> Result<RunnerInvocation, String> {
-        match &self.strategy {
-            RunnerStrategy::Wine { .. } => self.builtin_invocation(prefix_path, "wineboot", ["-i"]),
-            RunnerStrategy::Proton { .. } => {
+        // An empty target does initialize Proton as a side effect, but Wine then tries to
+        // ShellExecute("") and exits 1. Initialization must execute an actual builtin.
+        match self.kind() {
+            RunnerKind::Wine => self.builtin_invocation(prefix_path, "wineboot", ["-i"]),
+            RunnerKind::Proton => {
+                // runinprefix deliberately skips Proton's setup_prefix on a fresh installation.
                 let mut invocation =
                     self.proton_invocation(prefix_path, ProtonVerb::WaitForExitAndRun)?;
-                invocation.args.push(OsString::new());
+                invocation
+                    .args
+                    .extend([OsString::from("wineboot"), OsString::from("-i")]);
                 Ok(invocation)
             }
         }
@@ -1562,7 +1567,10 @@ mod tests {
 
         assert_eq!(env(&tool, "PROTON_VERB"), Some("run".into()));
         assert_eq!(env(&builtin, "PROTON_VERB"), Some("runinprefix".into()));
-        assert_eq!(args(&create), [OsString::from("")]);
+        assert_eq!(
+            args(&create),
+            [OsString::from("wineboot"), OsString::from("-i")]
+        );
         assert_eq!(
             env(&create, "PROTON_VERB"),
             Some("waitforexitandrun".into())

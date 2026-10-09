@@ -68,6 +68,13 @@ const CONTROLLER_EXIT_GRACE: Duration = Duration::from_secs(30);
 const PROCESS_POLL_INTERVAL: Duration = Duration::from_millis(250);
 const PROCESS_HANDOFF_GRACE: Duration = Duration::from_secs(5);
 
+fn launch_input_diagnostic(result: Result<String, ro_tools_core::ToolsError>) -> String {
+    match result {
+        Ok(devices) => format!("[Launch] uinput preparado antes del runner: {devices}"),
+        Err(error) => format!("[Launch] Automatización uinput no disponible: {error}. El juego puede iniciarse sin AutoPot/AutoBuff/Spammer; revisa los permisos de input para usar esas funciones"),
+    }
+}
+
 pub struct LaunchTools<'a> {
     pub tool_lifecycle: &'a std::sync::Arc<tokio::sync::Mutex<()>>,
     pub autopot: &'a AutopotHandle,
@@ -147,14 +154,7 @@ pub async fn launch_game(
         .map(|candidate| candidate.identity)
         .collect();
 
-    let devices = input
-        .prepare()
-        .await
-        .map_err(|error| format!("No se pudo preparar input uinput: {error}"))?;
-    emit_tool_log_opt(
-        Some(&app),
-        format!("[Launch] uinput preparado antes del runner: {devices}"),
-    );
+    emit_tool_log_opt(Some(&app), launch_input_diagnostic(input.prepare().await));
 
     let tools_status = server_tools::scan_status(&app, &server).ok();
     let dgvoodoo_configured = tools_status
@@ -1020,6 +1020,16 @@ fn combine_stop_errors(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn missing_optional_uinput_does_not_abort_game_startup() {
+        let message = super::launch_input_diagnostic(Err(ro_tools_core::ToolsError::Other(
+            "/dev/uinput: Permission denied".into(),
+        )));
+        assert!(message.contains("Permission denied"));
+        assert!(message.contains("El juego puede iniciarse sin AutoPot/AutoBuff/Spammer"));
+        assert!(super::launch_input_diagnostic(Ok("combined".into()))
+            .contains("preparado antes del runner"));
+    }
     use super::*;
     use std::collections::HashSet;
     use std::process::Stdio;

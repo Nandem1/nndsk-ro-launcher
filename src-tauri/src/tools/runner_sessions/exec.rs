@@ -10,7 +10,9 @@ use crate::state::GameProcessHandle;
 use crate::utils::{pipe_output, RunnerInvocation, WineContext};
 
 use super::diagnostics::emit_session_line;
+use super::diagnostics::{FailureOutput, RunnerOutputHub};
 use crate::tools::runtime::SessionAnchorV2;
+use std::sync::{Arc, Mutex};
 
 use super::{
     session_supervisor_enabled, OperationLease, ProcessExit, RunnerSessionRegistry,
@@ -69,6 +71,8 @@ pub struct RunnerOperation {
     ctx: WineContext,
     lease: Option<OperationLease>,
     supervised: bool,
+    output: Option<Arc<RunnerOutputHub>>,
+    failure_output: Option<Arc<Mutex<FailureOutput>>>,
 }
 
 impl RunnerOperation {
@@ -103,12 +107,16 @@ impl RunnerOperation {
             None
         };
         let supervised = lease.is_some();
+        let output = lease.as_ref().map(OperationLease::output);
+        let failure_output = output.as_ref().map(|hub| hub.subscribe());
         Ok(Self {
             app: app.cloned(),
             sessions: sessions.clone(),
             ctx: ctx.clone(),
             lease,
             supervised,
+            output,
+            failure_output,
         })
     }
 
@@ -118,6 +126,13 @@ impl RunnerOperation {
 
     pub fn lease(&self) -> Option<&OperationLease> {
         self.lease.as_ref()
+    }
+
+    pub(crate) fn annotate_failure(&self, primary: String) -> String {
+        self.failure_output
+            .as_ref()
+            .map(|output| output.lock().unwrap().annotate(primary.clone()))
+            .unwrap_or(primary)
     }
 
     pub async fn run(
@@ -200,6 +215,13 @@ impl RunnerOperation {
                     .shutdown_prefix(&self.ctx)
                     .await
                     .map_err(|error| error.message)?;
+            }
+            // ControllerExited and stderr are separate streams. After Stopped/child wait,
+            // wait for stderr EOF before formatting the failure so late causes are retained.
+            if let Some(output) = &self.output {
+                let _ =
+                    tokio::time::timeout(std::time::Duration::from_secs(1), output.wait_closed())
+                        .await;
             }
         } else if !find_prefix_processes(&self.ctx.prefix).is_empty() {
             self.run_shutdown_ok(

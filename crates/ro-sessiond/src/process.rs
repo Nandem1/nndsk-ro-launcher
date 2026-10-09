@@ -14,12 +14,7 @@ use std::thread;
 const RUNNER_LINE_MAX: usize = 64 * 1024;
 
 pub fn canonicalize_prefix(path: &Path) -> Option<PathBuf> {
-    if let Ok(canonical) = fs::canonicalize(path) {
-        return Some(canonical);
-    }
-    let parent = path.parent()?;
-    let canonical_parent = fs::canonicalize(parent).ok()?;
-    path.file_name().map(|name| canonical_parent.join(name))
+    ro_session_protocol::canonicalize_prefix_path(path)
 }
 
 pub fn validate_spec_for_launch(

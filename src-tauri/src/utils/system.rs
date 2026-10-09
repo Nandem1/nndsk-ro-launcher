@@ -71,7 +71,7 @@ fn preferred_or_path(preferred: &Path, name: &str) -> Option<PathBuf> {
         .or_else(|| executable_in_path(name))
 }
 
-fn executable_in_path(name: &str) -> Option<PathBuf> {
+pub(crate) fn executable_in_path(name: &str) -> Option<PathBuf> {
     let mut directories: Vec<PathBuf> = sanitized_external_path()
         .map(|value| std::env::split_paths(&value).collect())
         .unwrap_or_default();

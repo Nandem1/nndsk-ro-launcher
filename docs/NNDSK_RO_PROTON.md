@@ -44,6 +44,11 @@ SHA-256; it does not follow `latest` or silently trust a downloaded manifest.
 It downloads on demand when preparing the selected runtime's environment.
 The user's final GUI installation/game test remains separate from packaging tests.
 
+Managed UMU is pinned independently to `1.4.4`; Python 3.10+ remains a host
+requirement, not a bundled interpreter. Prefix initialization uses
+`waitforexitandrun wineboot -i`, not an empty target or fresh-prefix `runinprefix`.
+See [first-run contract, evidence and clean-Arch acceptance](FIRST_RUN.md).
+
 Offline installation remains available using **Importar y usar nndsk-ro-proton**
 or the CLI:
 

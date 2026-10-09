@@ -13,7 +13,7 @@ pub async fn start_session(
     config: SpammerConfig,
 ) -> Result<(), String> {
     if !input.is_prepared() {
-        return Err("Spammer no puede iniciar: uinput no fue preparado antes de Wine".into());
+        return Err("Spammer necesita uinput: revisa los permisos de /dev/uinput y /dev/input/event*. El juego no requiere esos permisos".into());
     }
     handle.start(app, input, config).await
 }

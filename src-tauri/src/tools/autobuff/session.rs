@@ -32,7 +32,7 @@ pub async fn start_session(
     }
     let profile_memory = session.profile_memory(Some(profile.hp_base));
     if !input.is_prepared() {
-        return Err("AutoBuff no puede iniciar: uinput no fue preparado antes de Wine".into());
+        return Err("AutoBuff necesita uinput: revisa los permisos de /dev/uinput y /dev/input/event*. El juego no requiere esos permisos".into());
     }
     handle
         .start(

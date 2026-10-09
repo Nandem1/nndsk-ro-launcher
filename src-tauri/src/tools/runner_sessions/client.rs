@@ -11,6 +11,7 @@ use tokio::time::timeout;
 
 use crate::utils::sanitize_appimage_env;
 
+use super::diagnostics::RunnerOutputHub;
 use super::diagnostics::{emit_session_line, handle_stderr_line, path_log_token, prefix_log_token};
 use super::protocol::SessionProtocol;
 use super::protocol::{canonicalize_prefix_path, ReadyInfo};
@@ -53,6 +54,7 @@ pub struct SpawnedSupervisor {
     pub child: Child,
     pub supervisor_identity: ProcessIdentity,
     pub redactions: SessionRedactions,
+    pub(crate) output: Arc<RunnerOutputHub>,
 }
 
 pub async fn kill_child_by_identity(
@@ -126,17 +128,21 @@ pub async fn spawn_supervisor(
         .ok_or_else(|| SessionError::internal("missing supervisor stdin"))?;
 
     let redactions: SessionRedactions = Arc::new(StdMutex::new(Vec::new()));
+    let output = Arc::new(RunnerOutputHub::default());
     let protocol = SessionProtocol::new(stdin);
     SessionProtocol::spawn_reader(stdout, Arc::clone(&protocol));
 
     let app_stderr = app.cloned();
     let redactions_stderr = Arc::clone(&redactions);
+    let output_stderr = Arc::clone(&output);
     tokio::spawn(async move {
         let mut lines = tokio::io::BufReader::new(stderr).lines();
         while let Ok(Some(line)) = lines.next_line().await {
             let snapshot = redactions_stderr.lock().unwrap().clone();
+            output_stderr.record(&line, &snapshot);
             handle_stderr_line(app_stderr.as_ref(), &line, &snapshot);
         }
+        output_stderr.close();
     });
 
     let identity = child_identity(&child)
@@ -190,6 +196,7 @@ pub async fn spawn_supervisor(
         child,
         supervisor_identity,
         redactions,
+        output,
     })
 }
 

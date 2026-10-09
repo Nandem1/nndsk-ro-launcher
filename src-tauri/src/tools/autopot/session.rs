@@ -57,7 +57,7 @@ pub async fn start_session(
     }
 
     if !input.is_prepared() {
-        return Err("AutoPot no puede iniciar: uinput no fue preparado antes de Wine".into());
+        return Err("AutoPot necesita uinput: revisa los permisos de /dev/uinput y /dev/input/event*. El juego no requiere esos permisos".into());
     }
 
     handle

@@ -35,6 +35,36 @@ pub async fn check_dependencies(
     server: Option<ServerConfig>,
     runner: Option<String>,
 ) -> Result<DependencyStatus, String> {
+    let proton = super::host::selection_uses_proton(
+        server.as_ref().and_then(|server| server.runner.as_deref()),
+        runner.as_deref(),
+    );
+    let mut checks = super::host::host_checks(proton, false).await;
+    let wine716 = super::host::selection_uses_managed_wine716(
+        server.as_ref().and_then(|server| server.runner.as_deref()),
+        runner.as_deref(),
+    );
+    checks.extend(super::host::selected_wine716_loader_check(wine716));
+    let mut status = check_runtime_dependencies(app, server, runner)
+        .await
+        .map_err(|error| {
+            super::host::host_blocker(&checks)
+                .map(|host| format!("{host}\nDiagnóstico secundario: {error}"))
+                .unwrap_or(error)
+        })?;
+    if !proton && !status.ready_to_launch {
+        checks = super::host::host_checks(false, true).await;
+        checks.extend(super::host::selected_wine716_loader_check(wine716));
+    }
+    super::host::apply_host_checks(&mut status, checks);
+    Ok(status)
+}
+
+async fn check_runtime_dependencies(
+    app: &AppHandle,
+    server: Option<ServerConfig>,
+    runner: Option<String>,
+) -> Result<DependencyStatus, String> {
     let selected = effective_runner_path(
         server.as_ref().and_then(|server| server.runner.as_deref()),
         runner.as_deref(),
