@@ -24,6 +24,7 @@ function resolve(value, variables, seen = new Set()) {
 
 function canonical(value) {
   return value
+    .replace(/'([^']*)'/g, '"$1"')
     .replace(/#([\da-f]{3,8})\b/gi, (match, hex) => {
       if (![3, 4, 6, 8].includes(hex.length)) return match
       if (hex.length < 5) hex = [...hex].map((digit) => digit + digit).join('')
@@ -67,6 +68,9 @@ function snapshot(file, replacements = {}) {
     const declarations = []
     rule.walkDecls((decl) => {
       if (decl.prop.startsWith('--') && !decl.prop.startsWith('--tw-')) return
+      // Tailwind's optional shadow-color rewrite is unused in this application.
+      // The applied --tw-shadow and resolved box-shadow are compared below.
+      if (decl.prop === '--tw-shadow-colored') return
       const value = canonical(resolve(decl.value, variables))
       declarations.push(`${decl.prop}:${value}${decl.important ? '!important' : ''}`)
       if (sets[decl.prop]) sets[decl.prop].add(value)
