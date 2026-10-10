@@ -6,11 +6,11 @@ interface InputProps extends ComponentPropsWithoutRef<'input'> {
 
 const VARIANT_CLASSES = {
   inline:
-    'bg-field border border-line-strong text-ink placeholder:text-muted outline-none transition-colors duration-150 focus:border-accent',
+    'bg-field border border-line text-ink placeholder:text-muted outline-none transition-colors duration-150 hover:border-line-strong',
   modal:
-    'rounded-control border border-line-strong bg-field px-3 py-2.5 text-sm text-ink placeholder:text-muted outline-none transition-colors duration-150 focus:border-accent',
+    'rounded-control border border-line bg-field px-3 py-2.5 text-sm text-ink placeholder:text-muted outline-none transition-colors duration-150 hover:border-line-strong',
   config:
-    'bg-field border border-line-strong rounded-control px-3 py-2.5 text-sm text-ink placeholder:text-muted focus:outline-none transition-colors duration-150 focus:border-accent',
+    'bg-field border border-line rounded-control px-3 py-2.5 text-sm text-ink placeholder:text-muted focus:outline-none transition-colors duration-150 hover:border-line-strong',
 }
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(

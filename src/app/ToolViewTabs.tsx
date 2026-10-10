@@ -1,14 +1,11 @@
-import { Swords, Sparkles } from 'lucide-react'
-import type { ComponentType } from 'react'
 import { useUiModeStore, type ToolView } from './uiMode.store'
 
 const TABS: {
   view: ToolView
   label: string
-  icon: ComponentType<{ className?: string }>
 }[] = [
-  { view: 'combat', label: 'Combate', icon: Swords },
-  { view: 'buffs', label: 'Buffs', icon: Sparkles },
+  { view: 'combat', label: 'Combate' },
+  { view: 'buffs', label: 'Buffs' },
 ]
 
 export function ToolViewTabs() {
@@ -16,8 +13,8 @@ export function ToolViewTabs() {
   const setToolView = useUiModeStore((s) => s.setToolView)
 
   return (
-    <div className="shrink-0 flex gap-1 border-b border-line">
-      {TABS.map(({ view, label, icon: Icon }) => {
+    <div className="shrink-0 flex gap-1">
+      {TABS.map(({ view, label }) => {
         const active = toolView === view
         return (
           <button
@@ -31,7 +28,6 @@ export function ToolViewTabs() {
                 : 'border-transparent text-muted hover:text-ink'
             }`}
           >
-            <Icon className="w-3.5 h-3.5 shrink-0" />
             {label}
           </button>
         )

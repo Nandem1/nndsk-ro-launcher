@@ -14,7 +14,7 @@ function IngameStatusChip() {
   const running = clients.filter((client) => client.status === 'running').length
 
   return (
-    <div className="flex items-center gap-2 px-3 py-1.5 rounded-pill border border-line bg-panel ">
+    <div className="flex items-center gap-2 px-3 py-1.5">
       <StatusDot status={launching ? 'warning' : 'ok'} pulse />
       <span className="text-detail text-ink font-medium truncate max-w-[220px]">
         {launching ? 'Iniciando...' : 'En juego'}
@@ -51,7 +51,7 @@ function VersionChip() {
   if (!version) return null
 
   return (
-    <div className="flex items-center gap-2 px-3 py-1.5 rounded-pill border border-line bg-panel">
+    <div className="flex items-center gap-2 px-3 py-1.5">
       <StatusDot status={copy.dot} pulse={copy.dot === 'warning'} />
       <span className="text-detail text-muted font-mono font-medium">
         v{version}

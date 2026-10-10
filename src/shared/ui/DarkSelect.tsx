@@ -263,12 +263,12 @@ export function DarkSelect({
             openMenu(event.key === 'ArrowUp' ? options.length - 1 : undefined)
           }
         }}
-        className={`idle-control w-full flex items-center justify-between border border-line-strong bg-field text-left focus:outline-none focus:border-accent
+        className={`idle-control w-full flex items-center justify-between border border-line bg-field text-left focus:outline-none hover:border-line-strong
           transition-colors duration-150 cursor-pointer disabled:cursor-not-allowed
           ${
             variant === 'keycap'
-              ? 'font-mono tabular-nums font-medium text-ink hover:border-muted'
-              : 'text-ink hover:border-muted'
+              ? 'font-mono tabular-nums font-medium text-ink'
+              : 'text-ink'
           }
           ${small ? 'gap-1 rounded-control-compact px-2 py-1 text-detail' : 'gap-2 rounded-control px-3 py-2 text-sm'}`}
       >

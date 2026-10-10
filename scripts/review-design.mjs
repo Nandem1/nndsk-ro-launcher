@@ -19,6 +19,8 @@ const stateContrast = []
 let selectCheck = null
 let disclosureCheck = null
 let railCheck = null
+let controlCheck = null
+const diagnosticChecks = []
 const browser = await chromium.launch({ executablePath, headless: true })
 const page = await browser.newPage({ viewport: { width, height } })
 await page.route('**/favicon.ico', (route) =>
@@ -52,7 +54,8 @@ page.on('console', (message) => {
   if (message.type() === 'error') errors.push(message.text())
 })
 await page.addInitScript(() => {
-  const realistic = location.search.includes('fixture=realistic')
+  const pending = location.search.includes('fixture=pending')
+  const realistic = location.search.includes('fixture=realistic') || pending
   const server = {
     id: 'design-fixture',
     name: 'TestRO',
@@ -70,7 +73,7 @@ await page.addInitScript(() => {
   }
   const runner = {
     id: 'nndsk-ro-proton-0.1.0-dev.2',
-    name: 'nndsk-ro-proton',
+    name: pending ? 'nndsk-ro-proton 0.1.0-dev.2' : 'nndsk-ro-proton',
     path: '/fixture/proton',
   }
   const tool = { found: false, path: null, label: null }
@@ -111,6 +114,43 @@ await page.addInitScript(() => {
       'Acceso de entrada verificado para la sesión actual; dispositivos aislados por cliente.'
     deps.prefixWarning =
       'Prefix administrado conservado; arquitectura x86 y componentes instalados verificados.'
+  }
+  if (pending) {
+    Object.assign(deps, {
+      wine: false,
+      winetricks: false,
+      dxvk: false,
+      prefixConfigured: false,
+      runnerOk: false,
+      runnerWarning:
+        'Runtime administrado pendiente. Al preparar el entorno se comprobarán UMU y Proton; solo se descargará lo que falte o no pase la validación',
+      prefixOk: false,
+      prefixWarning:
+        'El entorno se validará con el runtime administrado antes de jugar',
+      dxvkOk: false,
+      dxvkWarning: 'DXVK está incluido en el runtime administrado',
+      audioWarning: null,
+      inputGroupWarning: null,
+      readyToLaunch: false,
+      canReset: false,
+      checks: ['runner', 'prefix', 'dxvk'].map((id) => ({
+        id,
+        severity:
+          location.search.includes('fault=runner') && id === 'runner'
+            ? 'error'
+            : 'pending',
+        message: `${id} pendiente`,
+        remediation: null,
+      })),
+      compatibility: {
+        assessment: { kind: 'unknown' },
+        recommendation: {
+          profile: 'managedNndskRoProton',
+          evidenceId: 'gepard-26.8.26.1-nndsk-ro-proton-0.1.0-dev.2',
+          reason: 'Compatibilidad por verificar',
+        },
+      },
+    })
   }
   const tools = {
     gameDir: '/fixture',
@@ -238,6 +278,7 @@ const capture = async (name) => {
     scene: name,
     ...(await auditLayout()),
     ...(await auditBoxes()),
+    ...(await auditLines()),
   })
   await page.evaluate(() => {
     for (const animation of document.getAnimations()) {
@@ -312,13 +353,196 @@ const capture = async (name) => {
   )
   // Keep detailed diagnostics outside the repository.
   fs.writeFileSync(
-    `/tmp/ro-refine-${baseline ? 'before' : 'after'}-${width}x${height}-${name}.json`,
+    `/tmp/ro-graphite-${baseline ? 'before' : 'after'}-${width}x${height}-${name}.json`,
     JSON.stringify(styles, null, 2),
   )
   await page.screenshot({
     path: path.join(output, `${name}-${width}x${height}.png`),
   })
   console.log(name, styles.length, 'elements rendered')
+}
+
+async function auditLines() {
+  return page.evaluate(() => {
+    const panels = [...document.querySelectorAll('section.rounded-panel')]
+    const lines = panels.map((panel) => {
+      const elements = [...panel.querySelectorAll('*')].filter((element) => {
+        if (!element.getBoundingClientRect().height) return false
+        const classes = [...element.classList]
+        const css = getComputedStyle(element)
+        return ['t', 'b'].some(
+          (side) =>
+            classes.some((name) =>
+              new RegExp(`^(?:[\\w-]+:)*border-${side}(?:-(?:0|2|4|8))?$`).test(
+                name,
+              ),
+            ) &&
+            parseFloat(
+              css[side === 't' ? 'borderTopWidth' : 'borderBottomWidth'],
+            ) > 0,
+        )
+      })
+      return {
+        panel: panel.querySelector('h2')?.textContent ?? 'rail',
+        count: elements.length,
+      }
+    })
+    const decorativeIcons = [
+      ...panels.flatMap((panel) => [
+        ...(panel.querySelector('h2')?.parentElement.querySelectorAll('svg') ??
+          []),
+      ]),
+      ...[...document.querySelectorAll('button')]
+        .filter((button) =>
+          [
+            'Combate',
+            'Buffs',
+            'Sharp Shooting / Focused Arrow Strike',
+            'ATK / DEF Gear Switch',
+          ].some((text) => button.textContent.trim().startsWith(text)),
+        )
+        .flatMap((button) => [
+          ...button.querySelectorAll('svg:not(.lucide-chevron-down)'),
+        ]),
+    ]
+    return {
+      lines: {
+        total: lines.reduce((sum, row) => sum + row.count, 0),
+        panels: lines,
+      },
+      decorativeIcons: decorativeIcons.length,
+    }
+  })
+}
+
+async function verifyQuietControls() {
+  const field = page.getByRole('spinbutton', { name: 'Porcentaje de HP' })
+  const key = page.getByRole('button', { name: 'F2', exact: true }).first()
+  const secondary = page.getByRole('button', {
+    name: 'Importar y usar nndsk-ro-proton',
+    exact: true,
+  })
+  const select = page.locator('button[aria-haspopup="listbox"]').first()
+  const readings = []
+  for (const [name, locator] of [
+    ['input', field],
+    ['key', key],
+    ['secondary', secondary],
+    ['select', select],
+  ]) {
+    await page.mouse.move(width - 1, height - 1)
+    const read = () =>
+      locator.evaluate((element) => {
+        const css = getComputedStyle(element)
+        const root = getComputedStyle(document.documentElement)
+        const rgb = (name) =>
+          `rgb(${root.getPropertyValue(`--c-${name}`).trim().split(/\s+/).join(', ')})`
+        return {
+          border: css.borderTopColor,
+          outline: css.outlineColor,
+          outlineWidth: css.outlineWidth,
+          shadow: css.boxShadow,
+          line: rgb('line'),
+          strong: rgb('line-strong'),
+          accent: rgb('accent'),
+        }
+      })
+    const resting = await read()
+    await locator.hover()
+    await locator.evaluate((element) =>
+      Promise.all(
+        element.getAnimations().map((animation) => animation.finished),
+      ),
+    )
+    const hover = await read()
+    await locator.focus()
+    await page.keyboard.press('Tab')
+    await page.keyboard.press('Shift+Tab')
+    const focus = await read()
+    if (
+      resting.border !== resting.line ||
+      hover.border !== hover.strong ||
+      focus.outlineWidth !== '1px' ||
+      focus.outline !== focus.accent ||
+      focus.shadow !== 'none'
+    )
+      throw new Error(
+        `Quiet control failed: ${JSON.stringify({ name, resting, hover, focus })}`,
+      )
+    readings.push({ name, resting, hover, focus })
+  }
+  await page.mouse.move(width - 1, height - 1)
+  await page.evaluate(() => document.activeElement?.blur())
+  return readings
+}
+
+async function verifyDiagnosticTones(fault = false) {
+  const readings = await page
+    .getByRole('heading', { name: 'Avanzado', exact: true })
+    .evaluate((heading) => {
+      const panel = heading.closest('section')
+      const root = getComputedStyle(document.documentElement)
+      const rgb = (name) =>
+        `rgb(${root.getPropertyValue(`--c-${name}`).trim().split(/\s+/).join(', ')})`
+      const labels = [
+        'Runner ·',
+        'Compatibilidad ·',
+        'Audio ·',
+        'Entorno isolated ·',
+        'DXVK ·',
+        'Permisos input ·',
+        'Input de combate ·',
+      ]
+      const rows = labels.map((label) => {
+        const p = [...panel.querySelectorAll('p')].find((node) =>
+          node.textContent.startsWith(label),
+        )
+        return {
+          label: p?.textContent,
+          color: p
+            ? getComputedStyle(p.parentElement.firstElementChild)
+                .backgroundColor
+            : null,
+        }
+      })
+      return {
+        rows,
+        panel: getComputedStyle(panel).borderTopColor,
+        width: getComputedStyle(panel).borderTopWidth,
+        warn: rgb('warn'),
+        bad: rgb('bad'),
+        ok: rgb('ok'),
+      }
+    })
+  const tones = [
+    fault ? 'bad' : 'warn',
+    'warn',
+    'ok',
+    'warn',
+    'warn',
+    'ok',
+    'ok',
+  ]
+  if (
+    readings.rows.some((row, index) => row.color !== readings[tones[index]]) ||
+    readings.panel !== readings[fault ? 'bad' : 'warn'] ||
+    readings.width !== '2px'
+  )
+    throw new Error(`Diagnostic colors failed: ${JSON.stringify(readings)}`)
+  if (
+    (await page.getByRole('button', { name: 'Jugar', exact: true }).count()) !==
+      0 ||
+    !(await page
+      .getByRole('button', { name: 'Preparar entorno', exact: true })
+      .isEnabled())
+  )
+    throw new Error('Pending runtime changed action availability')
+  diagnosticChecks.push({
+    state: fault ? 'failed-runner' : 'pending-runtime',
+    ...readings,
+    launchAbsent: true,
+    setupEnabled: true,
+  })
 }
 
 async function auditBoxes() {
@@ -698,6 +922,7 @@ async function auditStateContrast() {
 
 await page.goto(`http://127.0.0.1:${port}/?fixture=standard`)
 await page.getByRole('button', { name: 'Editar TestRO' }).waitFor()
+if (!baseline) controlCheck = await verifyQuietControls()
 await capture('prep')
 if (!baseline) await verifySwitchContrast('off')
 await page.getByRole('button', { name: 'Editar TestRO' }).click()
@@ -927,6 +1152,20 @@ if (!baseline) {
     )
   railCheck.bottomActionsFixed = true
 }
+await page.goto(`http://127.0.0.1:${port}/?fixture=pending`)
+await page.getByText('DXVK · pendiente', { exact: true }).waitFor()
+if (!baseline) await verifyDiagnosticTones()
+await capture('prep-pending')
+await page.locator('[data-design-rail-scroll]').evaluate((element) => {
+  element.scrollTop = element.scrollHeight
+})
+await capture('prep-pending-scrolled')
+if (!baseline) {
+  await page.goto(`http://127.0.0.1:${port}/?fixture=pending&fault=runner`)
+  await page.getByText('DXVK · pendiente', { exact: true }).waitFor()
+  await verifyDiagnosticTones(true)
+}
+
 await page.goto(`http://127.0.0.1:${port}/?fixture=empty`)
 await page.getByText('Sin servidores — agrega uno con +').waitFor()
 await capture('prep-empty')
@@ -949,6 +1188,8 @@ fs.writeFileSync(
       selectCheck,
       disclosureCheck,
       railCheck,
+      controlCheck,
+      diagnosticChecks,
     },
     null,
     2,

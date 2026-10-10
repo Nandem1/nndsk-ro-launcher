@@ -188,7 +188,7 @@ export function AutobuffRulesEditor({
             {rules.map((rule) => (
               <div
                 key={rule.id}
-                className="group grid grid-cols-[16px_minmax(0,1fr)_68px_84px_80px_20px] items-center gap-1.5 border-t border-line px-2 py-1 transition-colors hover:bg-panel-raised"
+                className="group grid grid-cols-[16px_minmax(0,1fr)_68px_84px_80px_20px] items-center gap-1.5 px-2 py-1 transition-colors hover:bg-panel-raised"
               >
                 <Checkbox
                   checked={rule.enabled}
@@ -203,7 +203,7 @@ export function AutobuffRulesEditor({
                   onChange={(event) =>
                     updateRule(rule.id, { label: event.target.value })
                   }
-                  className="min-w-0 rounded-inline border border-line-strong bg-field px-1.5 py-1 text-caption font-medium text-ink outline-none transition-colors hover:bg-panel-raised focus:border-accent/25 focus:bg-field "
+                  className="min-w-0 rounded-inline border border-line bg-field px-1.5 py-1 text-caption font-medium text-ink outline-none transition-colors hover:border-line-strong hover:bg-panel-raised focus:bg-field "
                 />
                 <DarkSelect
                   size="sm"
@@ -229,7 +229,7 @@ export function AutobuffRulesEditor({
                         ),
                       })
                     }
-                    className="font-mono min-w-0 flex-1 rounded-inline border border-line-strong bg-field px-1 py-1 text-right text-caption text-ink outline-none transition-colors hover:bg-panel-raised focus:border-accent/25 focus:bg-field [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
+                    className="font-mono min-w-0 flex-1 rounded-inline border border-line bg-field px-1 py-1 text-right text-caption text-ink outline-none transition-colors hover:border-line-strong hover:bg-panel-raised focus:bg-field [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
                     aria-label={`Cooldown de ${rule.label} en ms`}
                   />
                   <span className="font-mono tabular-nums text-micro text-muted">
@@ -248,7 +248,7 @@ export function AutobuffRulesEditor({
                       priority: Math.max(0, Number(event.target.value) || 0),
                     })
                   }
-                  className="font-mono min-w-0 rounded-inline border border-line-strong bg-field px-1 py-1 text-center text-caption text-ink outline-none transition-colors hover:bg-panel-raised focus:border-accent/25 focus:bg-field [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
+                  className="font-mono min-w-0 rounded-inline border border-line bg-field px-1 py-1 text-center text-caption text-ink outline-none transition-colors hover:border-line-strong hover:bg-panel-raised focus:bg-field [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
                   aria-label={`Prioridad de ${rule.label}`}
                 />
                 <button

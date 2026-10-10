@@ -30,7 +30,7 @@ export function ToolRow({
   secondaryDanger,
 }: ToolRowProps) {
   const actionClass =
-    'text-xs px-2.5 py-1 rounded-control-compact border border-line text-ink hover:border-muted hover:text-ink hover:bg-panel-raised focus-visible:outline focus-visible:outline-accent transition-colors shrink-0 idle-control disabled:cursor-not-allowed'
+    'text-xs px-2.5 py-1 rounded-control-compact border border-line text-ink hover:border-line-strong hover:text-ink hover:bg-panel-raised focus-visible:outline focus-visible:outline-accent transition-colors shrink-0 idle-control disabled:cursor-not-allowed'
 
   const secondaryClass = secondaryDanger
     ? `${actionClass} hover:border-bad/50 hover:text-bad hover:bg-panel-raised`

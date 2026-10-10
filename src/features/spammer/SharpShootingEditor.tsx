@@ -1,4 +1,4 @@
-import { ChevronDown, Crosshair } from 'lucide-react'
+import { ChevronDown } from 'lucide-react'
 import { useState } from 'react'
 import type { ShiftModeConfig } from '../../shared/types'
 import { ToggleSwitch } from '../../shared/ui/ToggleSwitch'
@@ -37,7 +37,6 @@ export function SharpShootingEditor({
         className="w-full flex items-center justify-between gap-2 py-2 text-left"
       >
         <span className="flex items-center gap-1.5 micro-label">
-          <Crosshair className="w-3 h-3 shrink-0" aria-hidden />
           Sharp Shooting / Focused Arrow Strike
           {shiftMode.enabled && (
             <span className="rounded-inline bg-panel px-1 text-micro font-semibold text-special normal-case tracking-normal">
@@ -67,7 +66,7 @@ export function SharpShootingEditor({
           </div>
 
           {shiftMode.enabled && (
-            <div className="space-y-1.5 border-t border-line pt-2">
+            <div className="space-y-1 pt-2">
               <span className="micro-label">Triggers con Shift</span>
               {spammerKeys.length === 0 ? (
                 <p className="text-caption text-muted">
@@ -90,7 +89,7 @@ export function SharpShootingEditor({
                         className={`font-mono tabular-nums min-w-8 rounded-control-compact border px-2 py-1 text-caption font-semibold transition-colors idle-control ${
                           selected
                             ? 'border-accent bg-accent text-on-accent'
-                            : 'border-line bg-field text-muted hover:border-muted hover:text-ink'
+                            : 'border-line bg-field text-muted hover:border-line-strong hover:text-ink'
                         }`}
                       >
                         {key}

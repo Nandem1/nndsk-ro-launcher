@@ -39,7 +39,7 @@ export function SpammerDelayControl({
   )
 
   return (
-    <div className="flex items-center gap-2 border-t border-line pt-2">
+    <div className="flex items-center gap-2 min-h-6 pt-2">
       <span className="micro-label shrink-0">Delay</span>
       <Input
         variant="inline"

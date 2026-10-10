@@ -34,13 +34,13 @@ export function Checkbox({
       disabled={disabled}
       onClick={() => onChange(!checked)}
       className={`idle-control flex h-4 w-4 shrink-0 items-center justify-center rounded-inline border transition-colors duration-150
-        focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed
+        focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent disabled:cursor-not-allowed
         ${
           checked
             ? tone
               ? CHECKED_CLASSES[tone]
               : 'border-accent bg-field text-accent'
-            : 'border-line-strong bg-field text-transparent hover:border-muted'
+            : 'border-line bg-field text-transparent hover:border-line-strong'
         }`}
     >
       <Check className="h-3 w-3" strokeWidth={3} aria-hidden />

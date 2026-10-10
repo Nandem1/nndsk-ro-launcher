@@ -17,15 +17,15 @@ export function resolveToolTone(
 }
 
 const TONE_CLASSES: Record<PanelTone, string> = {
-  neutral: 'border-t-line-strong',
-  idle: 'border-t-muted panel-idle',
-  success: 'border-t-ok',
-  warning: 'border-t-warn',
-  danger: 'border-t-bad',
-  ok: 'border-t-ok',
-  warn: 'border-t-warn',
-  bad: 'border-t-bad',
-  info: 'border-t-info',
+  neutral: 'border-t border-t-line-strong',
+  idle: 'border-t border-t-muted panel-idle',
+  success: 'border-t-2 border-t-ok',
+  warning: 'border-t-2 border-t-warn',
+  danger: 'border-t-2 border-t-bad',
+  ok: 'border-t-2 border-t-ok',
+  warn: 'border-t-2 border-t-warn',
+  bad: 'border-t-2 border-t-bad',
+  info: 'border-t-2 border-t-info',
 }
 
 interface PanelProps {
@@ -66,10 +66,10 @@ export function Panel({
 
   return (
     <section
-      className={`rounded-panel border-t-2 bg-panel flex flex-col min-h-0 transition-colors duration-150 ${TONE_CLASSES[effectiveTone]} ${className}`}
+      className={`rounded-panel bg-panel flex flex-col min-h-0 transition-colors duration-150 ${TONE_CLASSES[effectiveTone]} ${className}`}
     >
       <div
-        className={`flex items-center justify-between gap-2 border-b border-line shrink-0 ${headerPad}`}
+        className={`flex items-center justify-between gap-2 shrink-0 ${headerPad}`}
       >
         <div className="flex items-center gap-2 min-w-0">
           <h2

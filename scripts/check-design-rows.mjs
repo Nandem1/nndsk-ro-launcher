@@ -14,9 +14,64 @@ export function checkDesignRows(files) {
       true,
       ts.ScriptKind.TSX,
     )
+    const icons = new Set(['svg'])
+    for (const statement of source.statements) {
+      if (
+        ts.isImportDeclaration(statement) &&
+        statement.moduleSpecifier.text === 'lucide-react' &&
+        statement.importClause?.namedBindings &&
+        ts.isNamedImports(statement.importClause.namedBindings)
+      )
+        for (const element of statement.importClause.namedBindings.elements)
+          icons.add(element.name.text)
+    }
     const visit = (node) => {
       if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
         const tag = node.tagName.getText(source)
+        if (tag === 'Panel') {
+          const leading = node.attributes.properties.find(
+            (attribute) =>
+              ts.isJsxAttribute(attribute) &&
+              attribute.name.getText(source) === 'leading',
+          )
+          const inspectLeading = (part, functional = false) => {
+            const opening = ts.isJsxElement(part)
+              ? part.openingElement
+              : ts.isJsxSelfClosingElement(part)
+                ? part
+                : null
+            if (opening) {
+              const attributes = opening.attributes.properties.filter(
+                ts.isJsxAttribute,
+              )
+              const named = attributes.some((attribute) =>
+                ['aria-label', 'aria-labelledby', 'label'].includes(
+                  attribute.name.getText(source),
+                ),
+              )
+              const control = ['button', 'Button', 'IconButton'].includes(
+                opening.tagName.getText(source),
+              )
+              const text =
+                ts.isJsxElement(part) &&
+                part.children.some(
+                  (child) => ts.isJsxText(child) && child.text.trim(),
+                )
+              functional ||= named || (control && text)
+              if (icons.has(opening.tagName.getText(source)) && !functional) {
+                const { line } = source.getLineAndCharacterOfPosition(
+                  opening.getStart(source),
+                )
+                console.error(
+                  `${file}:${line + 1}: decorative icon in Panel leading — keep only named functional controls or status indicators`,
+                )
+                violations++
+              }
+            }
+            ts.forEachChild(part, (child) => inspectLeading(child, functional))
+          }
+          if (leading?.initializer) inspectLeading(leading.initializer)
+        }
         if (['input', 'select'].includes(tag)) {
           const { line } = source.getLineAndCharacterOfPosition(
             node.getStart(source),

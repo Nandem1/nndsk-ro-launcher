@@ -1,4 +1,3 @@
-import { Sparkles } from 'lucide-react'
 import { useUiModeStore } from '../../app/uiMode.store'
 import { Panel, resolveToolTone } from '../../shared/ui/Panel'
 import { ToggleSwitch } from '../../shared/ui/ToggleSwitch'
@@ -42,7 +41,6 @@ export function AutobuffPanel() {
       size={hero ? 'hero' : 'compact'}
       tone={tone}
       className="h-full w-full"
-      leading={<Sparkles className="w-3 h-3 text-muted shrink-0" aria-hidden />}
     >
       <div className="flex min-h-0 flex-1 flex-col gap-2">
         <div className="flex shrink-0 items-start justify-between gap-2">

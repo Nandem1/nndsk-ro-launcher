@@ -31,7 +31,7 @@ function luminance(rgb) {
 }
 
 const pairs = ['surface', 'panel'].flatMap((background) =>
-  ['muted', 'ok', 'bad', 'info', 'warn', 'accent'].map((foreground) => [
+  ['muted', 'ink', 'ok', 'bad', 'info', 'warn', 'accent'].map((foreground) => [
     foreground,
     background,
     4.5,
@@ -49,6 +49,19 @@ for (const surface of ['surface', 'panel', 'modal', 'field']) {
   pairs.push(['muted', surface, 4.5])
 }
 let failed = false
+for (const name of [
+  'surface',
+  'panel',
+  'panel-raised',
+  'field',
+  'modal',
+  'line',
+  'line-strong',
+]) {
+  const spread = Math.max(...channels[name]) - Math.min(...channels[name])
+  console.log(`${name} neutral spread: ${spread}`)
+  if (spread > 6) failed = true
+}
 for (const [foreground, background, minimum] of pairs) {
   const a = luminance(channels[foreground])
   const b = luminance(channels[background])
@@ -58,7 +71,7 @@ for (const [foreground, background, minimum] of pairs) {
 }
 if (failed) {
   console.error(
-    'Design contrast failed: text needs 4.5:1; switch boundaries and knobs need 3:1',
+    'Design contrast/neutrality failed: neutral RGB spread needs ≤6; text needs 4.5:1; switch boundaries and knobs need 3:1',
   )
   process.exitCode = 1
 }

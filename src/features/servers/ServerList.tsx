@@ -74,11 +74,11 @@ export function ServerList() {
           </p>
         )}
 
-        <div className="flex flex-col gap-0.5 -mx-1">
+        <div className="flex flex-col gap-1 -mx-1">
           {servers.map((server) => (
             <div
               key={server.id}
-              className={`flex items-center gap-1 px-2 border-t border-line border-l-[3px] transition-colors group
+              className={`flex items-center gap-1 px-2 border-l-[3px] transition-colors group
                 ${selectedId === server.id ? 'border-l-accent' : 'hover:bg-panel-raised border-l-transparent'}`}
             >
               <label className="min-w-0 flex-1 flex items-center gap-3 py-2.5 cursor-pointer">

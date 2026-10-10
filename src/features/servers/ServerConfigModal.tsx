@@ -91,8 +91,8 @@ function ExecutablePicker({
           type="button"
           onClick={onPick}
           disabled={busy}
-          className="min-w-0 flex-1 flex items-center justify-between gap-3 bg-field border border-line-strong
-            rounded-control px-3 py-2.5 text-sm text-left hover:border-muted focus-visible:outline focus-visible:outline-accent transition-colors
+          className="min-w-0 flex-1 flex items-center justify-between gap-3 bg-field border border-line
+            rounded-control px-3 py-2.5 text-sm text-left hover:border-line-strong focus-visible:outline focus-visible:outline-accent transition-colors
             idle-control disabled:cursor-wait"
         >
           <span className={path ? 'font-mono text-ink truncate' : 'text-muted'}>
@@ -143,8 +143,8 @@ function ArgEditor({
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
         spellCheck={false}
-        className="resize-y bg-field border border-line-strong rounded-control px-3 py-2 text-detail leading-relaxed
-          font-mono text-ink placeholder:text-muted focus:outline-none focus:border-accent/60 "
+        className="resize-y bg-field border border-line rounded-control px-3 py-2 text-detail leading-relaxed
+          font-mono text-ink placeholder:text-muted hover:border-line-strong focus:outline-none "
       />
     </label>
   )

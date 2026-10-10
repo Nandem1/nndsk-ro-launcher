@@ -44,7 +44,7 @@ export function IngameRail() {
   }
 
   return (
-    <section className="h-full rounded-panel border-t-2 border-line-strong bg-panel flex flex-col items-center py-3 gap-3">
+    <section className="h-full rounded-panel border-t border-line-strong bg-panel flex flex-col items-center py-3 gap-3">
       <div
         className="relative w-10 h-10 flex items-center justify-center"
         title={`${clients.length} cliente${clients.length === 1 ? '' : 's'} activo${clients.length === 1 ? '' : 's'}`}

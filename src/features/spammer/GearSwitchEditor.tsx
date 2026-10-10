@@ -1,6 +1,6 @@
 import { Input } from '../../shared/ui/Input'
-import { memo, useMemo, useState, type ReactNode } from 'react'
-import { ChevronDown, Shield, Swords, X } from 'lucide-react'
+import { memo, useMemo, useState } from 'react'
+import { ChevronDown, X } from 'lucide-react'
 import {
   GEAR_SWITCH_MAX_DELAY_MS,
   GEAR_SWITCH_MIN_DELAY_MS,
@@ -30,14 +30,12 @@ const GEAR_TONE_LABEL: Record<ChipTone, string> = {
 
 const GearKeySet = memo(function GearKeySet({
   label,
-  icon,
   tone,
   keys,
   disabled,
   onToggle,
 }: {
   label: string
-  icon: ReactNode
   tone: ChipTone
   keys: string[]
   disabled: boolean
@@ -57,7 +55,7 @@ const GearKeySet = memo(function GearKeySet({
       <span
         className={`flex w-10 shrink-0 items-center gap-1 micro-label ${GEAR_TONE_LABEL[tone]}`}
       >
-        {icon} {label}
+        {label}
       </span>
       <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
         {keys.length === 0 && (
@@ -127,7 +125,6 @@ export function GearSwitchEditor({
         className="w-full flex items-center justify-between gap-2 py-2 text-left"
       >
         <span className="flex items-center gap-1.5 micro-label">
-          <Swords className="w-3 h-3 shrink-0" aria-hidden />
           ATK / DEF Gear Switch
           {gear.enabled && (
             <span className="px-1 text-micro font-semibold text-ok normal-case tracking-normal">
@@ -157,7 +154,7 @@ export function GearSwitchEditor({
 
           {gear.enabled && (
             <>
-              <div className="flex items-center gap-2 border-t border-line pt-2">
+              <div className="flex items-center gap-2 min-h-6 pt-2">
                 <span className="shrink-0 micro-label">Agregar trigger</span>
                 <div className="min-w-0 flex-1">
                   <DarkSelect
@@ -177,16 +174,13 @@ export function GearSwitchEditor({
               </div>
 
               {gear.rules.length === 0 ? (
-                <p className="border-t border-line py-2 text-center text-caption text-muted">
+                <p className="py-2 text-center text-caption text-muted">
                   Agrega una tecla del spammer y define su equipo ATK / DEF.
                 </p>
               ) : (
                 <div className="space-y-2">
                   {gear.rules.map((rule) => (
-                    <div
-                      key={rule.trigger}
-                      className="space-y-1.5 border-t border-line py-2"
-                    >
+                    <div key={rule.trigger} className="space-y-1 py-2">
                       <div className="flex items-center justify-between gap-2">
                         <span className="micro-label">
                           Trigger{' '}
@@ -209,9 +203,6 @@ export function GearSwitchEditor({
                       <GearKeySet
                         label="ATK"
                         tone="selection"
-                        icon={
-                          <Swords className="w-3 h-3 shrink-0" aria-hidden />
-                        }
                         keys={rule.atkKeys}
                         disabled={disabled}
                         onToggle={(key) =>
@@ -221,9 +212,6 @@ export function GearSwitchEditor({
                       <GearKeySet
                         label="DEF"
                         tone="info"
-                        icon={
-                          <Shield className="w-3 h-3 shrink-0" aria-hidden />
-                        }
                         keys={rule.defKeys}
                         disabled={disabled}
                         onToggle={(key) =>

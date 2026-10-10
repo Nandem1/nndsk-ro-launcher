@@ -13,15 +13,15 @@
 
 @layer base {
   :root {
-    --c-surface: 15 20 18;
-    --c-panel: 22 28 25;
-    --c-panel-raised: 27 36 32;
-    --c-field: 11 16 14;
-    --c-modal: 18 24 21;
-    --c-line: 42 51 46;
-    --c-line-strong: 58 70 63;
-    --c-ink: 232 238 232;
-    --c-muted: 138 150 141;
+    --c-surface: 14 15 17;
+    --c-panel: 21 22 24;
+    --c-panel-raised: 28 29 32;
+    --c-field: 10 11 12;
+    --c-modal: 18 19 21;
+    --c-line: 38 40 44;
+    --c-line-strong: 52 55 58;
+    --c-ink: 230 231 233;
+    --c-muted: 139 143 150;
     --c-accent: 255 92 57;
     --c-on-accent: 20 17 15;
     --c-warn: 226 163 58;
@@ -50,7 +50,7 @@
     --text-panel-title: 15px;
     --weight-panel-title: 600;
     --tracking-panel-title: 0;
-    --tracking-micro-label: 0.1em;
+    --tracking-micro-label: 0.06em;
     --leading-xs: 1rem;
     --leading-sm: 1.25rem;
     --leading-base: 1.5rem;
@@ -99,7 +99,7 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    @apply bg-line rounded-pill;
+    @apply bg-line-strong rounded-pill;
   }
 
   ::-webkit-scrollbar-thumb:hover {
@@ -120,7 +120,7 @@
   input[type='checkbox'],
   input[type='radio'] {
     appearance: none;
-    border: 1px solid rgb(var(--c-line-strong));
+    border: 1px solid rgb(var(--c-line));
     border-radius: var(--radius-control);
     background-color: rgb(var(--c-field));
   }
@@ -129,6 +129,11 @@
   input[type='radio']:checked {
     border-color: rgb(var(--c-accent));
     background-color: rgb(var(--c-accent));
+  }
+
+  input[type='checkbox']:not(:checked):not(:disabled):hover,
+  input[type='radio']:not(:checked):not(:disabled):hover {
+    border-color: rgb(var(--c-line-strong));
   }
 
   input[type='checkbox']:checked::after {
@@ -153,7 +158,7 @@
 
   input[type='checkbox']:focus-visible,
   input[type='radio']:focus-visible {
-    outline: 2px solid rgb(var(--c-accent));
+    outline: 1px solid rgb(var(--c-accent));
     outline-offset: 2px;
   }
 
@@ -206,8 +211,8 @@
     letter-spacing: var(--tracking-micro-label);
   }
 
-  /* Keep the line border, with a legible outer boundary: line/field alone
-     is only 1.472:1. Disabled is a color state, never inherited opacity. */
+  /* Line is a quiet inner separator; muted supplies the accessible outer
+     boundary. Disabled is a color state, never inherited opacity. */
   .idle-control:disabled,
   .idle-control:disabled:hover {
     @apply border border-line bg-field text-muted outline outline-1 outline-muted;
@@ -255,6 +260,11 @@
 }
 
 @layer utilities {
+  :is(button, input, textarea, summary):focus-visible:not(:disabled) {
+    outline: 1px solid rgb(var(--c-accent));
+    outline-offset: 2px;
+  }
+
   .font-mono {
     font-variant-numeric: tabular-nums;
   }

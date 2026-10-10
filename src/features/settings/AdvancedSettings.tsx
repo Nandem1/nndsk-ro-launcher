@@ -17,7 +17,6 @@ import type {
   BenchmarkRunSummary,
 } from '../../shared/types'
 import {
-  advancedHasIssue,
   benchmarksLabel,
   comparisonSummary,
   compatibilityLine,
@@ -25,8 +24,11 @@ import {
   dxvkHintFromDeps,
   formatFrametimeLine,
   resolveAudioDotStatus,
-  resolveDotStatus,
 } from './advanced.logic'
+import {
+  diagnosticDotStatus,
+  diagnosticPanelTone,
+} from './advanced.presentation'
 import { useCurrentAdvancedStatus } from './useSelectedRuntimeStatus'
 import { useSettingsStore } from './settings.store'
 
@@ -40,11 +42,8 @@ function StatusLine({
   hint?: string | null
 }) {
   return (
-    <div
-      className="min-w-0 border-t border-line first:border-t-0 pt-1"
-      title={hint ?? undefined}
-    >
-      <div className="flex items-center gap-2 min-w-0">
+    <div className="min-w-0 pt-1" title={hint ?? undefined}>
+      <div className="flex items-center gap-2 min-h-4 min-w-0">
         <StatusDot status={dotStatus} />
         <p className="text-detail font-sans text-muted min-w-0 break-words">
           <DataText>{label}</DataText>
@@ -282,8 +281,6 @@ export function AdvancedSettings() {
     ? 'Propio del servidor'
     : 'Predeterminado global'
 
-  const hasIssue = advancedHasIssue(advancedStatus)
-
   const audioDot = resolveAudioDotStatus(
     advancedStatus.audioOk,
     advancedStatus.audioWarning,
@@ -300,7 +297,9 @@ export function AdvancedSettings() {
   const lines = [
     {
       key: 'runner',
-      dot: resolveDotStatus(
+      dot: diagnosticDotStatus(
+        advancedStatus.checks,
+        'runner',
         advancedStatus.runnerOk,
         advancedStatus.runnerWarning,
       ),
@@ -313,7 +312,10 @@ export function AdvancedSettings() {
       ? [
           {
             key: 'compatibility',
-            dot: compatibilityStatusLine.dot,
+            dot:
+              advancedStatus.compatibility?.assessment.kind === 'incompatible'
+                ? ('error' as const)
+                : compatibilityStatusLine.dot,
             label: compatibilityStatusLine.label,
             hint: compatibilityStatusLine.hint,
           },
@@ -327,7 +329,9 @@ export function AdvancedSettings() {
     },
     {
       key: 'prefix',
-      dot: resolveDotStatus(
+      dot: diagnosticDotStatus(
+        advancedStatus.checks,
+        'prefix',
         advancedStatus.prefixOk,
         advancedStatus.prefixWarning,
       ),
@@ -340,13 +344,20 @@ export function AdvancedSettings() {
     },
     {
       key: 'dxvk',
-      dot: resolveDotStatus(advancedStatus.dxvkOk, advancedStatus.dxvkWarning),
+      dot: diagnosticDotStatus(
+        advancedStatus.checks,
+        'dxvk',
+        advancedStatus.dxvkOk,
+        advancedStatus.dxvkWarning,
+      ),
       label: advancedStatus.dxvk ? 'DXVK · instalado' : 'DXVK · pendiente',
       hint: dxvkHintFromDeps(advancedStatus) ?? advancedStatus.dxvkWarning,
     },
     {
       key: 'input-group',
-      dot: resolveDotStatus(
+      dot: diagnosticDotStatus(
+        advancedStatus.checks,
+        'input-group',
         advancedStatus.inputGroupOk,
         advancedStatus.inputGroupWarning,
       ),
@@ -359,19 +370,21 @@ export function AdvancedSettings() {
     },
     {
       key: 'observations',
-      dot: 'ok' as const,
+      dot: 'neutral' as const,
       label: observationsLabel(observationCount),
       hint: 'Registros locales de ejecución (sin subir a red)',
     },
     {
       key: 'benchmarks',
-      dot: 'ok' as const,
+      dot: 'neutral' as const,
       label: benchmarksLabel(benchmarkCount),
       hint: 'Medición A/B local opt-in; no altera el lanzamiento ni Gepard',
     },
     {
       key: 'uinput',
-      dot: resolveDotStatus(
+      dot: diagnosticDotStatus(
+        advancedStatus.checks,
+        'uinput',
         advancedStatus.uinputInputOk,
         advancedStatus.uinputInputWarning,
       ),
@@ -386,7 +399,7 @@ export function AdvancedSettings() {
     <Panel
       title="Avanzado"
       size="compact"
-      tone={hasIssue ? 'warn' : 'neutral'}
+      tone={diagnosticPanelTone(lines.map((line) => line.dot))}
       className="shrink-0"
     >
       <div className="space-y-1">
@@ -476,14 +489,14 @@ export function AdvancedSettings() {
                 />
                 <Input
                   variant="inline"
-                  className="font-mono tabular-nums w-24 bg-field border border-line-strong rounded-inline px-1 py-0.5"
+                  className="font-mono tabular-nums w-24 bg-field border border-line rounded-inline px-1 py-0.5"
                   value={sceneId}
                   onChange={(e) => setSceneId(e.target.value)}
                   placeholder="scene"
                 />
                 <Input
                   variant="inline"
-                  className="font-mono tabular-nums w-16 bg-field border border-line-strong rounded-inline px-1 py-0.5"
+                  className="font-mono tabular-nums w-16 bg-field border border-line rounded-inline px-1 py-0.5"
                   value={loadDescriptor}
                   onChange={(e) => setLoadDescriptor(e.target.value)}
                   placeholder="load"
@@ -491,14 +504,14 @@ export function AdvancedSettings() {
                 <Input
                   variant="inline"
                   type="number"
-                  className="font-mono w-14 bg-field border border-line-strong rounded-inline px-1 py-0.5"
+                  className="font-mono w-14 bg-field border border-line rounded-inline px-1 py-0.5"
                   value={width}
                   onChange={(e) => setWidth(Number(e.target.value))}
                 />
                 <Input
                   variant="inline"
                   type="number"
-                  className="font-mono w-14 bg-field border border-line-strong rounded-inline px-1 py-0.5"
+                  className="font-mono w-14 bg-field border border-line rounded-inline px-1 py-0.5"
                   value={height}
                   onChange={(e) => setHeight(Number(e.target.value))}
                 />
@@ -514,7 +527,7 @@ export function AdvancedSettings() {
                 <Input
                   variant="inline"
                   type="number"
-                  className="font-mono w-12 bg-field border border-line-strong rounded-inline px-1 py-0.5"
+                  className="font-mono w-12 bg-field border border-line rounded-inline px-1 py-0.5"
                   value={warmupSeconds}
                   onChange={(e) => setWarmupSeconds(Number(e.target.value))}
                   title="warmup s"
@@ -522,7 +535,7 @@ export function AdvancedSettings() {
                 <Input
                   variant="inline"
                   type="number"
-                  className="font-mono w-12 bg-field border border-line-strong rounded-inline px-1 py-0.5"
+                  className="font-mono w-12 bg-field border border-line rounded-inline px-1 py-0.5"
                   value={captureSeconds}
                   onChange={(e) => setCaptureSeconds(Number(e.target.value))}
                   title="capture s"
@@ -598,7 +611,7 @@ export function AdvancedSettings() {
                   {benchmarkRuns.map((run) => (
                     <div
                       key={run.runId}
-                      className="flex flex-wrap items-center gap-2 border-t border-line pt-1"
+                      className="flex flex-wrap items-center gap-2 pt-1"
                     >
                       <label className="flex items-center gap-0.5">
                         <Input

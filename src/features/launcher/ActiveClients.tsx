@@ -79,10 +79,7 @@ export function ActiveClients() {
     >
       <div className="flex flex-col gap-1">
         {clients.map((client, index) => (
-          <div
-            key={client.clientId}
-            className="flex items-center gap-2 border-t border-line py-2"
-          >
+          <div key={client.clientId} className="flex items-center gap-2 py-2">
             <StatusDot
               status={client.status === 'running' ? 'ok' : 'warning'}
               pulse={client.status !== 'stopping'}

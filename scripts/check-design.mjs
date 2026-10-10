@@ -58,7 +58,10 @@ for (const file of sources) {
 violations += checkDesignRows(
   sources.filter(
     (file) =>
-      targets.length || file.startsWith(path.join(root, 'src/features/')),
+      targets.length ||
+      ['src/features/', 'src/app/'].some((directory) =>
+        file.startsWith(path.join(root, directory)),
+      ),
   ),
 )
 if (violations) {

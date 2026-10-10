@@ -7,13 +7,13 @@ export type ButtonVariant =
 export type ButtonSize = 'xs' | 'sm' | 'md' | 'lg' | 'dialog' | 'dialog-sm'
 
 const BASE_CLASSES =
-  'idle-control inline-flex items-center justify-center gap-1.5 rounded-control font-medium select-none transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:pointer-events-none'
+  'idle-control inline-flex items-center justify-center gap-1.5 rounded-control font-medium select-none transition-colors duration-150 focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent disabled:pointer-events-none'
 
 const VARIANT_CLASSES: Record<ButtonVariant, string> = {
   primary:
     'border border-accent bg-accent text-on-accent font-semibold hover:border-ink',
   secondary:
-    'border border-line-strong bg-transparent text-ink hover:border-muted hover:bg-panel-raised',
+    'border border-line bg-transparent text-ink hover:border-line-strong hover:bg-panel-raised',
   ghost:
     'border border-transparent text-muted hover:text-ink hover:bg-panel-raised',
   danger:
@@ -22,7 +22,7 @@ const VARIANT_CLASSES: Record<ButtonVariant, string> = {
     'border border-ok/50 bg-transparent text-ok hover:bg-panel-raised hover:border-ok',
   solid: 'font-semibold',
   outline:
-    'border border-line-strong bg-transparent text-ink hover:border-muted hover:bg-panel-raised',
+    'border border-line bg-transparent text-ink hover:border-line-strong hover:bg-panel-raised',
 }
 
 const PRIMARY_TONE_CLASSES: Record<Tone, string> = {
@@ -65,7 +65,7 @@ export function buttonClasses(
   tone?: Tone,
 ): string {
   const base = ['solid', 'outline'].includes(variant)
-    ? 'idle-control flex-1 rounded-panel transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent'
+    ? 'idle-control flex-1 rounded-panel transition-colors duration-150 focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent'
     : BASE_CLASSES
   return `${base} ${variantClasses(variant, tone)} ${SIZE_CLASSES[size]} ${block ? 'w-full' : ''}`
 }

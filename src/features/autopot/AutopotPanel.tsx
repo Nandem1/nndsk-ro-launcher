@@ -1,6 +1,6 @@
 import { Input } from '../../shared/ui/Input'
 import { useEffect, useRef, useState } from 'react'
-import { FlaskConical, Search } from 'lucide-react'
+import { Search } from 'lucide-react'
 import { DEFAULT_AUTOPOT_CONFIG, POT_KEYS } from '../../shared/constants'
 
 const POT_KEY_OPTIONS = POT_KEYS.map((key) => ({ value: key, label: key }))
@@ -40,7 +40,7 @@ function StatBar({
   const flashClass = flash ? 'animate-pulse-dot' : ''
 
   return (
-    <div className={`space-y-0.5 border-t border-line pt-2 ${flashClass}`}>
+    <div className={`space-y-1 pt-2 ${flashClass}`}>
       <div className="flex justify-between text-caption text-muted">
         <span className="micro-label">{tone === 'bad' ? 'HP' : 'SP'}</span>
         <span className="font-mono">
@@ -166,9 +166,6 @@ export function AutopotPanel() {
       size={hero ? 'hero' : 'compact'}
       tone={tone}
       className="h-full"
-      leading={
-        <FlaskConical className="w-3 h-3 text-muted shrink-0" aria-hidden />
-      }
     >
       <div className="flex-1 min-h-0 overflow-y-auto space-y-2 pr-0.5">
         <div className="flex items-start justify-between gap-2">
@@ -211,7 +208,7 @@ export function AutopotPanel() {
           />
         </div>
 
-        <div className="flex items-center gap-2 border-t border-line pt-2">
+        <div className="flex items-center gap-2 min-h-6 pt-2">
           <span className="micro-label shrink-0">Lectura</span>
           <Input
             variant="inline"
@@ -281,7 +278,7 @@ export function AutopotPanel() {
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-1.5 border-t border-line pt-2">
+        <div className="grid grid-cols-2 gap-2 pt-2">
           <div className="space-y-1">
             <span className="micro-label">HP</span>
             <div className="flex gap-1">
@@ -310,7 +307,7 @@ export function AutopotPanel() {
                         DEFAULT_AUTOPOT_CONFIG.hpPercent,
                     })
                   }
-                  className="font-mono input-no-spinner w-full rounded-control-compact border border-line-strong bg-field py-1 pl-1.5 pr-4 text-center text-detail text-ink outline-none transition-colors focus:border-accent/60 idle-control"
+                  className="font-mono input-no-spinner w-full rounded-control-compact border border-line bg-field py-1 pl-1.5 pr-4 text-center text-detail text-ink outline-none transition-colors hover:border-line-strong idle-control"
                 />
                 <span className="font-mono tabular-nums pointer-events-none absolute inset-y-0 right-1.5 flex items-center text-micro text-muted">
                   %
@@ -346,7 +343,7 @@ export function AutopotPanel() {
                         DEFAULT_AUTOPOT_CONFIG.spPercent,
                     })
                   }
-                  className="font-mono input-no-spinner w-full rounded-control-compact border border-line-strong bg-field py-1 pl-1.5 pr-4 text-center text-detail text-ink outline-none transition-colors focus:border-accent/60 idle-control"
+                  className="font-mono input-no-spinner w-full rounded-control-compact border border-line bg-field py-1 pl-1.5 pr-4 text-center text-detail text-ink outline-none transition-colors hover:border-line-strong idle-control"
                 />
                 <span className="font-mono tabular-nums pointer-events-none absolute inset-y-0 right-1.5 flex items-center text-micro text-muted">
                   %
