@@ -17,6 +17,15 @@ export function checkDesignRows(files) {
     const visit = (node) => {
       if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
         const tag = node.tagName.getText(source)
+        if (['input', 'select'].includes(tag)) {
+          const { line } = source.getLineAndCharacterOfPosition(
+            node.getStart(source),
+          )
+          console.error(
+            `${file}:${line + 1}: native ${tag} in feature — use Input or DarkSelect`,
+          )
+          violations++
+        }
         if (['div', 'label', 'p'].includes(tag)) {
           const attributes = node.attributes.properties.filter(
             ts.isJsxAttribute,

@@ -74,10 +74,9 @@ export function LaunchFieldsModal({
         <div className="mt-4 flex flex-col gap-3">
           {fields.map((field, index) => (
             <label key={field} className="flex flex-col gap-1.5">
-              <span className="text-detail uppercase tracking-wider text-muted">
-                {field}
-              </span>
+              <span className="text-detail font-sans text-muted">{field}</span>
               <Input
+                className="font-mono tabular-nums"
                 autoFocus={index === 0}
                 type={showValues ? 'text' : 'password'}
                 autoComplete="off"

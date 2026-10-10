@@ -77,7 +77,7 @@ export function LaunchButton() {
         <div className="space-y-1">
           <div className="flex justify-between gap-2 text-caption text-muted">
             <span className="truncate">{setupProgress.step}</span>
-            <span className="shrink-0 tabular-nums">
+            <span className="font-mono shrink-0 tabular-nums">
               {setupProgress.percent}%
             </span>
           </div>

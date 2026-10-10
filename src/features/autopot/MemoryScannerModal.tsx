@@ -359,7 +359,7 @@ export function MemoryScannerModal({
 
         {step === 'initial' || step === 'refine' ? (
           <label className="mt-4 flex flex-col gap-1.5">
-            <span className="text-detail uppercase tracking-wider text-muted">
+            <span className="text-detail font-sans text-muted">
               {step === 'initial' ? 'HP actual' : 'Nuevo HP actual'}
             </span>
             <Input
@@ -372,12 +372,12 @@ export function MemoryScannerModal({
               disabled={busy}
               onChange={(event) => setHp(event.target.value)}
               placeholder={step === 'initial' ? 'Ej. 13619' : 'Ej. 13430'}
-              className="font-mono input-no-spinner disabled:opacity-50"
+              className="font-mono input-no-spinner idle-control"
             />
           </label>
         ) : step === 'name' ? (
           <label className="mt-4 flex flex-col gap-1.5">
-            <span className="text-detail uppercase tracking-wider text-muted">
+            <span className="text-detail font-sans text-muted">
               Nombre exacto
             </span>
             <Input
@@ -389,12 +389,12 @@ export function MemoryScannerModal({
               onChange={(event) => setName(event.target.value)}
               placeholder="Ej. NombrePJ"
               spellCheck={false}
-              className="disabled:opacity-50"
+              className="font-mono tabular-nums idle-control"
             />
           </label>
         ) : step === 'level' || step === 'levelRefine' ? (
           <label className="mt-4 flex flex-col gap-1.5">
-            <span className="text-detail uppercase tracking-wider text-muted">
+            <span className="text-detail font-sans text-muted">
               {step === 'level' ? 'Nivel actual' : 'Nuevo nivel'}
             </span>
             <Input
@@ -407,12 +407,12 @@ export function MemoryScannerModal({
               disabled={busy}
               onChange={(event) => setLevel(event.target.value)}
               placeholder={step === 'level' ? 'Ej. 99' : 'Ej. 100'}
-              className="font-mono input-no-spinner disabled:opacity-50"
+              className="font-mono input-no-spinner idle-control"
             />
           </label>
         ) : step === 'map' || step === 'mapRefine' ? (
           <label className="mt-4 flex flex-col gap-1.5">
-            <span className="text-detail uppercase tracking-wider text-muted">
+            <span className="text-detail font-sans text-muted">
               {step === 'map' ? 'Mapa actual' : 'Nuevo mapa'}
             </span>
             <Input
@@ -424,7 +424,7 @@ export function MemoryScannerModal({
               onChange={(event) => setMapName(event.target.value)}
               placeholder={step === 'map' ? 'Ej. prontera' : 'Ej. izlude'}
               spellCheck={false}
-              className="disabled:opacity-50"
+              className="font-mono tabular-nums idle-control"
             />
           </label>
         ) : step === 'confirmed' && resolvedHpBase ? (
@@ -484,7 +484,7 @@ export function MemoryScannerModal({
         ) : null}
 
         {busy && (
-          <p className="mt-3 text-detail text-warn animate-pulse-dot">
+          <p className="mt-3 border-l-[3px] border-warn pl-3 text-detail text-muted animate-pulse-dot">
             {busyLabel}
           </p>
         )}
@@ -525,7 +525,6 @@ export function MemoryScannerModal({
                 }}
                 variant="outline"
                 size="dialog-sm"
-                className="disabled:opacity-40"
               >
                 {existingHpBase && !confirmed
                   ? 'Recalibrar HP'
@@ -548,7 +547,6 @@ export function MemoryScannerModal({
                 onClick={skipPresence}
                 variant="outline"
                 size="dialog-sm"
-                className="disabled:opacity-40"
               >
                 Saltar
               </Button>
@@ -576,7 +574,6 @@ export function MemoryScannerModal({
                 onClick={skipPresence}
                 variant="outline"
                 size="dialog-sm"
-                className="disabled:opacity-40"
               >
                 Saltar
               </Button>

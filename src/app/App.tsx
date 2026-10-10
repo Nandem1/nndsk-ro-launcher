@@ -112,7 +112,7 @@ export function App() {
 
           <ToolViewTabs />
 
-          <div className="flex-1 min-h-0">
+          <div data-design-tool-body className="flex-1 min-h-0">
             {toolView === 'combat' ? (
               <div className="grid h-full grid-cols-2 gap-2.5 items-stretch ">
                 <AutopotPanel />
@@ -125,7 +125,10 @@ export function App() {
             )}
           </div>
 
-          <div className="shrink-0 flex h-44">
+          <div
+            data-design-logs
+            className="shrink-0 flex h-[clamp(11rem,calc(11rem+25vh-205px),20rem)]"
+          >
             <UnifiedLogPanel />
           </div>
         </div>

@@ -33,11 +33,7 @@ const STRATEGY_OPTIONS = [
 ]
 
 function FieldLabel({ children }: { children: string }) {
-  return (
-    <span className="text-detail text-muted uppercase tracking-wider">
-      {children}
-    </span>
-  )
+  return <span className="text-detail font-sans text-muted">{children}</span>
 }
 
 function TextInput({
@@ -97,7 +93,7 @@ function ExecutablePicker({
           disabled={busy}
           className="min-w-0 flex-1 flex items-center justify-between gap-3 bg-field border border-line-strong
             rounded-control px-3 py-2.5 text-sm text-left hover:border-muted focus-visible:outline focus-visible:outline-accent transition-colors
-            disabled:opacity-50 disabled:cursor-wait"
+            idle-control disabled:cursor-wait"
         >
           <span className={path ? 'font-mono text-ink truncate' : 'text-muted'}>
             {busy ? 'Abriendo...' : path ? basename(path) : placeholder}
@@ -275,9 +271,7 @@ export function ServerConfigModal({ mode, server, onSave, onClose }: Props) {
           className="min-h-0 overflow-y-auto px-6 py-4 flex flex-col gap-5"
         >
           <section className="flex flex-col gap-3">
-            <h4 className="text-detail font-semibold text-muted uppercase tracking-wider">
-              Cliente
-            </h4>
+            <h4 className="text-detail font-sans text-muted">Cliente</h4>
             <label className="flex flex-col gap-1.5">
               <FieldLabel>Nombre</FieldLabel>
               <TextInput
@@ -306,9 +300,7 @@ export function ServerConfigModal({ mode, server, onSave, onClose }: Props) {
           </section>
 
           <section className="flex flex-col gap-3 border-t border-line pt-4">
-            <h4 className="text-detail font-semibold text-muted uppercase tracking-wider">
-              Entorno
-            </h4>
+            <h4 className="text-detail font-sans text-muted">Entorno</h4>
             <div className="border-t border-line py-2.5">
               <p className="text-xs text-ink">
                 Entorno Ragnarok administrado automáticamente
@@ -334,9 +326,7 @@ export function ServerConfigModal({ mode, server, onSave, onClose }: Props) {
           </section>
 
           <section className="flex flex-col gap-3 border-t border-line pt-4">
-            <h4 className="text-detail font-semibold text-muted uppercase tracking-wider">
-              Lanzamiento
-            </h4>
+            <h4 className="text-detail font-sans text-muted">Lanzamiento</h4>
             <div className="flex flex-col gap-1.5">
               <FieldLabel>Estrategia</FieldLabel>
               <DarkSelect
@@ -347,7 +337,7 @@ export function ServerConfigModal({ mode, server, onSave, onClose }: Props) {
                 }
               />
               {draft.strategy === 'patcher' && !draft.patcherPath && (
-                <span className="text-caption text-warn">
+                <span className="border-l-[3px] border-warn pl-3 text-caption text-muted">
                   Esta estrategia requiere seleccionar un patcher.
                 </span>
               )}
@@ -374,7 +364,8 @@ export function ServerConfigModal({ mode, server, onSave, onClose }: Props) {
               valores secretos en esta configuración.
             </p>
             <label className="flex items-start gap-2 border-t border-line py-2.5">
-              <input
+              <Input
+                variant="inline"
                 type="checkbox"
                 checked={draft.requireWebview2}
                 onChange={(event) =>

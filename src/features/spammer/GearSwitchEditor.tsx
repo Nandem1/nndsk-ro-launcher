@@ -1,3 +1,4 @@
+import { Input } from '../../shared/ui/Input'
 import { memo, useMemo, useState, type ReactNode } from 'react'
 import { ChevronDown, Shield, Swords, X } from 'lucide-react'
 import {
@@ -54,7 +55,7 @@ const GearKeySet = memo(function GearKeySet({
   return (
     <div className="flex items-center gap-2">
       <span
-        className={`flex w-10 shrink-0 items-center gap-1 text-caption font-semibold uppercase tracking-wide ${GEAR_TONE_LABEL[tone]}`}
+        className={`flex w-10 shrink-0 items-center gap-1 micro-label ${GEAR_TONE_LABEL[tone]}`}
       >
         {icon} {label}
       </span>
@@ -68,11 +69,11 @@ const GearKeySet = memo(function GearKeySet({
             type="button"
             disabled={disabled}
             onClick={() => onToggle(key)}
-            className={`inline-flex items-center gap-0.5 rounded-control-compact font-mono border px-1.5 py-0.5 text-caption font-semibold transition-colors disabled:opacity-40 ${CHIP_ACTIVE_CLASSES[tone]}`}
+            className={`inline-flex items-center gap-0.5 rounded-control-compact font-mono border px-1.5 py-0.5 text-caption font-semibold transition-colors idle-control ${CHIP_ACTIVE_CLASSES[tone]}`}
             aria-label={`Quitar tecla ${key}`}
           >
             {key}
-            <X className="h-2.5 w-2.5 opacity-70" />
+            <X className="h-2.5 w-2.5" />
           </button>
         ))}
         <div className="w-[68px] shrink-0">
@@ -125,7 +126,7 @@ export function GearSwitchEditor({
         onClick={() => setOpen((value) => !value)}
         className="w-full flex items-center justify-between gap-2 py-2 text-left"
       >
-        <span className="flex items-center gap-1.5 text-caption uppercase tracking-wide text-muted">
+        <span className="flex items-center gap-1.5 micro-label">
           <Swords className="w-3 h-3 shrink-0" aria-hidden />
           ATK / DEF Gear Switch
           {gear.enabled && (
@@ -157,9 +158,7 @@ export function GearSwitchEditor({
           {gear.enabled && (
             <>
               <div className="flex items-center gap-2 border-t border-line pt-2">
-                <span className="shrink-0 text-caption uppercase tracking-wide text-muted">
-                  Agregar trigger
-                </span>
+                <span className="shrink-0 micro-label">Agregar trigger</span>
                 <div className="min-w-0 flex-1">
                   <DarkSelect
                     size="sm"
@@ -189,7 +188,7 @@ export function GearSwitchEditor({
                       className="space-y-1.5 border-t border-line py-2"
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-caption uppercase tracking-wide text-muted">
+                        <span className="micro-label">
                           Trigger{' '}
                           <span className="ml-1 font-mono px-1.5 py-0.5 font-semibold text-ink">
                             {rule.trigger}
@@ -201,7 +200,7 @@ export function GearSwitchEditor({
                           onClick={() =>
                             onChange(removeGearRule(gear, rule.trigger))
                           }
-                          className="rounded-inline p-0.5 text-muted transition-colors hover:bg-panel-raised hover:text-bad disabled:opacity-40"
+                          className="rounded-inline p-0.5 text-muted transition-colors hover:bg-panel-raised hover:text-bad idle-control"
                           aria-label={`Eliminar regla ${rule.trigger}`}
                         >
                           <X className="h-3 w-3" />
@@ -237,10 +236,9 @@ export function GearSwitchEditor({
               )}
 
               <div className="flex items-center gap-2">
-                <span className="text-caption text-muted uppercase tracking-wide shrink-0">
-                  Switch
-                </span>
-                <input
+                <span className="micro-label shrink-0">Switch</span>
+                <Input
+                  variant="inline"
                   type="range"
                   min={GEAR_SWITCH_MIN_DELAY_MS}
                   max={GEAR_SWITCH_MAX_DELAY_MS}
@@ -250,7 +248,7 @@ export function GearSwitchEditor({
                   onChange={(event) =>
                     patch({ switchDelayMs: Number(event.target.value) })
                   }
-                  className="font-mono flex-1 disabled:opacity-50"
+                  className="font-mono flex-1 idle-control"
                 />
                 <span className="text-caption font-mono text-muted w-10 text-right shrink-0">
                   {gear.switchDelayMs}ms

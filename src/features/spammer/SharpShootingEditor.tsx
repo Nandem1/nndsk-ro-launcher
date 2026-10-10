@@ -36,7 +36,7 @@ export function SharpShootingEditor({
         onClick={() => setOpen((value) => !value)}
         className="w-full flex items-center justify-between gap-2 py-2 text-left"
       >
-        <span className="flex items-center gap-1.5 text-caption uppercase tracking-wide text-muted">
+        <span className="flex items-center gap-1.5 micro-label">
           <Crosshair className="w-3 h-3 shrink-0" aria-hidden />
           Sharp Shooting / Focused Arrow Strike
           {shiftMode.enabled && (
@@ -68,9 +68,7 @@ export function SharpShootingEditor({
 
           {shiftMode.enabled && (
             <div className="space-y-1.5 border-t border-line pt-2">
-              <span className="text-caption uppercase tracking-wide text-muted">
-                Triggers con Shift
-              </span>
+              <span className="micro-label">Triggers con Shift</span>
               {spammerKeys.length === 0 ? (
                 <p className="text-caption text-muted">
                   Selecciona una tecla en el spammer.
@@ -89,7 +87,7 @@ export function SharpShootingEditor({
                         onClick={() =>
                           onChange(toggleShiftModeTrigger(shiftMode, key))
                         }
-                        className={`min-w-8 rounded-control-compact border px-2 py-1 text-caption font-semibold transition-colors disabled:opacity-40 ${
+                        className={`font-mono tabular-nums min-w-8 rounded-control-compact border px-2 py-1 text-caption font-semibold transition-colors idle-control ${
                           selected
                             ? 'border-accent bg-accent text-on-accent'
                             : 'border-line bg-field text-muted hover:border-muted hover:text-ink'

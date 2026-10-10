@@ -2,12 +2,14 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useId,
   useRef,
   useState,
 } from 'react'
 import { createPortal } from 'react-dom'
 import { ChevronDown } from 'lucide-react'
 import type { Tone } from './types'
+import { DataText } from './DataText'
 
 interface Option {
   value: string
@@ -25,6 +27,9 @@ interface Props {
   variant?: 'default' | 'keycap'
   size?: 'sm' | 'md'
   tone?: Tone
+  role?: 'combobox'
+  'aria-label'?: string
+  'aria-labelledby'?: string
 }
 
 const SELECTED_CLASSES: Record<Tone, string> = {
@@ -80,8 +85,12 @@ export function DarkSelect({
   variant = keycap ? 'keycap' : 'default',
   size = compact ? 'sm' : 'md',
   tone,
+  role,
+  'aria-label': ariaLabel,
+  'aria-labelledby': ariaLabelledBy,
 }: Props) {
   const small = size === 'sm'
+  const menuId = useId()
   const [open, setOpen] = useState(false)
   const [activeIndex, setActiveIndex] = useState(-1)
   const [menuPosition, setMenuPosition] = useState<MenuPosition | null>(null)
@@ -189,6 +198,7 @@ export function DarkSelect({
           <ul
             ref={menuRef}
             role="listbox"
+            id={menuId}
             onKeyDown={handleMenuKeyDown}
             style={{
               position: 'fixed',
@@ -221,7 +231,7 @@ export function DarkSelect({
                           : 'text-ink hover:bg-panel-raised hover:text-ink'
                       }`}
                   >
-                    {option.label}
+                    <DataText>{option.label}</DataText>
                   </button>
                 </li>
               )
@@ -236,9 +246,13 @@ export function DarkSelect({
       <button
         ref={triggerRef}
         type="button"
+        role={role}
         disabled={disabled}
+        aria-label={ariaLabel}
+        aria-labelledby={ariaLabelledBy}
         aria-haspopup="listbox"
         aria-expanded={open}
+        aria-controls={open ? menuId : undefined}
         onClick={() => {
           if (open) setOpen(false)
           else openMenu()
@@ -249,16 +263,18 @@ export function DarkSelect({
             openMenu(event.key === 'ArrowUp' ? options.length - 1 : undefined)
           }
         }}
-        className={`w-full flex items-center justify-between border border-line-strong bg-field text-left focus:outline-none focus:border-accent
-          transition-colors duration-150 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed
+        className={`idle-control w-full flex items-center justify-between border border-line-strong bg-field text-left focus:outline-none focus:border-accent
+          transition-colors duration-150 cursor-pointer disabled:cursor-not-allowed
           ${
             variant === 'keycap'
-              ? 'font-mono font-medium text-ink hover:border-muted disabled:hover:border-line-strong'
-              : 'text-ink hover:border-muted disabled:hover:border-line-strong'
+              ? 'font-mono tabular-nums font-medium text-ink hover:border-muted'
+              : 'text-ink hover:border-muted'
           }
           ${small ? 'gap-1 rounded-control-compact px-2 py-1 text-detail' : 'gap-2 rounded-control px-3 py-2 text-sm'}`}
       >
-        <span className="truncate">{selected?.label ?? placeholder}</span>
+        <span className="truncate">
+          <DataText>{selected?.label ?? placeholder}</DataText>
+        </span>
         <ChevronDown
           className={`w-3.5 h-3.5 text-muted shrink-0 transition-colors duration-150 ${open ? 'rotate-180' : ''}`}
           aria-hidden

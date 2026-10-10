@@ -1,7 +1,7 @@
 {
   "viewport": {
-    "width": 1280,
-    "height": 820
+    "width": 1440,
+    "height": 900
   },
   "csp": "default-src 'self'; img-src 'self' asset: data:; style-src 'self' 'unsafe-inline'; connect-src ipc: http://ipc.localhost",
   "errors": [],
@@ -14,15 +14,15 @@
       "space": {
         "rail": {
           "width": 300,
-          "height": 623.5
+          "height": 703.5
         },
         "tools": {
-          "width": 944,
-          "height": 366.5
+          "width": 1104,
+          "height": 426.5
         },
         "logs": {
-          "width": 944,
-          "height": 176
+          "width": 1104,
+          "height": 196
         }
       }
     },
@@ -34,15 +34,15 @@
       "space": {
         "rail": {
           "width": 300,
-          "height": 623.5
+          "height": 703.5
         },
         "tools": {
-          "width": 944,
-          "height": 366.5
+          "width": 1104,
+          "height": 426.5
         },
         "logs": {
-          "width": 944,
-          "height": 176
+          "width": 1104,
+          "height": 196
         }
       }
     },
@@ -54,12 +54,12 @@
       "space": {
         "rail": null,
         "tools": {
-          "width": 1180,
-          "height": 501.5
+          "width": 1340,
+          "height": 561.5
         },
         "logs": {
-          "width": 1180,
-          "height": 176
+          "width": 1340,
+          "height": 196
         }
       }
     },
@@ -71,12 +71,12 @@
       "space": {
         "rail": null,
         "tools": {
-          "width": 1180,
-          "height": 501.5
+          "width": 1340,
+          "height": 561.5
         },
         "logs": {
-          "width": 1180,
-          "height": 176
+          "width": 1340,
+          "height": 196
         }
       }
     },
@@ -88,12 +88,12 @@
       "space": {
         "rail": null,
         "tools": {
-          "width": 1180,
-          "height": 501.5
+          "width": 1340,
+          "height": 561.5
         },
         "logs": {
-          "width": 1180,
-          "height": 176
+          "width": 1340,
+          "height": 196
         }
       }
     },
@@ -105,12 +105,12 @@
       "space": {
         "rail": null,
         "tools": {
-          "width": 1180,
-          "height": 501.5
+          "width": 1340,
+          "height": 561.5
         },
         "logs": {
-          "width": 1180,
-          "height": 176
+          "width": 1340,
+          "height": 196
         }
       }
     },
@@ -122,12 +122,12 @@
       "space": {
         "rail": null,
         "tools": {
-          "width": 1180,
-          "height": 501.5
+          "width": 1340,
+          "height": 561.5
         },
         "logs": {
-          "width": 1180,
-          "height": 176
+          "width": 1340,
+          "height": 196
         }
       }
     },
@@ -139,15 +139,15 @@
       "space": {
         "rail": {
           "width": 300,
-          "height": 623.5
+          "height": 703.5
         },
         "tools": {
-          "width": 944,
-          "height": 280.625
+          "width": 1104,
+          "height": 355.75
         },
         "logs": {
-          "width": 944,
-          "height": 176
+          "width": 1104,
+          "height": 196
         }
       }
     },
@@ -159,15 +159,15 @@
       "space": {
         "rail": {
           "width": 300,
-          "height": 623.5
+          "height": 703.5
         },
         "tools": {
-          "width": 944,
-          "height": 280.625
+          "width": 1104,
+          "height": 355.75
         },
         "logs": {
-          "width": 944,
-          "height": 176
+          "width": 1104,
+          "height": 196
         }
       }
     },
@@ -179,15 +179,15 @@
       "space": {
         "rail": {
           "width": 300,
-          "height": 623.5
+          "height": 703.5
         },
         "tools": {
-          "width": 944,
-          "height": 280.625
+          "width": 1104,
+          "height": 355.75
         },
         "logs": {
-          "width": 944,
-          "height": 176
+          "width": 1104,
+          "height": 196
         }
       }
     },
@@ -199,15 +199,15 @@
       "space": {
         "rail": {
           "width": 300,
-          "height": 623.5
+          "height": 703.5
         },
         "tools": {
-          "width": 944,
-          "height": 280.625
+          "width": 1104,
+          "height": 355.75
         },
         "logs": {
-          "width": 944,
-          "height": 176
+          "width": 1104,
+          "height": 196
         }
       }
     },
@@ -219,15 +219,15 @@
       "space": {
         "rail": {
           "width": 300,
-          "height": 623.5
+          "height": 703.5
         },
         "tools": {
-          "width": 944,
-          "height": 416
+          "width": 1104,
+          "height": 476
         },
         "logs": {
-          "width": 944,
-          "height": 176
+          "width": 1104,
+          "height": 196
         }
       }
     }
@@ -287,19 +287,19 @@
       "status": 200
     },
     {
-      "url": "/assets/ibm-plex-sans-latin-400-normal-CDDApCn2.woff2",
-      "status": 200
-    },
-    {
       "url": "/assets/ibm-plex-sans-latin-500-normal-6ng42L7E.woff2",
       "status": 200
     },
     {
-      "url": "/assets/ibm-plex-mono-latin-400-normal-DMJ8VG8y.woff2",
+      "url": "/assets/ibm-plex-sans-latin-400-normal-CDDApCn2.woff2",
       "status": 200
     },
     {
       "url": "/assets/ibm-plex-sans-latin-600-normal-CuJfVYMP.woff2",
+      "status": 200
+    },
+    {
+      "url": "/assets/ibm-plex-mono-latin-400-normal-DMJ8VG8y.woff2",
       "status": 200
     },
     {
@@ -319,11 +319,11 @@
       "status": 200
     },
     {
-      "url": "/assets/ibm-plex-sans-latin-500-normal-6ng42L7E.woff2",
+      "url": "/assets/ibm-plex-sans-latin-400-normal-CDDApCn2.woff2",
       "status": 200
     },
     {
-      "url": "/assets/ibm-plex-sans-latin-400-normal-CDDApCn2.woff2",
+      "url": "/assets/ibm-plex-sans-latin-500-normal-6ng42L7E.woff2",
       "status": 200
     },
     {
@@ -343,19 +343,15 @@
       "status": 200
     },
     {
-      "url": "/assets/barlow-condensed-latin-700-normal-v1xN8_Wq.woff2",
-      "status": 200
-    },
-    {
       "url": "/assets/ibm-plex-sans-latin-400-normal-CDDApCn2.woff2",
       "status": 200
     },
     {
-      "url": "/assets/ibm-plex-sans-latin-600-normal-CuJfVYMP.woff2",
+      "url": "/assets/barlow-condensed-latin-700-normal-v1xN8_Wq.woff2",
       "status": 200
     },
     {
-      "url": "/assets/ibm-plex-sans-latin-500-normal-6ng42L7E.woff2",
+      "url": "/assets/ibm-plex-mono-latin-400-normal-DMJ8VG8y.woff2",
       "status": 200
     },
     {
@@ -363,7 +359,11 @@
       "status": 200
     },
     {
-      "url": "/assets/ibm-plex-mono-latin-400-normal-DMJ8VG8y.woff2",
+      "url": "/assets/ibm-plex-sans-latin-500-normal-6ng42L7E.woff2",
+      "status": 200
+    },
+    {
+      "url": "/assets/ibm-plex-sans-latin-600-normal-CuJfVYMP.woff2",
       "status": 200
     },
     {
@@ -437,7 +437,7 @@
           "border": "rgb(138, 150, 141)",
           "track": "rgb(11, 16, 14)",
           "knob": "rgb(138, 150, 141)",
-          "boundaryContrast": 14.548331388087854,
+          "boundaryContrast": 14.285618295163577,
           "knobContrast": 6.237225750382778
         },
         {
@@ -5540,7 +5540,7 @@
   },
   "railCheck": {
     "scrollHeight": 1162,
-    "clientHeight": 624,
+    "clientHeight": 704,
     "nestedScrolls": 0,
     "bottomActionsFixed": true
   }

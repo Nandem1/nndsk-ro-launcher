@@ -1,3 +1,4 @@
+import { Input } from '../../shared/ui/Input'
 import { useState } from 'react'
 import { Pencil, Plus, X } from 'lucide-react'
 import { AddServerModal } from './AddServerModal'
@@ -81,7 +82,8 @@ export function ServerList() {
                 ${selectedId === server.id ? 'border-l-accent' : 'hover:bg-panel-raised border-l-transparent'}`}
             >
               <label className="min-w-0 flex-1 flex items-center gap-3 py-2.5 cursor-pointer">
-                <input
+                <Input
+                  variant="inline"
                   type="radio"
                   name="server"
                   value={server.id}
@@ -95,7 +97,7 @@ export function ServerList() {
                   {server.name}
                 </span>
               </label>
-              <div className="flex items-center gap-0.5 opacity-50 group-hover:opacity-100 group-focus-within:opacity-100 transition-colors">
+              <div className="flex items-center gap-0.5 transition-colors">
                 <IconButton
                   label={`Editar ${server.name}`}
                   variant="ghost"

@@ -58,7 +58,10 @@ export function UpdatePanel() {
         </p>
       )}
       {clientsActive && (copy.canInstall || copy.canRelaunch) && (
-        <p role="alert" className="mt-1 text-caption text-warn">
+        <p
+          role="alert"
+          className="mt-1 border-l-[3px] border-warn pl-3 text-caption text-muted"
+        >
           Cierra los clientes del juego antes de instalar
         </p>
       )}

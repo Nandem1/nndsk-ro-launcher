@@ -1,6 +1,6 @@
 # Design system
 
-La fuente de verdad es `src/index.css`: 50 variables, incluidas 17 de color.
+La fuente de verdad es `src/index.css`: 51 variables, incluidas 17 de color.
 Tailwind expone los canales RGB como `rgb(var(--c-name) / <alpha-value>)`.
 La UI es plana, sin rampas, gradientes, blur, glows ni sombras decorativas.
 
@@ -28,9 +28,22 @@ La UI es plana, sin rampas, gradientes, blur, glows ni sombras decorativas.
 
 Los estados mantienen sus textos y controles existentes: el color los acompaña,
 no los sustituye. Los puntos son decorativos y están ocultos a lectores de pantalla.
-No reducir la opacidad del texto informativo. En las features de herramientas,
-idle atenúa la cabecera al 60%, no el cuerpo ni los switches. Disabled conserva
-su estado nativo, textos y cursor; el switch no reduce su opacidad.
+No reducir la opacidad de paneles, texto ni controles. Idle usa título/texto y
+borde superior muted. Disabled conserva su disponibilidad nativa: field,
+texto muted y borde interno line, con outline muted de 1px como límite visible.
+No cambia al hacer hover. Switch disabled conserva aria-checked y posición;
+su pista es field y su perilla muted.
+
+## Ventana y espacio
+
+Ventana de **1440×900**, mínimo **1280×820**, redimensionable, sin decoraciones
+y oculta hasta estar lista; fondo nativo surface **#0F1412**. Solo cambió el bloque
+`app.windows` de `src-tauri/tauri.conf.json`.
+Rail fijo de 300px (64px colapsado), contenido flexible sin max-width central.
+El alto extra se reparte: Logs recibe el 25% del incremento desde el mínimo
+(176→196px entre ambos tamaños; límite 320px); el resto va a los cuerpos de panel.
+La búsqueda en frontend/Rust no encontró supuestos de 1280×820: DarkSelect mide
+el viewport actual y reposiciona su menú al redimensionar o desplazar el rail.
 
 ## Gramática de filas
 
@@ -47,6 +60,10 @@ no tienen una caja envolvente. Los controles individuales conservan sus bordes.
 La columna izquierda tiene un solo scroll; sus paneles no se comprimen y Avanzado
 no tiene scroll interno. Jugar y Rearmar/Reparar entorno quedan fuera del scroll,
 fijos abajo. Nombres de servidores y diagnósticos largos ajustan línea.
+Avanzado muestra lo operativo; Observaciones y Benchmarks A/B comparten el
+disclosure «Benchmarks A/B · N», cerrado por defecto, con estado local no
+persistido. Todas sus acciones conservan orden, handlers y disponibilidad;
+las acciones de texto usan Button ghost/xs y separación uniforme.
 
 ## Forma, texto y efectos
 
@@ -59,6 +76,7 @@ fijos abajo. Nombres de servidores y diagnósticos largos ajustan línea.
 | text-base / panel-title | 15px |
 | text-lg / xl | 18px |
 | weight-panel-title / tracking-panel-title | 600 / 0 |
+| tracking-micro-label | 0.1em |
 | leading-xs / sm / base / lg / xl | 1 / 1.25 / 1.5 / 1.75 / 1.75rem |
 | font-sans | IBM Plex Sans, sans-serif |
 | font-mono | IBM Plex Mono, monospace |
@@ -71,7 +89,13 @@ Fuentes Latin de `@fontsource`, empaquetadas por Vite, sin CDN: Sans 400/500/600
 Mono 400/500/600 y Barlow Condensed 700 únicamente para el wordmark.
 Las licencias OFL están en `public/licenses/` y se copian al build.
 `font-src` hereda `default-src 'self'` de la CSP de Tauri; no requiere cambios.
-Datos numéricos, teclas, rutas, argumentos y logs utilizan Mono.
+La utilidad `.micro-label` usa Mono/11px/mayúsculas/tracking 0.1em/muted para
+TECLAS, LECTURA, PERFIL DE MEMORIA, DELAY, HP/SP y categorías similares.
+Títulos de panel/campo usan Sans sin uppercase (los textos fuente no cambian).
+Datos numéricos, teclas, versiones, rutas, argumentos y logs utilizan Mono
+con `tabular-nums`; `.font-mono` también activa los números tabulares.
+DataText decora solo números/unidades/versiones/rutas dentro de texto mixto,
+sin transformar su contenido. Inputs numéricos lo aplican automáticamente.
 
 Solo se conservan `pulse-dot` y un fade de modal de 120ms. Las demás transiciones
 son de color/borde, hasta 150ms; no hay animaciones de transformación ni stagger.
@@ -82,19 +106,20 @@ son de color/borde, hasta 150ms; no hay animaciones de transformación ni stagge
 | Primitivo | Variantes y estilo |
 | --- | --- |
 | Button / IconButton / buttonClasses | primary sólido accent/on-accent/600; secondary y outline con borde line-strong; ghost; danger/success con borde al 50% y texto bad/ok; solid para acciones de diálogo. xs/sm/md/lg/dialog/dialog-sm. tone explícito ok/warn/bad/info/neutral; warn nunca usa accent |
-| Panel | glass (alias de superficie sólida) / idle; default/compact/hero; borde superior de 2px del tono, neutral line-strong; sin borde lateral; título 15px/600 sin uppercase; aliases idle/success/warning/danger conservados |
+| Panel | glass (alias de superficie sólida) / idle; default/compact/hero; borde superior de 2px del tono, neutral line-strong e idle muted; sin borde lateral; título 15px/600 sin uppercase; aliases idle/success/warning/danger conservados |
 | ModalShell / modalSurfaceClasses | layers server/launch/scanner; plain/glass sobre modal con borde line-strong; scrim sin blur |
 | StatusDot | Cuadrado de 8px, tone y pulse; aliases status ok/warning/error/neutral |
 | ToggleSwitch | 34×18px, perilla cuadrada; apagado field/borde muted/perilla muted; encendido ok/borde ok/perilla on-accent; posición instantánea; tone sigue aceptado por compatibilidad |
 | Checkbox | Cuadrado de 16px; selección por defecto accent, tone explícito semántico |
 | DarkSelect | default/keycap, sm/md; field/line-strong, texto ink incluso en keycap; selección de menú por defecto accent, tone explícito semántico; aliases compact/keycap |
-| Input | modal/config; field/line-strong, foco accent; props/ref nativos conservados |
+| Input | modal/config/inline; field/line-strong, foco accent; inline conserva tamaños compactos; range/checkbox/radio conservan su elemento y roles nativos; props/ref/handlers conservados |
+| DataText / micro-label | Tipografía de datos tabulares y microetiquetas, sin lógica de dominio |
 
 Las features conservan modos, orden de secciones, handlers y textos/roles
 accesibles. Solo cambian clases y contenedores presentacionales; se retiró el
 wrapper de HP/SP y los detalles largos se colorean aparte de su titular.
 Las descripciones de estado permiten ajuste de texto en vez de recortar hints.
-No se añadió ningún primitivo ni se modificó el IPC.
+No se modificó el IPC ni la lógica de dominio.
 
 ## Jerarquía accent / warn
 
@@ -104,18 +129,24 @@ secundarias. Las selecciones múltiples de teclas comparten el mismo tratamiento
 Pestañas: texto ink + subrayado de 2px accent, sin caja. Servidor seleccionado:
 barra izquierda de 3px accent, texto ink y radio cuadrado relleno. Tecla elegida:
 fondo accent y texto on-accent. Sliders: pista line-strong y pulgar ink; solo el
-foco usa accent. Wordmark, progreso de setup y hovers secundarios son neutros.
+foco usa accent. Excepción única de marca: **RO** del wordmark usa accent;
+«-Launcher» sigue ink. Progreso de setup y hovers secundarios son neutros.
 
-Warn solo en un titular corto o línea de estado de atención. Anti-cheat/Gepard,
-privacidad y demás párrafos de detalle son muted. Los puntos y bordes de tono
-acompañan el estado y sus textos existentes; no sustituyen la información.
+**Warn marca el contenedor de un aviso, no una etiqueta auxiliar**: barra
+izquierda de 3px warn + padding izquierdo + texto muted (≥4.5:1). «Cliente…»
+es siempre neutro. Anti-cheat/Gepard, privacidad y demás detalles son muted.
+Los puntos y bordes de tono acompañan el estado y sus textos existentes;
+no sustituyen la información.
 Los logs conservan su clasificación semántica de severidad, sin cambiar su lógica.
 
-En `src/app` + `src/features`, las referencias literales de utilidades bajaron
-de **36→23 accent** y **29→11 warn**, excluyendo tests y estilos de primitivos.
+En `src/app` + `src/features`, las referencias literales de utilidades pasaron
+de **23→25 accent** y **11→12 warn** respecto a `e08b936`, excluyendo tests y
+estilos de primitivos: una excepción de marca y un foco de disclosure; warn
+se trasladó al contenedor y se añadió al bloque de incidencias dgVoodoo.
 [Conteos por archivo y justificación](design-review/color-usage.md).
-El rework anterior (`9960370`) había eliminado las rampas y reclasificado 37
-referencias accent a warn; esta etapa reduce la repetición de color en features.
+El rework anterior (`9960370`) eliminó las rampas y reclasificó 37 referencias
+accent a warn; el polish (`e08b936`) redujo la repetición. Esta etapa precisa
+la semántica de los contenedores, la marca y los estados idle/disabled.
 
 Las rampas se fusionaron en sus roles base; la antigua superposición clara se
 sustituyó por line/line-strong/panel-raised. El catálogo de migración contiene solo
@@ -131,14 +162,23 @@ de igualdad de colores para este tema.
 
 `npm run check:design` prohíbe paletas crudas, rampas retiradas, overlays claros,
 radios legacy, tamaños px arbitrarios, tracking arbitrario, efectos y movimiento
-decorativo, la utilidad nativa de accent y wrappers presentacionales delineados
-en features (análisis JSX; controles y pozo de logs exceptuados).
+decorativo, la utilidad nativa de accent, clases de opacidad y wrappers
+presentacionales delineados en features (análisis JSX; controles y pozo de
+logs exceptuados). Prohíbe
+`<input>`/`<select>` nativos en features: usar Input/DarkSelect; los elementos
+nativos permanecen encapsulados en shared/ui para conservar semántica y eventos.
 Incluye el cálculo WCAG: los 13 pares de texto exigidos superan 4.5:1;
 mínimo bad/panel **4.893:1**, on-accent/accent **6.126:1**.
 Ocho pares adicionales validan límites/perillas de switch a 3:1. Chromium mide
 ambos estados, incluidos disabled y preparación, y rechaza opacidad heredada:
 borde apagado/panel **5.623:1**, perilla apagada/field **6.237:1**;
 borde encendido/panel **6.849:1**, perilla encendida/ok **7.447:1**.
+Idle: texto y borde superior contra panel **5.623:1**. Disabled: texto y
+perilla contra field **6.237:1**; límite exterior contra panel **5.623:1**,
+contra surface **6.047:1**, contra modal **5.850:1**. Opacidad efectiva 1.
+El borde interno line/field es **1.472:1**: no se presenta como frontera accesible;
+el outline muted garantiza ≥3:1 por ambos lados sin alterar los tokens de color.
+Los separadores estructurales line no representan un control ni texto.
 La guardia corre en el CI existente y acepta fixtures como argumento.
 
 ```sh
@@ -147,15 +187,19 @@ npm run check:design -- /tmp/fixture-invalido.tsx # debe devolver código 1
 npm run build
 npm run preview -- --host 127.0.0.1 --port 5175
 npm run review:design -- 5175
-npm run review:design -- 5175 1100 800
+npm run review:design -- 5175 1280 820
 ```
 
 El arnés usa Chromium local (`RO_DESIGN_CHROMIUM` permite cambiar el ejecutable),
 IPC simulado y la CSP real sobre el build de producción. Capturas e informes en
 [design-review/](design-review/README.md); cubre preparación, en juego, servidor,
 escáner, herramientas activas, editores abiertos, Buffs y preparación realista
-con cinco servidores, avisos largos y logs. Audita cajas interiores, recortes,
-overflow, scroll único, acciones fijas, fuentes, switches y reduced-motion.
-Pendiente manual: `npm run tauri:dev` con clientes reales. WebKitGTK 2.52.6 está
-instalado, pero faltan `Xvfb`/`xvfb-run`; no se reprodujo el texto fantasma ni se
+con cinco servidores, avisos largos y logs, disclosure abierto/cerrado y una
+escena sin servidor para controles disabled. Audita cajas interiores, recortes,
+overflow, scroll único, acciones fijas, fuentes, contraste compuesto idle/disabled,
+switches, selector al redimensionar y reduced-motion.
+Pendiente manual: `npm run tauri:dev` con clientes reales, redimensionado real
+con decorations false en el gestor de ventanas y texto fantasma en WebKit.
+WebKitGTK 2.52.6 está instalado, pero faltan `Xvfb`/`xvfb-run`;
+no se reprodujo el texto fantasma ni se
 añadieron parches de compositing sin evidencia.

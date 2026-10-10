@@ -1,10 +1,12 @@
 import { forwardRef, type ComponentPropsWithoutRef } from 'react'
 
 interface InputProps extends ComponentPropsWithoutRef<'input'> {
-  variant?: 'modal' | 'config'
+  variant?: 'modal' | 'config' | 'inline'
 }
 
 const VARIANT_CLASSES = {
+  inline:
+    'bg-field border border-line-strong text-ink placeholder:text-muted outline-none transition-colors duration-150 focus:border-accent',
   modal:
     'rounded-control border border-line-strong bg-field px-3 py-2.5 text-sm text-ink placeholder:text-muted outline-none transition-colors duration-150 focus:border-accent',
   config:
@@ -12,13 +14,14 @@ const VARIANT_CLASSES = {
 }
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
-  { variant = 'modal', className = '', ...rest },
+  { variant = 'modal', type = 'text', className = '', ...rest },
   ref,
 ) {
   return (
     <input
       ref={ref}
-      className={`${VARIANT_CLASSES[variant]} ${className}`}
+      type={type}
+      className={`idle-control ${['range', 'checkbox', 'radio'].includes(type) ? '' : VARIANT_CLASSES[variant]} ${type === 'number' ? 'font-mono tabular-nums' : ''} ${className}`}
       {...rest}
     />
   )

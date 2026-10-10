@@ -43,6 +43,11 @@ for (const surface of ['surface', 'panel', 'modal']) {
   pairs.push(['muted', surface, 3], ['ok', surface, 3])
 }
 pairs.push(['muted', 'field', 3], ['on-accent', 'ok', 3])
+// Idle text and disabled text/outer boundary. The internal line border is a
+// separator, not the visible control boundary (the muted outline supplies it).
+for (const surface of ['surface', 'panel', 'modal', 'field']) {
+  pairs.push(['muted', surface, 4.5])
+}
 let failed = false
 for (const [foreground, background, minimum] of pairs) {
   const a = luminance(channels[foreground])

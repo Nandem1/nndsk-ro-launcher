@@ -33,8 +33,8 @@ export function Checkbox({
       title={label}
       disabled={disabled}
       onClick={() => onChange(!checked)}
-      className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-inline border transition-colors duration-150
-        focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-40
+      className={`idle-control flex h-4 w-4 shrink-0 items-center justify-center rounded-inline border transition-colors duration-150
+        focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed
         ${
           checked
             ? tone

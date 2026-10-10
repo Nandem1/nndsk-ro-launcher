@@ -18,7 +18,7 @@ export function resolveToolTone(
 
 const TONE_CLASSES: Record<PanelTone, string> = {
   neutral: 'border-t-line-strong',
-  idle: 'border-t-line-strong opacity-60',
+  idle: 'border-t-muted panel-idle',
   success: 'border-t-ok',
   warning: 'border-t-warn',
   danger: 'border-t-bad',
@@ -61,7 +61,7 @@ export function Panel({
         : 'px-4 py-2.5'
   const bodyPad = size === 'compact' ? 'px-3 py-2' : 'px-4 py-3'
   const titleClass =
-    'text-panel-title font-panel-title text-ink tracking-panel-title shrink-0'
+    'text-panel-title font-panel-title font-sans tracking-panel-title shrink-0'
   const effectiveTone = variant === 'idle' ? 'idle' : tone
 
   return (
@@ -72,7 +72,11 @@ export function Panel({
         className={`flex items-center justify-between gap-2 border-b border-line shrink-0 ${headerPad}`}
       >
         <div className="flex items-center gap-2 min-w-0">
-          <h2 className={titleClass}>{title}</h2>
+          <h2
+            className={`${titleClass} ${effectiveTone === 'idle' ? 'text-muted' : 'text-ink'}`}
+          >
+            {title}
+          </h2>
           {leading}
         </div>
         {action}

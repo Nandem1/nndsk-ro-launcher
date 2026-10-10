@@ -58,14 +58,14 @@ export function SpammerPanel() {
       title="Spammer"
       size={hero ? 'hero' : 'compact'}
       tone={tone}
-      className={`h-full ${tone === 'idle' ? '!opacity-100 [&>div:first-child]:opacity-60' : ''}`}
+      className="h-full"
       leading={<Zap className="w-3 h-3 text-muted shrink-0" aria-hidden />}
     >
       <div className="flex-1 min-h-0 overflow-y-auto space-y-2 pr-0.5">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
             <p
-              className={`text-sm font-semibold truncate ${
+              className={`font-mono tabular-nums text-sm font-semibold truncate ${
                 status.spamming ? 'text-ok' : 'text-ink'
               }`}
             >

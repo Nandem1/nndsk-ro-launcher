@@ -6,6 +6,7 @@ import { updateCopy } from '../features/updater/updater.logic'
 import { StatusDot } from '../shared/ui/StatusDot'
 import { useUiModeStore } from './uiMode.store'
 import { WindowControls } from './WindowControls'
+import { DataText } from '../shared/ui/DataText'
 
 function IngameStatusChip() {
   const launching = useLauncherStore((s) => s.status === 'launching')
@@ -17,9 +18,11 @@ function IngameStatusChip() {
       <StatusDot status={launching ? 'warning' : 'ok'} pulse />
       <span className="text-detail text-ink font-medium truncate max-w-[220px]">
         {launching ? 'Iniciando...' : 'En juego'}
-        {clients.length === 1
-          ? ` · ${clients[0].serverName}`
-          : ` · ${running}/${clients.length} clientes`}
+        <DataText>
+          {clients.length === 1
+            ? ` · ${clients[0].serverName}`
+            : ` · ${running}/${clients.length} clientes`}
+        </DataText>
       </span>
     </div>
   )
@@ -64,7 +67,7 @@ export function AppHeader() {
     <header className="shrink-0 flex items-end justify-between px-4 py-2.5 border-b border-line bg-surface ">
       <div className="min-w-0 flex-1" data-tauri-drag-region>
         <h1 className="text-xl font-wordmark font-bold tracking-tight">
-          <span className="text-ink">RO</span>
+          <span className="text-accent">RO</span>
           <span className="text-ink">-Launcher</span>
         </h1>
         <p className="text-xs text-muted mt-0.5">Ragnarok Online · Linux</p>

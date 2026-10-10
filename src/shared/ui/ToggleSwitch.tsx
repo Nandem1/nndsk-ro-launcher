@@ -19,7 +19,7 @@ export function ToggleSwitch({
       aria-checked={checked}
       disabled={disabled}
       onClick={() => onChange(!checked)}
-      className={`relative w-[34px] h-[18px] rounded-pill border transition-colors duration-150 shrink-0 disabled:cursor-not-allowed ${
+      className={`idle-control relative w-[34px] h-[18px] rounded-pill border transition-colors duration-150 shrink-0 disabled:cursor-not-allowed ${
         checked ? 'bg-ok border-ok' : 'bg-field border-muted'
       }`}
     >

@@ -6,6 +6,7 @@ import { useLauncherStore } from '../launcher/launcher.store'
 import { useSelectedServer } from '../servers/useSelectedServer'
 import { AutobuffRulesEditor } from './AutobuffRulesEditor'
 import { useAutobuff } from './useAutobuff'
+import { DataText } from '../../shared/ui/DataText'
 import {
   memoryAccessAction,
   memoryAccessLabel,
@@ -40,7 +41,7 @@ export function AutobuffPanel() {
       title="AutoBuff"
       size={hero ? 'hero' : 'compact'}
       tone={tone}
-      className={`h-full w-full ${tone === 'idle' ? '!opacity-100 [&>div:first-child]:opacity-60' : ''}`}
+      className="h-full w-full"
       leading={<Sparkles className="w-3 h-3 text-muted shrink-0" aria-hidden />}
     >
       <div className="flex min-h-0 flex-1 flex-col gap-2">
@@ -52,15 +53,17 @@ export function AutobuffPanel() {
             <p
               className={`text-caption ${launching ? 'text-muted animate-pulse-dot' : 'text-muted'}`}
             >
-              {!server
-                ? 'Selecciona un servidor'
-                : launching
-                  ? 'Iniciando juego...'
-                  : multipleClients
-                    ? 'No disponible con varios clientes'
-                    : !isRunning
-                      ? 'Inicia el juego'
-                      : `${status.activeStatuses} estados detectados`}
+              {!server ? (
+                'Selecciona un servidor'
+              ) : launching ? (
+                'Iniciando juego...'
+              ) : multipleClients ? (
+                'No disponible con varios clientes'
+              ) : !isRunning ? (
+                'Inicia el juego'
+              ) : (
+                <DataText>{`${status.activeStatuses} estados detectados`}</DataText>
+              )}
             </p>
           </div>
           <ToggleSwitch
@@ -87,7 +90,7 @@ export function AutobuffPanel() {
           {error && available ? (
             <span className="text-bad">{error}</span>
           ) : available && effectiveMemoryAccess && !memoryReady ? (
-            <span className="text-warn">
+            <span className="inline-block border-l-[3px] border-warn pl-3 text-muted">
               {memoryAccessLabel(effectiveMemoryAccess)}
               <span className="text-muted">
                 {memoryAction ? ` ${memoryAction}` : ''}

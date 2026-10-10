@@ -1,3 +1,4 @@
+import { Input } from '../../shared/ui/Input'
 import { useEffect, useRef, useState } from 'react'
 import { FlaskConical, Search } from 'lucide-react'
 import { DEFAULT_AUTOPOT_CONFIG, POT_KEYS } from '../../shared/constants'
@@ -41,7 +42,7 @@ function StatBar({
   return (
     <div className={`space-y-0.5 border-t border-line pt-2 ${flashClass}`}>
       <div className="flex justify-between text-caption text-muted">
-        <span>{tone === 'bad' ? 'HP' : 'SP'}</span>
+        <span className="micro-label">{tone === 'bad' ? 'HP' : 'SP'}</span>
         <span className="font-mono">
           {empty
             ? '— / —'
@@ -164,7 +165,7 @@ export function AutopotPanel() {
       title="AutoPot"
       size={hero ? 'hero' : 'compact'}
       tone={tone}
-      className={`h-full ${tone === 'idle' ? '!opacity-100 [&>div:first-child]:opacity-60' : ''}`}
+      className="h-full"
       leading={
         <FlaskConical className="w-3 h-3 text-muted shrink-0" aria-hidden />
       }
@@ -211,10 +212,9 @@ export function AutopotPanel() {
         </div>
 
         <div className="flex items-center gap-2 border-t border-line pt-2">
-          <span className="text-caption text-muted uppercase tracking-wide shrink-0">
-            Lectura
-          </span>
-          <input
+          <span className="micro-label shrink-0">Lectura</span>
+          <Input
+            variant="inline"
             type="range"
             min={minimumDelayMs}
             max={200}
@@ -224,7 +224,7 @@ export function AutopotPanel() {
             onChange={(event) =>
               void updateField({ delayMs: Number(event.target.value) })
             }
-            className="font-mono flex-1 disabled:opacity-50"
+            className="font-mono flex-1 idle-control"
           />
           <span className="text-caption font-mono text-muted w-10 text-right shrink-0">
             {status.active
@@ -236,14 +236,12 @@ export function AutopotPanel() {
 
         <div className="space-y-1 border-t border-line pt-2">
           <div className="flex items-center justify-between gap-2">
-            <span className="text-caption text-muted uppercase tracking-wide">
-              Perfil de memoria
-            </span>
+            <span className="micro-label">Perfil de memoria</span>
             <button
               type="button"
               disabled={!available || status.active || busy}
               onClick={() => setShowMemoryScanner(true)}
-              className="inline-flex items-center gap-1 text-caption text-muted hover:text-ink focus-visible:outline focus-visible:outline-accent disabled:text-muted"
+              className="idle-control inline-flex items-center gap-1 text-caption text-muted hover:text-ink focus-visible:outline focus-visible:outline-accent disabled:text-muted"
             >
               <Search className="h-3 w-3" aria-hidden />
               Encontrar
@@ -285,9 +283,7 @@ export function AutopotPanel() {
 
         <div className="grid grid-cols-2 gap-1.5 border-t border-line pt-2">
           <div className="space-y-1">
-            <span className="text-caption text-muted uppercase tracking-wide">
-              HP
-            </span>
+            <span className="micro-label">HP</span>
             <div className="flex gap-1">
               <DarkSelect
                 size="sm"
@@ -298,7 +294,8 @@ export function AutopotPanel() {
                 options={POT_KEY_OPTIONS}
               />
               <div className="relative w-12 shrink-0">
-                <input
+                <Input
+                  variant="inline"
                   type="number"
                   min={1}
                   max={99}
@@ -313,18 +310,16 @@ export function AutopotPanel() {
                         DEFAULT_AUTOPOT_CONFIG.hpPercent,
                     })
                   }
-                  className="font-mono input-no-spinner w-full rounded-control-compact border border-line-strong bg-field py-1 pl-1.5 pr-4 text-center text-detail text-ink outline-none transition-colors focus:border-accent/60 disabled:opacity-50"
+                  className="font-mono input-no-spinner w-full rounded-control-compact border border-line-strong bg-field py-1 pl-1.5 pr-4 text-center text-detail text-ink outline-none transition-colors focus:border-accent/60 idle-control"
                 />
-                <span className="pointer-events-none absolute inset-y-0 right-1.5 flex items-center text-micro text-muted">
+                <span className="font-mono tabular-nums pointer-events-none absolute inset-y-0 right-1.5 flex items-center text-micro text-muted">
                   %
                 </span>
               </div>
             </div>
           </div>
           <div className="space-y-1">
-            <span className="text-caption text-muted uppercase tracking-wide">
-              SP
-            </span>
+            <span className="micro-label">SP</span>
             <div className="flex gap-1">
               <DarkSelect
                 size="sm"
@@ -335,7 +330,8 @@ export function AutopotPanel() {
                 options={POT_KEY_OPTIONS}
               />
               <div className="relative w-12 shrink-0">
-                <input
+                <Input
+                  variant="inline"
                   type="number"
                   min={1}
                   max={99}
@@ -350,9 +346,9 @@ export function AutopotPanel() {
                         DEFAULT_AUTOPOT_CONFIG.spPercent,
                     })
                   }
-                  className="font-mono input-no-spinner w-full rounded-control-compact border border-line-strong bg-field py-1 pl-1.5 pr-4 text-center text-detail text-ink outline-none transition-colors focus:border-accent/60 disabled:opacity-50"
+                  className="font-mono input-no-spinner w-full rounded-control-compact border border-line-strong bg-field py-1 pl-1.5 pr-4 text-center text-detail text-ink outline-none transition-colors focus:border-accent/60 idle-control"
                 />
-                <span className="pointer-events-none absolute inset-y-0 right-1.5 flex items-center text-micro text-muted">
+                <span className="font-mono tabular-nums pointer-events-none absolute inset-y-0 right-1.5 flex items-center text-micro text-muted">
                   %
                 </span>
               </div>
@@ -364,7 +360,7 @@ export function AutopotPanel() {
           {error && available ? (
             <span className="text-bad">{error}</span>
           ) : available && effectiveMemoryAccess && !memoryReady ? (
-            <span className="text-warn">
+            <span className="inline-block border-l-[3px] border-warn pl-3 text-muted">
               {memoryAccessLabel(effectiveMemoryAccess)}
               <span className="text-muted">
                 {memoryAction ? ` ${memoryAction}` : ''}

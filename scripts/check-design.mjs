@@ -16,6 +16,7 @@ const forbidden = [
   /\b(?:ink-(?:soft|dim|bright)|accent-(?:ink|soft|light|bright|strong)|ok-(?:ink|soft|bright)|bad-(?:ink|soft|bright|strong)|info-(?:soft|bright|strong)|special-(?:ink|soft))(?![\w-])/g,
   /\b(?:stagger\x2dchildren|animate-(?:fade-rise|scale-in|rail-expand|rail-collapse|stat-flash-red|stat-flash-blue)|transition-(?:all|transform|opacity)|duration-(?:200|300|400|500))\b/g,
   /\baccent\x2daccent\b/g,
+  /\bopacity\x2d\d+\b/g,
 ]
 
 function files(target) {

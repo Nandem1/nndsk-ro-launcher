@@ -131,8 +131,10 @@ describe('RunnerSelector runtime import', () => {
       screen.getByRole('button', { name: 'Importar y usar nndsk-ro-proton' }),
     ).toBeEnabled()
     expect(
-      screen.getByText(/se descargan y verifican por SHA-256 al preparar el/),
-    ).toBeInTheDocument()
+      screen
+        .getByRole('heading', { name: 'Runner predeterminado' })
+        .closest('section'),
+    ).toHaveTextContent(/se descargan y verifican por SHA-256 al preparar el/)
   })
 
   it('blocks runtime changes while the launcher is preparing a client', () => {

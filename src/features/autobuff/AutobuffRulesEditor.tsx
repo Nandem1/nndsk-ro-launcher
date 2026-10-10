@@ -1,3 +1,4 @@
+import { Input } from '../../shared/ui/Input'
 import { X } from 'lucide-react'
 import { SPAMMER_KEYS } from '../../shared/constants'
 import type { AutobuffRule } from '../../shared/types'
@@ -143,9 +144,7 @@ export function AutobuffRulesEditor({
       <div className="shrink-0 space-y-1.5">
         {PRESET_GROUPS.map((group) => (
           <div key={group.label}>
-            <p className="mb-0.5 text-caption uppercase tracking-wide text-muted">
-              {group.label}
-            </p>
+            <p className="mb-0.5 micro-label">{group.label}</p>
             <div className="flex flex-wrap gap-1">
               {group.presets.map((preset) => (
                 <Button
@@ -178,7 +177,7 @@ export function AutobuffRulesEditor({
           </p>
         ) : (
           <>
-            <div className="grid grid-cols-[16px_minmax(0,1fr)_68px_84px_64px_20px] items-center gap-1.5 px-2 text-micro uppercase tracking-wide text-muted">
+            <div className="grid grid-cols-[16px_minmax(0,1fr)_68px_84px_80px_20px] items-center gap-1.5 px-2 micro-label">
               <span />
               <span>Buff</span>
               <span className="text-center">Tecla</span>
@@ -189,7 +188,7 @@ export function AutobuffRulesEditor({
             {rules.map((rule) => (
               <div
                 key={rule.id}
-                className="group grid grid-cols-[16px_minmax(0,1fr)_68px_84px_64px_20px] items-center gap-1.5 border-t border-line px-2 py-1 transition-colors hover:bg-panel-raised"
+                className="group grid grid-cols-[16px_minmax(0,1fr)_68px_84px_80px_20px] items-center gap-1.5 border-t border-line px-2 py-1 transition-colors hover:bg-panel-raised"
               >
                 <Checkbox
                   checked={rule.enabled}
@@ -197,7 +196,8 @@ export function AutobuffRulesEditor({
                   onChange={(enabled) => updateRule(rule.id, { enabled })}
                   label={`${rule.enabled ? 'Desactivar' : 'Activar'} ${rule.label}`}
                 />
-                <input
+                <Input
+                  variant="inline"
                   value={rule.label}
                   disabled={disabled}
                   onChange={(event) =>
@@ -214,7 +214,8 @@ export function AutobuffRulesEditor({
                   options={KEY_OPTIONS}
                 />
                 <div className="flex items-center gap-0.5">
-                  <input
+                  <Input
+                    variant="inline"
                     type="number"
                     min={0}
                     step={100}
@@ -231,9 +232,12 @@ export function AutobuffRulesEditor({
                     className="font-mono min-w-0 flex-1 rounded-inline border border-line-strong bg-field px-1 py-1 text-right text-caption text-ink outline-none transition-colors hover:bg-panel-raised focus:border-accent/25 focus:bg-field [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
                     aria-label={`Cooldown de ${rule.label} en ms`}
                   />
-                  <span className="text-micro text-muted">ms</span>
+                  <span className="font-mono tabular-nums text-micro text-muted">
+                    ms
+                  </span>
                 </div>
-                <input
+                <Input
+                  variant="inline"
                   type="number"
                   min={0}
                   step={1}
@@ -253,7 +257,7 @@ export function AutobuffRulesEditor({
                   onClick={() =>
                     onChange(rules.filter((item) => item.id !== rule.id))
                   }
-                  className="flex h-5 w-5 items-center justify-center rounded-inline text-muted opacity-50 transition-colors hover:bg-panel-raised hover:text-bad hover:opacity-100 group-hover:opacity-80 disabled:opacity-30"
+                  className="idle-control flex h-5 w-5 items-center justify-center rounded-inline text-muted transition-colors hover:bg-panel-raised hover:text-bad"
                   title="Eliminar regla"
                   aria-label={`Eliminar ${rule.label}`}
                 >

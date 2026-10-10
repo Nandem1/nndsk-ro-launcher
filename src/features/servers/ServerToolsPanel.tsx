@@ -2,6 +2,7 @@ import { RotateCw } from 'lucide-react'
 import type { ServerToolsStatus, ToolInfo, ToolKind } from '../../shared/types'
 import { Panel } from '../../shared/ui/Panel'
 import { StatusDot } from '../../shared/ui/StatusDot'
+import { DataText } from '../../shared/ui/DataText'
 import { buttonClasses } from '../../shared/ui/Button'
 import { useSelectedServer } from './useSelectedServer'
 import { useServerTools } from './useServerTools'
@@ -47,7 +48,7 @@ export function ServerToolsPanel() {
           type="button"
           onClick={refresh}
           disabled={busy}
-          className="text-muted hover:text-muted transition-colors disabled:opacity-40"
+          className="text-muted hover:text-muted transition-colors idle-control"
           title="Volver a escanear"
         >
           <RotateCw
@@ -74,10 +75,10 @@ export function ServerToolsPanel() {
           />
           <ClientDiagnostics status={status} />
           {!!status.dgvoodoo.issues.length && (
-            <div className="mt-2 border-t border-line py-2">
+            <div className="mt-2 border-l-[3px] border-warn pl-3 py-1">
               {status.dgvoodoo.issues.map((issue) => (
                 <p key={issue} className="text-caption leading-snug text-muted">
-                  {issue}
+                  <DataText>{issue}</DataText>
                 </p>
               ))}
             </div>
@@ -106,19 +107,21 @@ function ClientDiagnostics({ status }: { status: ServerToolsStatus }) {
 
   return (
     <div className="mt-2 border-t border-line py-2">
-      <p
-        className={`text-caption ${diagnostics.warnings.length ? 'text-warn' : 'text-muted'}`}
-      >
+      <p className="text-caption text-muted font-mono tabular-nums">
         Cliente {diagnostics.architecture ?? 'PE'}
         {diagnostics.graphicsApis.length
           ? ` · ${diagnostics.graphicsApis.join(' + ')}`
           : ''}
       </p>
-      {diagnostics.warnings.map((warning) => (
-        <p key={warning} className="mt-1 text-caption leading-snug text-muted">
-          {warning}
-        </p>
-      ))}
+      {!!diagnostics.warnings.length && (
+        <div className="mt-2 border-l-[3px] border-warn pl-3 space-y-1">
+          {diagnostics.warnings.map((warning) => (
+            <p key={warning} className="text-caption leading-snug text-muted">
+              <DataText>{warning}</DataText>
+            </p>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

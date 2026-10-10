@@ -30,20 +30,22 @@ export function UpdateBanner() {
   const clientsActive = clientsBlockUpdate({ launchStatus, clients })
   const tone =
     kind === 'failed'
-      ? 'text-bad'
+      ? 'border-l-bad'
       : kind === 'readyToRestart'
-        ? 'text-ok'
-        : 'text-warn'
+        ? 'border-l-ok'
+        : 'border-l-warn'
 
   return (
-    <div className="mx-3 mt-3 flex shrink-0 items-center gap-3 border-t border-line bg-panel px-3 py-2">
+    <div
+      className={`mx-3 mt-3 flex shrink-0 items-center gap-3 border-l-[3px] ${tone} bg-panel px-3 py-2`}
+    >
       {kind === 'failed' ? (
         <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden />
       ) : (
         <StatusDot status={copy.dot} pulse />
       )}
       <div className="min-w-0 flex-1">
-        <p className={`text-xs font-semibold ${tone}`}>{copy.line}</p>
+        <p className="text-xs font-semibold text-muted">{copy.line}</p>
         <p className="text-caption text-muted break-words">
           {clientsActive && (copy.canInstall || copy.canRelaunch)
             ? 'Cierra los clientes del juego antes de instalar'

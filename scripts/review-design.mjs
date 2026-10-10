@@ -7,14 +7,17 @@ const output = path.resolve(
 )
 const baseline = process.env.RO_DESIGN_BASELINE === '1'
 const port = process.argv[2] ?? '5175'
-const width = Number(process.argv[3] ?? 1280)
-const height = Number(process.argv[4] ?? 820)
+const width = Number(process.argv[3] ?? 1440)
+const height = Number(process.argv[4] ?? 900)
 const executablePath = process.env.RO_DESIGN_CHROMIUM ?? '/usr/bin/chromium'
 fs.mkdirSync(output, { recursive: true })
 const csp = JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf8')).app
   .security.csp
 const checks = []
 const switchContrast = []
+const stateContrast = []
+let selectCheck = null
+let disclosureCheck = null
 let railCheck = null
 const browser = await chromium.launch({ executablePath, headless: true })
 const page = await browser.newPage({ viewport: { width, height } })
@@ -159,21 +162,23 @@ await page.addInitScript(() => {
     ]
   }
   const responses = {
-    list_servers: realistic
-      ? [
-          server,
-          ...[
-            'HoneyRO — entorno de prueba extendido',
-            'SakuraRO — compatibilidad verificada',
-            'Servidor comunitario — revisión pendiente',
-            'Ragnarok Online — configuración alternativa',
-          ].map((name, index) => ({
-            ...server,
-            id: `design-fixture-${index + 2}`,
-            name,
-          })),
-        ]
-      : [server],
+    list_servers: location.search.includes('fixture=empty')
+      ? []
+      : realistic
+        ? [
+            server,
+            ...[
+              'HoneyRO — entorno de prueba extendido',
+              'SakuraRO — compatibilidad verificada',
+              'Servidor comunitario — revisión pendiente',
+              'Ragnarok Online — configuración alternativa',
+            ].map((name, index) => ({
+              ...server,
+              id: `design-fixture-${index + 2}`,
+              name,
+            })),
+          ]
+        : [server],
     load_settings: { defaultRunner: runner.path, richPresenceEnabled: false },
     list_runners: [runner],
     list_game_clients: [],
@@ -248,6 +253,19 @@ const capture = async (name) => {
         requestAnimationFrame(() => requestAnimationFrame(done)),
       ),
   )
+  if (!baseline)
+    stateContrast.push({ scene: name, ...(await auditStateContrast()) })
+  checks.at(-1).space = await page.evaluate(() => {
+    const rect = (selector) => {
+      const bounds = document.querySelector(selector)?.getBoundingClientRect()
+      return bounds ? { width: bounds.width, height: bounds.height } : null
+    }
+    return {
+      rail: rect('[data-design-rail-scroll]'),
+      tools: rect('[data-design-tool-body]'),
+      logs: rect('[data-design-logs]'),
+    }
+  })
   const styles = await page.evaluate(() =>
     [...document.querySelectorAll('body, body *')]
       .filter((el) => !['SCRIPT', 'STYLE'].includes(el.tagName))
@@ -294,7 +312,7 @@ const capture = async (name) => {
   )
   // Keep detailed diagnostics outside the repository.
   fs.writeFileSync(
-    `/tmp/ro-polish-${baseline ? 'before' : 'after'}-${width}x${height}-${name}.json`,
+    `/tmp/ro-refine-${baseline ? 'before' : 'after'}-${width}x${height}-${name}.json`,
     JSON.stringify(styles, null, 2),
   )
   await page.screenshot({
@@ -529,7 +547,10 @@ async function verifySwitchContrast(state) {
         border: css.borderTopColor,
         track: css.backgroundColor,
         knob: knob.backgroundColor,
-        boundaryContrast: contrast(css.borderTopColor, panel.backgroundColor),
+        boundaryContrast: contrast(
+          parseFloat(css.outlineWidth) ? css.outlineColor : css.borderTopColor,
+          panel.backgroundColor,
+        ),
         knobContrast: contrast(knob.backgroundColor, css.backgroundColor),
       }
     })
@@ -546,6 +567,133 @@ async function verifySwitchContrast(state) {
   )
     throw new Error(`Switch contrast failed: ${JSON.stringify(readings)}`)
   switchContrast.push({ state, readings })
+}
+
+async function auditStateContrast() {
+  const result = await page.evaluate(() => {
+    const rgba = (value) => {
+      const channels = value.match(/[\d.]+/g).map(Number)
+      return [...channels.slice(0, 3), channels[3] ?? 1]
+    }
+    const blend = (foreground, background) =>
+      foreground
+        .slice(0, 3)
+        .map(
+          (channel, index) =>
+            channel * foreground[3] + background[index] * (1 - foreground[3]),
+        )
+    const background = (element) => {
+      const ancestors = []
+      for (let node = element; node; node = node.parentElement)
+        ancestors.unshift(node)
+      return ancestors.reduce(
+        (color, node) =>
+          blend(rgba(getComputedStyle(node).backgroundColor), color),
+        [0, 0, 0],
+      )
+    }
+    const luminance = (color) =>
+      color
+        .map((channel) => channel / 255)
+        .map((channel) =>
+          channel <= 0.04045
+            ? channel / 12.92
+            : ((channel + 0.055) / 1.055) ** 2.4,
+        )
+        .reduce(
+          (sum, channel, index) =>
+            sum + channel * [0.2126, 0.7152, 0.0722][index],
+          0,
+        )
+    const contrast = (a, b) =>
+      (Math.max(luminance(a), luminance(b)) + 0.05) /
+      (Math.min(luminance(a), luminance(b)) + 0.05)
+    const opacity = (element) => {
+      let result = 1
+      for (let node = element; node; node = node.parentElement)
+        result *= Number(getComputedStyle(node).opacity)
+      return result
+    }
+    const idle = [
+      ...document.querySelectorAll(
+        '.panel-idle h2, .panel-idle .text-muted, .panel-idle .text-ink',
+      ),
+    ]
+      .filter(
+        (element) =>
+          element.getBoundingClientRect().height && element.textContent.trim(),
+      )
+      .map((element) => {
+        const bg = background(element)
+        return {
+          text: element.textContent.trim().slice(0, 65),
+          opacity: opacity(element),
+          textContrast: contrast(
+            blend(rgba(getComputedStyle(element).color), bg),
+            bg,
+          ),
+        }
+      })
+    const idleBorders = [...document.querySelectorAll('.panel-idle')].map(
+      (element) => {
+        const css = getComputedStyle(element)
+        return {
+          panel: element.querySelector('h2').textContent,
+          contrast: contrast(
+            blend(rgba(css.borderTopColor), background(element)),
+            background(element),
+          ),
+        }
+      },
+    )
+    const disabled = [...document.querySelectorAll(':disabled')]
+      .filter((element) => element.getBoundingClientRect().height)
+      .map((element) => {
+        const css = getComputedStyle(element)
+        const bg = background(element)
+        const outside = background(element.parentElement)
+        const boundary = parseFloat(css.outlineWidth)
+          ? css.outlineColor
+          : css.borderTopColor
+        return {
+          tag: element.tagName,
+          type: element.type,
+          role: element.getAttribute('role'),
+          label:
+            element.getAttribute('aria-label') ??
+            element.textContent.trim().slice(0, 65),
+          opacity: opacity(element),
+          color: css.color,
+          background: css.backgroundColor,
+          border: css.borderTopColor,
+          outline: css.outlineColor,
+          outlineWidth: css.outlineWidth,
+          textContrast: contrast(blend(rgba(css.color), bg), bg),
+          innerBorderContrast: contrast(
+            blend(rgba(css.borderTopColor), bg),
+            bg,
+          ),
+          boundaryContrast: contrast(blend(rgba(boundary), outside), outside),
+          boundaryInsideContrast: contrast(blend(rgba(boundary), bg), bg),
+        }
+      })
+    return { idle, disabled, idleBorders }
+  })
+  if (
+    result.idleBorders.some((reading) => reading.contrast < 3) ||
+    result.idle.some(
+      (reading) => reading.opacity !== 1 || reading.textContrast < 4.5,
+    ) ||
+    result.disabled.some(
+      (reading) =>
+        reading.opacity !== 1 ||
+        reading.textContrast < 4.5 ||
+        reading.boundaryContrast < 3 ||
+        reading.boundaryInsideContrast < 3,
+    )
+  )
+    throw new Error(`Idle/disabled contrast failed: ${JSON.stringify(result)}`)
+  return result
 }
 
 await page.goto(`http://127.0.0.1:${port}/?fixture=standard`)
@@ -644,6 +792,13 @@ await verifyMotion()
 await page.goto(`http://127.0.0.1:${port}/?fixture=realistic`)
 await page.getByRole('button', { name: 'Editar TestRO' }).waitFor()
 await page.getByText('HoneyRO Patcher.exe', { exact: true }).waitFor()
+if (
+  (await page.locator('details').getAttribute('open')) !== null ||
+  (await page
+    .getByRole('button', { name: 'Adjuntar', exact: true })
+    .isVisible())
+)
+  throw new Error('Review disclosure must start closed')
 await page.evaluate(() => {
   for (const line of [
     'Runtime administrado nndsk-ro-proton verificado; prefix aislado /fixture/prefixes/honeyro/nndsk-ro-proton-verified-isolated-prefix; DXVK 2.6.2 disponible.',
@@ -672,6 +827,75 @@ await railScroll.evaluate((element) => {
   element.scrollTop = element.scrollHeight
 })
 await capture('prep-realistic-scrolled')
+await page.locator('summary').filter({ hasText: 'Benchmarks A/B' }).click()
+await page.getByRole('button', { name: 'Adjuntar', exact: true }).waitFor()
+await capture('prep-realistic-open')
+const actions = await page
+  .locator('details button:not([aria-haspopup])')
+  .evaluateAll((elements) =>
+    elements.map((element) => ({
+      text: element.textContent.trim(),
+      disabled: element.disabled,
+    })),
+  )
+const expectedActions = [
+  ['Exportar observaciones', false],
+  ['Borrar', false],
+  ['Adjuntar', true],
+  ['Iniciar captura', true],
+  ['Terminar captura', true],
+  ['Importar CSV', true],
+  ['Visual OK', true],
+  ['Visual fallo', true],
+  ['Visual omitir', true],
+  ['Comparar', true],
+  ['Exportar benchmarks', false],
+  ['Exportar comparación', true],
+  ['Borrar benchmarks', false],
+].map(([text, disabled]) => ({ text, disabled }))
+if (JSON.stringify(actions) !== JSON.stringify(expectedActions))
+  throw new Error('Review actions changed order or availability')
+disclosureCheck = { startsClosed: true, actions }
+await railScroll.evaluate((element) => {
+  element.scrollTop = element.scrollHeight
+})
+await capture('prep-realistic-open-scrolled')
+const armSelect = page.getByRole('combobox')
+await armSelect.click()
+await page.getByRole('listbox').waitFor()
+const menuBounds = await page.getByRole('listbox').boundingBox()
+if (
+  !menuBounds ||
+  menuBounds.x < 0 ||
+  menuBounds.y < 0 ||
+  menuBounds.x + menuBounds.width > width ||
+  menuBounds.y + menuBounds.height > height
+)
+  throw new Error('DarkSelect menu escaped the viewport')
+await page.setViewportSize({ width: width + 80, height: height + 40 })
+const resizedMenu = await page.getByRole('listbox').boundingBox()
+if (!resizedMenu || resizedMenu.y + resizedMenu.height > height + 40)
+  throw new Error('DarkSelect did not reposition on resize')
+await page.setViewportSize({ width, height })
+await page.getByRole('option', { name: 'Brazo B', exact: true }).click()
+if ((await armSelect.textContent()) !== 'Brazo B')
+  throw new Error('DarkSelect did not preserve selection')
+await armSelect.press('ArrowDown')
+await page.getByRole('option', { name: 'Brazo B', exact: true }).press('Home')
+await page.getByRole('option', { name: 'Brazo A', exact: true }).press('Enter')
+if ((await armSelect.textContent()) !== 'Brazo A')
+  throw new Error('DarkSelect keyboard selection failed')
+selectCheck = {
+  withinViewport: true,
+  repositionsOnResize: true,
+  pointerAndKeyboardSelection: true,
+}
+await page.locator('summary').filter({ hasText: 'Benchmarks A/B' }).click()
+if (
+  await page.getByRole('button', { name: 'Adjuntar', exact: true }).isVisible()
+)
+  throw new Error('Disclosure did not close')
+disclosureCheck.closesLocally = true
 if (!baseline) {
   const pinnedAfter = await Promise.all(
     ['Jugar', 'Rearmar entorno'].map((name) =>
@@ -703,6 +927,10 @@ if (!baseline) {
     )
   railCheck.bottomActionsFixed = true
 }
+await page.goto(`http://127.0.0.1:${port}/?fixture=empty`)
+await page.getByText('Sin servidores — agrega uno con +').waitFor()
+await capture('prep-empty')
+if (!baseline) await verifySwitchContrast('off')
 console.log('Console/page errors:', errors)
 console.log('Layout checks:', checks)
 console.log('Loaded fonts:', fonts)
@@ -717,6 +945,9 @@ fs.writeFileSync(
       fonts,
       fontResponses,
       switchContrast,
+      stateContrast,
+      selectCheck,
+      disclosureCheck,
       railCheck,
     },
     null,

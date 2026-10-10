@@ -15,12 +15,12 @@ export function MaintenanceNotice({
 
   return (
     <div
-      className="mx-3 mt-3 flex shrink-0 items-center gap-3 border-t border-line bg-panel px-3 py-2"
+      className="mx-3 mt-3 flex shrink-0 items-center gap-3 border-l-[3px] border-warn bg-panel px-3 py-2"
       role="status"
     >
       <CheckCircle2 className="h-4 w-4 shrink-0 text-muted" aria-hidden />
       <div className="min-w-0 flex-1">
-        <p className="text-xs font-semibold text-warn">
+        <p className="text-xs font-semibold text-muted">
           Mantenimiento completado
         </p>
         <p className="text-caption text-muted break-words">

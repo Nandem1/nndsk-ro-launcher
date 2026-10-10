@@ -1,56 +1,78 @@
-# Revisión del polish de features
+# Revisión de unslop-refine
 
-Capturas del build de producción con Chromium local, la CSP de Tauri y el IPC
-simulado del arnés. No se usaron datos de usuario ni se lanzaron clientes reales.
-Línea base de esta etapa: `9960370` (`rework/unslop-theme`).
+Build de producción, Chromium local, CSP real de Tauri e IPC simulado. Base:
+`e08b936` (`rework/unslop-polish`). No se usaron datos ni clientes reales.
 
-| Escena | 1280×820 | 1100×800 | Cajas interiores antes→después |
-| --- | --- | --- | --- |
-| Preparación | [prep](prep-1280x820.png) | [prep](prep-1100x800.png) | 2→0 |
-| En juego | [ingame](ingame-1280x820.png) | [ingame](ingame-1100x800.png) | 3→0 |
-| Servidor | [server](server-1280x820.png) | [server](server-1100x800.png) | 3→0 |
-| Escáner de memoria | [scanner](scanner-1280x820.png) | [scanner](scanner-1100x800.png) | 3→0 |
-| Herramientas activas | [active](active-1280x820.png) | [active](active-1100x800.png) | 3→0 |
-| Editores abiertos | [active-editors](active-editors-1280x820.png) | [active-editors](active-editors-1100x800.png) | 5→0 |
-| Buffs con dos reglas | [buffs](buffs-1280x820.png) | [buffs](buffs-1100x800.png) | 2→0 |
-| Preparación realista | [prep-realistic](prep-realistic-1280x820.png) | [prep-realistic](prep-realistic-1100x800.png) | 6→0 |
-| Preparación realista, scroll inferior | [prep-realistic-scrolled](prep-realistic-scrolled-1280x820.png) | [prep-realistic-scrolled](prep-realistic-scrolled-1100x800.png) | 6→0 |
+| Escena | 1440×900 (defecto) | 1280×820 (mínimo) |
+| --- | --- | --- |
+| Preparación | [prep](prep-1440x900.png) | [prep](prep-1280x820.png) |
+| En juego | [ingame](ingame-1440x900.png) | [ingame](ingame-1280x820.png) |
+| Servidor | [server](server-1440x900.png) | [server](server-1280x820.png) |
+| Escáner | [scanner](scanner-1440x900.png) | [scanner](scanner-1280x820.png) |
+| Herramientas activas | [active](active-1440x900.png) | [active](active-1280x820.png) |
+| Editores abiertos | [active-editors](active-editors-1440x900.png) | [active-editors](active-editors-1280x820.png) |
+| Buffs con dos reglas | [buffs](buffs-1440x900.png) | [buffs](buffs-1280x820.png) |
+| Preparación realista, grupo cerrado | [realistic](prep-realistic-1440x900.png) | [realistic](prep-realistic-1280x820.png) |
+| Realista, scroll inferior y grupo cerrado | [scrolled](prep-realistic-scrolled-1440x900.png) | [scrolled](prep-realistic-scrolled-1280x820.png) |
+| Realista, grupo abierto | [open](prep-realistic-open-1440x900.png) | [open](prep-realistic-open-1280x820.png) |
+| Realista, grupo abierto y scroll inferior | [open-scrolled](prep-realistic-open-scrolled-1440x900.png) | [open-scrolled](prep-realistic-open-scrolled-1280x820.png) |
+| Sin servidor: controles deshabilitados | [empty](prep-empty-1440x900.png) | [empty](prep-empty-1280x820.png) |
 
-Los conteos son iguales en ambos tamaños. Se cuentan contenedores DOM de dos o
-más hijos con borde en los cuatro lados dentro de paneles/modales. Se excluyen
-controles, superficie exterior de modal y pozo de logs. Las mismas cajas pueden
-aparecer en distintas escenas; no sumar las filas como cajas únicas. La guardia
-JSX verifica además las ramas condicionales que no se ven en estas capturas.
+24 capturas nuevas/actualizadas. Informes [1440×900](review-1440x900.json) y
+[1280×820](review-1280x820.json): cero errores de consola, desbordes, texto
+recortado y cajas interiores. Los scrolls previstos no cuentan como recortes:
+conservan el contenido completo. Las capturas 1100×800 y su informe pertenecen
+al polish anterior, antes de fijar el nuevo mínimo; se conservan como historial.
 
-Los informes [1280×820](review-1280x820.json) y [1100×800](review-1100x800.json)
-registran cero errores de consola, desbordes, texto recortado y cajas interiores.
-Las regiones de scroll previstas conservan todo el contenido; sus hijos fuera
-del viewport no se consideran recortes. Los textos, roles, etiquetas accesibles
-y su orden coinciden con las capturas de la línea base bajo el mismo fixture.
-Solo se eliminó un wrapper sin rol, alrededor de HP/SP.
+Revisión visual: rail fijo de 300px (64px en juego); contenido ocupa todo el ancho
+disponible. Entre mínimo/defecto, Logs crece 176→196px y los cuerpos de herramientas
+ganan 60px en preparación estándar/en juego, sin max-width ni centrado artificial.
+La escena realista conserva cinco servidores, Setup.exe, HoneyRO Patcher.exe,
+dgVoodoo conf OK, avisos anti-cheat/Gepard y cuatro líneas largas de logs.
+La columna izquierda conserva un único scroll y acciones inferiores fijas.
 
-La escena realista incluye cinco servidores (primero seleccionado), Setup.exe,
-HoneyRO Patcher.exe, dgVoodoo conf OK, los dos avisos anti-cheat/Gepard solicitados,
-diagnósticos con rutas/detalles largos y cuatro líneas largas de logs. La columna
-izquierda tiene un solo scroll, sin scroll anidado; Jugar y Rearmar entorno
-conservan posición y tamaño al desplazarla. Se comprobaron expansión/cierre
-del rail sin transformación animada y reduced-motion.
+Avanzado comienza con el grupo Benchmarks A/B cerrado. Se verificaron apertura,
+cierre, orden y disponibilidad de las 13 acciones de observaciones/benchmarks.
+DarkSelect conserva rol combobox del selector sustituido; selección por puntero
+y teclado, menú dentro del viewport y reposicionado al redimensionar.
+Las fuentes locales cargan sus ocho caras con HTTP 200 y `document.fonts`;
+familias computadas: Plex Sans para UI, Plex Mono tabular para datos, Barlow para marca.
 
-Las ocho caras locales de IBM Plex Sans, IBM Plex Mono y Barlow Condensed cargan
-con HTTP 200 y `document.fonts`; las familias computadas corresponden a UI/datos/marca.
-Switches apagados/encendidos, también disabled y preparación: opacidad efectiva 1,
-borde contra panel ≥5.623:1 y perilla contra pista ≥6.237:1; encendido 6.849:1 y
-7.447:1 respectivamente. Los 13 pares de texto siguen superando 4.5:1.
+Contraste compuesto, con opacidad efectiva 1:
 
-[Referencias accent/warn por archivo](color-usage.md): app/features 36→23 y
-29→11 respectivamente. Los 50 tokens (17 de color) y las APIs no cambiaron.
+| Par | Ratio |
+| --- | --- |
+| Idle: título, texto y borde superior / panel | 5.623:1 |
+| Disabled: texto y perilla / field | 6.237:1 |
+| Disabled: límite exterior / panel | 5.623:1 |
+| Disabled: límite exterior / surface | 6.047:1 |
+| Disabled: límite exterior / modal | 5.850:1 |
+| Borde interno line / field (no es el límite accesible) | 1.472:1 |
 
-Repetir con `npm run build`, `npm run preview -- --host 127.0.0.1 --port 5175`,
-`npm run review:design -- 5175` y `npm run review:design -- 5175 1100 800`.
-`RO_DESIGN_CHROMIUM` permite seleccionar otro ejecutable Chromium instalado;
-`RO_DESIGN_REVIEW_OUTPUT` permite guardar evidencia temporal fuera del repo.
+Se mantiene el borde line solicitado y se añade outline muted de 1px, porque
+line solo no alcanza 3:1. El límite visible supera 3:1 por ambos lados; el texto
+supera 4.5:1. El arnés rechaza opacidad heredada y mide todos los controles disabled
+renderizados, también con el grupo abierto y sin servidor. Switches habilitados
+conservan ambos estados legibles. Reduced-motion sigue verificado.
 
-Pendiente manual: `npm run tauri:dev` en WebKit con clientes reales y reproducir
-el texto monoespaciado fantasma. WebKitGTK 2.52.6 está instalado, pero este entorno
-no tiene `Xvfb` ni `xvfb-run`; no se añadió ningún parche de compositing.
-Chromium con IPC simulado no valida esa integración.
+Guardia: 47 referencias opacity-*→0 en src; 20 inputs y un select nativos→0
+en features, encapsulados ahora en Input/DarkSelect con los handlers originales.
+Fixtures de paleta, opacidad y controles nativos fallan con código 1; uno válido
+pasa. [Auditoría de accent/warn](color-usage.md): 23→25 y 11→12 en app/features.
+
+Repetir:
+
+```sh
+npm run build
+npm run preview -- --host 127.0.0.1 --port 5175
+npm run review:design -- 5175 1440 900
+npm run review:design -- 5175 1280 820
+```
+
+`RO_DESIGN_CHROMIUM` permite otro Chromium instalado y `RO_DESIGN_REVIEW_OUTPUT`
+un destino temporal. Los volcados DOM detallados quedan en `/tmp`, no en el repo.
+
+Pendiente manual: `npm run tauri:dev` con clientes reales; redimensionado de la
+ventana sin decoraciones en el gestor de ventanas; reproducir el texto fantasma
+en WebKit. Hay WebKitGTK 2.52.6, pero no Xvfb/xvfb-run. No se aplicaron parches
+de compositing. Chromium/IPC simulado no valida esas condiciones de escritorio.

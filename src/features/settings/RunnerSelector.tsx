@@ -4,6 +4,7 @@ import { useSettingsStore } from './settings.store'
 import { Panel } from '../../shared/ui/Panel'
 import { DarkSelect } from '../../shared/ui/DarkSelect'
 import { Button } from '../../shared/ui/Button'
+import { DataText } from '../../shared/ui/DataText'
 import { runSafely } from '../../shared/async'
 import { isLauncherBusy, useLauncherStore } from '../launcher/launcher.store'
 import { useSelectedServer } from '../servers/useSelectedServer'
@@ -86,10 +87,12 @@ export function RunnerSelector() {
             : 'Importar y usar nndsk-ro-proton'}
         </Button>
         <p className="mt-1 text-micro leading-relaxed text-muted">
-          nndsk-ro-proton y Wine 7.16 Staging/TkG amd64 se descargan y verifican
-          por SHA-256 al preparar el entorno. Son los dos runners ofrecidos. La
-          importación local es opcional y cambia sólo el predeterminado global,
-          no los runners propios de cada servidor.
+          <DataText>
+            nndsk-ro-proton y Wine 7.16 Staging/TkG amd64 se descargan y
+            verifican por SHA-256 al preparar el entorno. Son los dos runners
+            ofrecidos. La importación local es opcional y cambia sólo el
+            predeterminado global, no los runners propios de cada servidor.
+          </DataText>
         </p>
       </div>
       {savingRunner && (
@@ -108,10 +111,12 @@ export function RunnerSelector() {
         </p>
       )}
       {server && serverRunner && (
-        <div className="mt-2 border-t border-line py-2">
-          <p className="text-caption leading-relaxed text-warn">
+        <div className="mt-2 border-l-[3px] border-warn pl-3 py-1">
+          <p className="text-caption leading-relaxed text-muted">
             Runner efectivo de {server.name}:{' '}
-            <span className="text-muted">{serverRunnerName}</span>
+            <span className="text-muted font-mono tabular-nums">
+              {serverRunnerName}
+            </span>
           </p>
           <p className="mt-0.5 text-micro leading-relaxed text-muted">
             Propio del servidor; el predeterminado global no lo reemplaza.
