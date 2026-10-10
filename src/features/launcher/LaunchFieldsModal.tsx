@@ -95,7 +95,7 @@ export function LaunchFieldsModal({
         </div>
 
         <div className="mt-3 flex items-start justify-between gap-3">
-          <p className="text-caption leading-relaxed text-warn">
+          <p className="text-caption leading-relaxed text-muted">
             Los valores se ocultan por defecto. El protocolo del cliente puede
             exponerlos temporalmente en los argumentos del proceso de Windows.
           </p>

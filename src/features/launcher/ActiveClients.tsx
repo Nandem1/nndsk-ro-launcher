@@ -81,7 +81,7 @@ export function ActiveClients() {
         {clients.map((client, index) => (
           <div
             key={client.clientId}
-            className="flex items-center gap-2 rounded-control border-t border-line bg-panel px-2.5 py-2"
+            className="flex items-center gap-2 border-t border-line py-2"
           >
             <StatusDot
               status={client.status === 'running' ? 'ok' : 'warning'}
@@ -110,7 +110,7 @@ export function ActiveClients() {
         ))}
       </div>
       {clients.length > 1 && (
-        <p className="mt-2 text-caption leading-relaxed text-warn">
+        <p className="mt-2 text-caption leading-relaxed text-muted">
           AutoPot, AutoBuff y Spammer se habilitan nuevamente cuando quede un
           solo cliente.
         </p>

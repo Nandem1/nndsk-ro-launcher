@@ -38,7 +38,7 @@ export function SpammerDelayControl({
   )
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-2 border-t border-line pt-2">
       <span className="text-caption text-muted uppercase tracking-wide shrink-0">
         Delay
       </span>
@@ -57,7 +57,7 @@ export function SpammerDelayControl({
         onPointerUp={(event) => commit(Number(event.currentTarget.value))}
         onKeyUp={(event) => commit(Number(event.currentTarget.value))}
         onBlur={(event) => commit(Number(event.currentTarget.value))}
-        className="font-mono flex-1 accent-accent disabled:opacity-50"
+        className="font-mono flex-1 disabled:opacity-50"
       />
       <span className="text-caption font-mono text-muted w-8 text-right shrink-0">
         {draftDelayMs}ms

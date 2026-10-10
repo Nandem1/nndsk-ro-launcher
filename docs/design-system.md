@@ -10,14 +10,14 @@ La UI es plana, sin rampas, gradientes, blur, glows ni sombras decorativas.
 | --- | --- | --- |
 | surface | #0F1412 | Fondo de la aplicación |
 | panel | #161C19 | Paneles y filas |
-| panel-raised | #1B2420 | Hover, selección y pista de barras |
+| panel-raised | #1B2420 | Hover, selección y pista de HP/SP |
 | field | #0B100E | Campos, selects y controles |
 | modal | #121815 | Superficie del diálogo |
 | line | #2A332E | Separadores y filas |
-| line-strong | #3A463F | Bordes de campos y borde superior neutral |
+| line-strong | #3A463F | Bordes de campos, pista de sliders y borde superior neutral |
 | ink | #E8EEE8 | Texto principal |
 | muted | #8A968D | Texto secundario; no usar line para texto legible |
-| accent | #FF5C39 | Acción principal, foco, selección y marca |
+| accent | #FF5C39 | Acción principal, foco e indicador de selección |
 | on-accent | #14110F | Texto sobre acciones sólidas |
 | warn | #E2A33A | Atención, advertencias, trabajo pendiente y revisión |
 | ok | #7FB069 | Activo, disponible o correcto |
@@ -28,8 +28,25 @@ La UI es plana, sin rampas, gradientes, blur, glows ni sombras decorativas.
 
 Los estados mantienen sus textos y controles existentes: el color los acompaña,
 no los sustituye. Los puntos son decorativos y están ocultos a lectores de pantalla.
-No reducir la opacidad del texto informativo; idle (60%) y disabled conservan
-sus señales anteriores.
+No reducir la opacidad del texto informativo. En las features de herramientas,
+idle atenúa la cabecera al 60%, no el cuerpo ni los switches. Disabled conserva
+su estado nativo, textos y cursor; el switch no reduce su opacidad.
+
+## Gramática de filas
+
+Panel = borde superior de 2px + cabecera con línea inferior fina. Dentro,
+secciones y filas se separan con `border-t border-line`, sin bordes completos
+ni fondos propios. Solo inputs, selects, teclas, botones y el pozo de logs
+conservan caja. Los modales conservan su superficie exterior; dentro usan filas.
+
+Herramientas es una fila de tres columnas separadas por `border-l border-line`;
+Cliente y sus diagnósticos van debajo con una línea superior. HP/SP quedan
+directamente en AutoPot. Teclado, Gear Switch, Sharp Shooting y reglas de Buffs
+no tienen una caja envolvente. Los controles individuales conservan sus bordes.
+
+La columna izquierda tiene un solo scroll; sus paneles no se comprimen y Avanzado
+no tiene scroll interno. Jugar y Rearmar/Reparar entorno quedan fuera del scroll,
+fijos abajo. Nombres de servidores y diagnósticos largos ajustan línea.
 
 ## Forma, texto y efectos
 
@@ -68,30 +85,37 @@ son de color/borde, hasta 150ms; no hay animaciones de transformación ni stagge
 | Panel | glass (alias de superficie sólida) / idle; default/compact/hero; borde superior de 2px del tono, neutral line-strong; sin borde lateral; título 15px/600 sin uppercase; aliases idle/success/warning/danger conservados |
 | ModalShell / modalSurfaceClasses | layers server/launch/scanner; plain/glass sobre modal con borde line-strong; scrim sin blur |
 | StatusDot | Cuadrado de 8px, tone y pulse; aliases status ok/warning/error/neutral |
-| ToggleSwitch | 34×18px, perilla cuadrada; encendido ok, posición instantánea; tone sigue aceptado por compatibilidad |
+| ToggleSwitch | 34×18px, perilla cuadrada; apagado field/borde muted/perilla muted; encendido ok/borde ok/perilla on-accent; posición instantánea; tone sigue aceptado por compatibilidad |
 | Checkbox | Cuadrado de 16px; selección por defecto accent, tone explícito semántico |
-| DarkSelect | default/keycap, sm/md; field/line-strong; selección por defecto accent, tone explícito semántico; aliases compact/keycap |
+| DarkSelect | default/keycap, sm/md; field/line-strong, texto ink incluso en keycap; selección de menú por defecto accent, tone explícito semántico; aliases compact/keycap |
 | Input | modal/config; field/line-strong, foco accent; props/ref nativos conservados |
 
-Las features conservan dimensiones, grids, modos, jerarquía DOM y handlers.
-Las filas reutilizan line como borde superior. Las descripciones de estado
-permiten ajuste de texto en vez de recortar los hints de benchmarks.
+Las features conservan modos, orden de secciones, handlers y textos/roles
+accesibles. Solo cambian clases y contenedores presentacionales; se retiró el
+wrapper de HP/SP y los detalles largos se colorean aparte de su titular.
+Las descripciones de estado permiten ajuste de texto en vez de recortar hints.
 No se añadió ningún primitivo ni se modificó el IPC.
 
-## Auditoría accent / warn
+## Jerarquía accent / warn
 
-Se revisaron 129 referencias originales de accent, incluyendo stops de progreso
-y el test de estilo de logs. Quedan 49 referencias de acción, foco, selección,
-progreso y marca; 37 referencias explícitas se reclasificaron de accent a warn
-(contadas en los hunks de estilo correspondientes). Las restantes se neutralizaron,
-se pasaron a ok para estado activo o desaparecieron junto con rampas/efectos.
+Accent se reserva para Jugar y botones primarios, selección y foco. Un solo
+tratamiento dominante por región: no repetirlo en títulos, detalles ni acciones
+secundarias. Las selecciones múltiples de teclas comparten el mismo tratamiento.
+Pestañas: texto ink + subrayado de 2px accent, sin caja. Servidor seleccionado:
+barra izquierda de 3px accent, texto ink y radio cuadrado relleno. Tecla elegida:
+fondo accent y texto on-accent. Sliders: pista line-strong y pulgar ink; solo el
+foco usa accent. Wordmark, progreso de setup y hovers secundarios son neutros.
 
-Warn cubre inicio limitado, avisos de mantenimiento, actualizaciones pendientes,
-runners fuera del catálogo/propios, diagnósticos y dependencias, lectura de memoria
-no disponible, privacidad de argumentos, escáner ocupado, mensajes de logs y
-variantes warn de primitivos. Buscar, comparar y continuar en los diálogos son
-acciones accent, no advertencias. Activación de herramientas y switches usa ok.
-Selección de servidor, tabs, teclas y foco conserva accent.
+Warn solo en un titular corto o línea de estado de atención. Anti-cheat/Gepard,
+privacidad y demás párrafos de detalle son muted. Los puntos y bordes de tono
+acompañan el estado y sus textos existentes; no sustituyen la información.
+Los logs conservan su clasificación semántica de severidad, sin cambiar su lógica.
+
+En `src/app` + `src/features`, las referencias literales de utilidades bajaron
+de **36→23 accent** y **29→11 warn**, excluyendo tests y estilos de primitivos.
+[Conteos por archivo y justificación](design-review/color-usage.md).
+El rework anterior (`9960370`) había eliminado las rampas y reclasificado 37
+referencias accent a warn; esta etapa reduce la repetición de color en features.
 
 Las rampas se fusionaron en sus roles base; la antigua superposición clara se
 sustituyó por line/line-strong/panel-raised. El catálogo de migración contiene solo
@@ -107,8 +131,14 @@ de igualdad de colores para este tema.
 
 `npm run check:design` prohíbe paletas crudas, rampas retiradas, overlays claros,
 radios legacy, tamaños px arbitrarios, tracking arbitrario, efectos y movimiento
-decorativo. Incluye el cálculo WCAG: los 13 pares exigidos superan 4.5:1;
+decorativo, la utilidad nativa de accent y wrappers presentacionales delineados
+en features (análisis JSX; controles y pozo de logs exceptuados).
+Incluye el cálculo WCAG: los 13 pares de texto exigidos superan 4.5:1;
 mínimo bad/panel **4.893:1**, on-accent/accent **6.126:1**.
+Ocho pares adicionales validan límites/perillas de switch a 3:1. Chromium mide
+ambos estados, incluidos disabled y preparación, y rechaza opacidad heredada:
+borde apagado/panel **5.623:1**, perilla apagada/field **6.237:1**;
+borde encendido/panel **6.849:1**, perilla encendida/ok **7.447:1**.
 La guardia corre en el CI existente y acepta fixtures como argumento.
 
 ```sh
@@ -123,5 +153,9 @@ npm run review:design -- 5175 1100 800
 El arnés usa Chromium local (`RO_DESIGN_CHROMIUM` permite cambiar el ejecutable),
 IPC simulado y la CSP real sobre el build de producción. Capturas e informes en
 [design-review/](design-review/README.md); cubre preparación, en juego, servidor,
-escáner y herramientas activas, fuentes locales, recortes, overflow y reduced-motion.
-Pendiente manual: `npm run tauri:dev` en WebKit/Tauri con clientes reales.
+escáner, herramientas activas, editores abiertos, Buffs y preparación realista
+con cinco servidores, avisos largos y logs. Audita cajas interiores, recortes,
+overflow, scroll único, acciones fijas, fuentes, switches y reduced-motion.
+Pendiente manual: `npm run tauri:dev` con clientes reales. WebKitGTK 2.52.6 está
+instalado, pero faltan `Xvfb`/`xvfb-run`; no se reprodujo el texto fantasma ni se
+añadieron parches de compositing sin evidencia.

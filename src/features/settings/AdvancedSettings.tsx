@@ -35,10 +35,13 @@ function StatusLine({
   hint?: string | null
 }) {
   return (
-    <div className="min-w-0" title={hint ?? undefined}>
+    <div
+      className="min-w-0 border-t border-line first:border-t-0 pt-1"
+      title={hint ?? undefined}
+    >
       <div className="flex items-center gap-2 min-w-0">
         <StatusDot status={dotStatus} />
-        <p className="text-detail text-muted truncate">{label}</p>
+        <p className="text-detail text-muted min-w-0 break-words">{label}</p>
       </div>
       {hint && (
         <p
@@ -378,9 +381,7 @@ export function AdvancedSettings() {
       tone={hasIssue ? 'warn' : 'neutral'}
       className="shrink-0"
     >
-      <div
-        className={`space-y-1 rounded-control ${hasIssue ? 'bg-panel border-t border-warn/50 px-2 py-1.5 -mx-0.5' : ''}`}
-      >
+      <div className="space-y-1">
         {lines.map((line) => (
           <StatusLine
             key={line.key}
@@ -413,7 +414,7 @@ export function AdvancedSettings() {
           </p>
           <div className="flex flex-wrap gap-1.5 text-caption">
             <select
-              className="bg-panel border border-line rounded-inline px-1 py-0.5"
+              className="bg-field border border-line-strong rounded-inline px-1 py-0.5"
               value={arm}
               onChange={(e) => setArm(e.target.value as 'a' | 'b')}
             >
@@ -526,9 +527,12 @@ export function AdvancedSettings() {
             </button>
           </div>
           {benchmarkRuns.length > 0 && (
-            <div className="max-h-24 overflow-y-auto space-y-0.5 text-caption text-muted">
+            <div className="space-y-0.5 text-caption text-muted">
               {benchmarkRuns.map((run) => (
-                <div key={run.runId} className="flex items-center gap-2">
+                <div
+                  key={run.runId}
+                  className="flex flex-wrap items-center gap-2 border-t border-line pt-1"
+                >
                   <label className="flex items-center gap-0.5">
                     <input
                       type="radio"
@@ -560,7 +564,7 @@ export function AdvancedSettings() {
                     />
                     Der
                   </label>
-                  <span className="truncate">
+                  <span className="min-w-0 break-words">
                     {run.arm} · {run.sceneId} · {run.recordState}
                   </span>
                 </div>

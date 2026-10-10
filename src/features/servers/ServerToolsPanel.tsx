@@ -74,9 +74,9 @@ export function ServerToolsPanel() {
           />
           <ClientDiagnostics status={status} />
           {!!status.dgvoodoo.issues.length && (
-            <div className="mt-2 rounded-control border border-warn/50 bg-panel px-2.5 py-2">
+            <div className="mt-2 border-t border-line py-2">
               {status.dgvoodoo.issues.map((issue) => (
-                <p key={issue} className="text-caption leading-snug text-warn">
+                <p key={issue} className="text-caption leading-snug text-muted">
                   {issue}
                 </p>
               ))}
@@ -105,15 +105,17 @@ function ClientDiagnostics({ status }: { status: ServerToolsStatus }) {
   }
 
   return (
-    <div className="mt-2 rounded-control border border-line bg-surface px-2.5 py-2">
-      <p className="text-caption text-muted">
+    <div className="mt-2 border-t border-line py-2">
+      <p
+        className={`text-caption ${diagnostics.warnings.length ? 'text-warn' : 'text-muted'}`}
+      >
         Cliente {diagnostics.architecture ?? 'PE'}
         {diagnostics.graphicsApis.length
           ? ` · ${diagnostics.graphicsApis.join(' + ')}`
           : ''}
       </p>
       {diagnostics.warnings.map((warning) => (
-        <p key={warning} className="mt-1 text-caption leading-snug text-warn">
+        <p key={warning} className="mt-1 text-caption leading-snug text-muted">
           {warning}
         </p>
       ))}
@@ -177,21 +179,21 @@ function CompactToolCard({
   const btnClass = buttonClasses('secondary', 'xs')
 
   return (
-    <div className="rounded-control border border-line bg-surface px-2.5 py-2 flex flex-col gap-1.5 min-w-0">
-      <div className="flex items-center gap-1.5 min-w-0">
+    <div className="border-l border-line first:border-l-0 px-2.5 py-2 flex flex-col gap-1.5 min-w-0">
+      <div className="flex flex-wrap items-center gap-1.5 min-w-0">
         <StatusDot status={dotOk ? 'ok' : 'neutral'} />
         <span className="text-detail text-ink font-medium shrink-0">
           {label}
         </span>
         <span
-          className="text-caption text-muted truncate font-mono"
+          className="text-caption text-muted break-words min-w-0 font-mono"
           title={detail}
         >
           {detail}
         </span>
       </div>
       {(onAction || onSecondary) && (
-        <div className="flex gap-1">
+        <div className="flex flex-wrap gap-1">
           {onSecondary && secondaryLabel && (
             <button
               type="button"
@@ -233,7 +235,7 @@ function ToolsGrid({
   const dg = status.dgvoodoo
 
   return (
-    <div className="grid grid-cols-3 gap-2">
+    <div className="grid grid-cols-3">
       {SIMPLE_TOOLS(status).map(({ kind, label, tool }) => (
         <CompactToolCard
           key={kind}

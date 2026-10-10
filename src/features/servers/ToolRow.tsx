@@ -30,7 +30,7 @@ export function ToolRow({
   secondaryDanger,
 }: ToolRowProps) {
   const actionClass =
-    'text-xs px-2.5 py-1 rounded-control-compact border border-line text-ink hover:border-accent/50 hover:text-accent hover:bg-panel-raised transition-colors shrink-0 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-line disabled:hover:text-ink disabled:hover:bg-transparent'
+    'text-xs px-2.5 py-1 rounded-control-compact border border-line text-ink hover:border-muted hover:text-ink hover:bg-panel-raised focus-visible:outline focus-visible:outline-accent transition-colors shrink-0 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-line disabled:hover:text-ink disabled:hover:bg-transparent'
 
   const secondaryClass = secondaryDanger
     ? `${actionClass} hover:border-bad/50 hover:text-bad hover:bg-panel-raised`
@@ -43,7 +43,7 @@ export function ToolRow({
         <span className="text-sm text-ink shrink-0 w-20">{label}</span>
         {detail && (
           <span
-            className="text-xs text-muted truncate flex-1 font-mono"
+            className="text-xs text-muted break-words min-w-0 flex-1 font-mono"
             title={detail}
           >
             {detail}
@@ -73,7 +73,9 @@ export function ToolRow({
         </div>
       </div>
       {warning && (
-        <p className="text-xs text-warn pl-[18px] leading-relaxed">{warning}</p>
+        <p className="text-xs text-muted pl-[18px] leading-relaxed">
+          {warning}
+        </p>
       )}
     </div>
   )

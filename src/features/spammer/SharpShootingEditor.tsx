@@ -30,11 +30,11 @@ export function SharpShootingEditor({
   }
 
   return (
-    <div className="rounded-control bg-surface border border-line">
+    <div className="border-t border-line">
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
-        className="w-full flex items-center justify-between gap-2 px-2.5 py-2 text-left"
+        className="w-full flex items-center justify-between gap-2 py-2 text-left"
       >
         <span className="flex items-center gap-1.5 text-caption uppercase tracking-wide text-muted">
           <Crosshair className="w-3 h-3 shrink-0" aria-hidden />
@@ -52,7 +52,7 @@ export function SharpShootingEditor({
       </button>
 
       {open && (
-        <div className="space-y-2 px-2.5 pb-2.5">
+        <div className="space-y-2 pb-2.5">
           <div className="flex items-start justify-between gap-2">
             <p className="text-caption text-muted leading-snug">
               Mantiene Shift durante skill + click. AutoPot usa Shift con sus
@@ -91,8 +91,8 @@ export function SharpShootingEditor({
                         }
                         className={`min-w-8 rounded-control-compact border px-2 py-1 text-caption font-semibold transition-colors disabled:opacity-40 ${
                           selected
-                            ? 'border-special/70 bg-panel text-special'
-                            : 'border-panel-raised bg-panel text-muted hover:border-line hover:text-ink'
+                            ? 'border-accent bg-accent text-on-accent'
+                            : 'border-line bg-field text-muted hover:border-muted hover:text-ink'
                         }`}
                       >
                         {key}

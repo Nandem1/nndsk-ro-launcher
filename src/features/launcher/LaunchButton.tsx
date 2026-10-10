@@ -83,7 +83,7 @@ export function LaunchButton() {
           </div>
           <div className="w-full bg-panel-raised rounded-pill h-1.5 overflow-hidden">
             <div
-              className="h-full bg-accent rounded-pill transition-colors duration-150"
+              className="h-full bg-muted rounded-pill transition-colors duration-150"
               style={{ width: `${setupProgress.percent}%` }}
             />
           </div>

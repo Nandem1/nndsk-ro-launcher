@@ -39,7 +39,7 @@ function StatBar({
   const flashClass = flash ? 'animate-pulse-dot' : ''
 
   return (
-    <div className={`space-y-0.5 ${flashClass}`}>
+    <div className={`space-y-0.5 border-t border-line pt-2 ${flashClass}`}>
       <div className="flex justify-between text-caption text-muted">
         <span>{tone === 'bad' ? 'HP' : 'SP'}</span>
         <span className="font-mono">
@@ -48,9 +48,7 @@ function StatBar({
             : `${cur.toLocaleString()} / ${max.toLocaleString()} (${pct}%)`}
         </span>
       </div>
-      <div
-        className={`h-2 rounded-pill overflow-hidden ${empty ? 'bg-panel border border-dashed border-line' : 'bg-panel-raised'}`}
-      >
+      <div className="h-2 overflow-hidden bg-panel-raised">
         {!empty && (
           <div
             className={`h-full ${fillClass} transition-colors duration-150`}
@@ -166,7 +164,7 @@ export function AutopotPanel() {
       title="AutoPot"
       size={hero ? 'hero' : 'compact'}
       tone={tone}
-      className="h-full"
+      className={`h-full ${tone === 'idle' ? '!opacity-100 [&>div:first-child]:opacity-60' : ''}`}
       leading={
         <FlaskConical className="w-3 h-3 text-muted shrink-0" aria-hidden />
       }
@@ -193,12 +191,10 @@ export function AutopotPanel() {
           />
         </div>
 
-        <div className="space-y-1.5 rounded-control bg-surface border border-line px-2.5 py-2">
-          <StatBar cur={hpCur} max={hpMax} tone="bad" flash={flashHp} />
-          <StatBar cur={spCur} max={spMax} tone="info" flash={flashSp} />
-        </div>
+        <StatBar cur={hpCur} max={hpMax} tone="bad" flash={flashHp} />
+        <StatBar cur={spCur} max={spMax} tone="info" flash={flashSp} />
 
-        <div className="flex items-center justify-between gap-2 rounded-control border-t border-line bg-panel px-2.5 py-2">
+        <div className="flex items-center justify-between gap-2 border-t border-line py-2">
           <div className="min-w-0">
             <p className="text-detail font-medium text-ink">Modo proactivo</p>
             <p className="text-caption leading-snug text-muted">
@@ -214,7 +210,7 @@ export function AutopotPanel() {
           />
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 border-t border-line pt-2">
           <span className="text-caption text-muted uppercase tracking-wide shrink-0">
             Lectura
           </span>
@@ -228,7 +224,7 @@ export function AutopotPanel() {
             onChange={(event) =>
               void updateField({ delayMs: Number(event.target.value) })
             }
-            className="font-mono flex-1 accent-accent disabled:opacity-50"
+            className="font-mono flex-1 disabled:opacity-50"
           />
           <span className="text-caption font-mono text-muted w-10 text-right shrink-0">
             {status.active
@@ -238,7 +234,7 @@ export function AutopotPanel() {
           </span>
         </div>
 
-        <div className="space-y-1">
+        <div className="space-y-1 border-t border-line pt-2">
           <div className="flex items-center justify-between gap-2">
             <span className="text-caption text-muted uppercase tracking-wide">
               Perfil de memoria
@@ -247,7 +243,7 @@ export function AutopotPanel() {
               type="button"
               disabled={!available || status.active || busy}
               onClick={() => setShowMemoryScanner(true)}
-              className="inline-flex items-center gap-1 text-caption text-accent hover:text-accent disabled:text-muted"
+              className="inline-flex items-center gap-1 text-caption text-muted hover:text-ink focus-visible:outline focus-visible:outline-accent disabled:text-muted"
             >
               <Search className="h-3 w-3" aria-hidden />
               Encontrar
@@ -287,7 +283,7 @@ export function AutopotPanel() {
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-1.5">
+        <div className="grid grid-cols-2 gap-1.5 border-t border-line pt-2">
           <div className="space-y-1">
             <span className="text-caption text-muted uppercase tracking-wide">
               HP
@@ -370,10 +366,12 @@ export function AutopotPanel() {
           ) : available && effectiveMemoryAccess && !memoryReady ? (
             <span className="text-warn">
               {memoryAccessLabel(effectiveMemoryAccess)}
-              {memoryAction ? ` ${memoryAction}` : ''}
+              <span className="text-muted">
+                {memoryAction ? ` ${memoryAction}` : ''}
+              </span>
             </span>
           ) : showProfileHint ? (
-            <span className="text-warn">
+            <span className="text-muted">
               La dirección del perfil no es válida; usa Encontrar o revisa el
               perfil.
             </span>

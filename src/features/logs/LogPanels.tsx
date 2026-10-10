@@ -21,15 +21,15 @@ function LogTab({
     <button
       type="button"
       onClick={onClick}
-      className={`px-2 py-0.5 rounded-control-compact text-caption font-semibold uppercase tracking-wider transition-colors inline-flex items-center gap-1 ${
+      className={`px-2 py-0.5 border-b-2 text-caption font-semibold uppercase tracking-wider transition-colors inline-flex items-center gap-1 focus-visible:outline focus-visible:outline-accent ${
         active
-          ? 'bg-panel text-accent border border-accent/25'
-          : 'text-muted hover:text-ink border border-transparent'
+          ? 'text-ink border-accent'
+          : 'text-muted hover:text-ink border-transparent'
       }`}
     >
       {children}
       {badge != null && badge > 0 && (
-        <span className="px-1 min-w-[14px] text-center rounded-inline bg-panel text-bad text-micro leading-tight">
+        <span className="px-1 min-w-[14px] text-center text-bad text-micro leading-tight">
           {badge}
         </span>
       )}

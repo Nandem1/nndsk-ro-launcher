@@ -101,16 +101,17 @@ export function RunnerSelector() {
         </p>
       )}
       {!detected && selectedRunner && (
-        <p className="mt-1.5 text-caption leading-relaxed text-warn">
+        <p className="mt-1.5 text-caption leading-relaxed text-muted">
           Tu selección anterior está fuera del catálogo ofrecido y se conserva
           sin migrar su prefix. Para un entorno nuevo, selecciona uno de los dos
           runners administrados.
         </p>
       )}
       {server && serverRunner && (
-        <div className="mt-2 rounded-control-compact border border-warn/15 bg-panel px-2.5 py-2">
+        <div className="mt-2 border-t border-line py-2">
           <p className="text-caption leading-relaxed text-warn">
-            Runner efectivo de {server.name}: {serverRunnerName}
+            Runner efectivo de {server.name}:{' '}
+            <span className="text-muted">{serverRunnerName}</span>
           </p>
           <p className="mt-0.5 text-micro leading-relaxed text-muted">
             Propio del servidor; el predeterminado global no lo reemplaza.

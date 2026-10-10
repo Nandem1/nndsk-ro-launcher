@@ -428,7 +428,7 @@ export function MemoryScannerModal({
             />
           </label>
         ) : step === 'confirmed' && resolvedHpBase ? (
-          <div className="mt-4 space-y-2 rounded-panel border border-ok/20 bg-panel p-3">
+          <div className="mt-4 space-y-2 border-t border-line pt-3">
             <div className="flex items-center justify-between gap-3">
               <span className="text-detail text-muted">HP base</span>
               <code className="text-xs text-ok">{resolvedHpBase}</code>

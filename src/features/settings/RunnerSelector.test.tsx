@@ -113,9 +113,9 @@ describe('RunnerSelector runtime import', () => {
     useServersStore.setState({ servers: [server], selectedId: server.id })
     render(<RunnerSelector />)
 
-    expect(
-      screen.getByText('Runner efectivo de SakuraRO: Wine 7.16 old-WoW64'),
-    ).toBeInTheDocument()
+    expect(screen.getByText('Runner efectivo de SakuraRO:')).toHaveTextContent(
+      /^Runner efectivo de SakuraRO: Wine 7\.16 old-WoW64$/,
+    )
     expect(
       screen.getByText(
         'Propio del servidor; el predeterminado global no lo reemplaza.',

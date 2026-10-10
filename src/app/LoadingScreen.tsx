@@ -13,7 +13,7 @@ export function LoadingScreen() {
         <span className="text-xl font-wordmark font-bold tracking-widest text-ink">
           RO LAUNCHER
         </span>
-        <div className="w-8 h-8 rounded-pill border-2 border-line border-t-accent animate-pulse-dot" />
+        <div className="w-8 h-8 rounded-pill border-2 border-line border-t-muted animate-pulse-dot" />
       </div>
     </div>
   )

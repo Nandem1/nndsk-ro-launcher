@@ -25,7 +25,7 @@ const KeyChip = memo(function KeyChip({
       onClick={onToggle}
       className={`min-w-0 flex-1 px-1 py-1 rounded-control-compact font-mono text-caption font-semibold border transition-colors disabled:opacity-40 ${
         active
-          ? 'border-accent/70 bg-panel text-accent'
+          ? 'border-accent bg-accent text-on-accent'
           : 'border-line bg-surface text-muted hover:text-muted'
       }`}
     >
@@ -55,14 +55,14 @@ export function SpammerKeyboard({
     onKeysChange(toggleSpammerKey(config, key).keys)
 
   return (
-    <div className="space-y-1.5 rounded-control bg-surface border border-line px-2.5 py-2">
+    <div className="space-y-1.5 border-t border-line py-2">
       <div className="flex justify-between text-caption">
         <span className="text-muted uppercase tracking-wide">Teclas</span>
         <span
           className={
             available && armed
-              ? 'font-mono text-ok font-medium truncate ml-2'
-              : 'font-mono text-muted truncate ml-2'
+              ? 'font-mono text-ok font-medium break-words min-w-0 ml-2'
+              : 'font-mono text-muted break-words min-w-0 ml-2'
           }
         >
           {label}

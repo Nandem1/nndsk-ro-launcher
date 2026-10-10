@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { checkDesignRows } from './check-design-rows.mjs'
 
 const root = path.resolve(import.meta.dirname, '..')
 const catalog = path.join(root, 'scripts/design-token-map.mjs')
@@ -14,6 +15,7 @@ const forbidden = [
   /\b(?:bg-(?:panel|progress)-gradient|bg-gradient-[\w-]+|backdrop\x2dblur(?:-[\w-]+)?|shadow-(?:glow|dot)-[\w-]+|overlay\x2dlight|tracking-\[[^\]]+\])(?![\w-])/g,
   /\b(?:ink-(?:soft|dim|bright)|accent-(?:ink|soft|light|bright|strong)|ok-(?:ink|soft|bright)|bad-(?:ink|soft|bright|strong)|info-(?:soft|bright|strong)|special-(?:ink|soft))(?![\w-])/g,
   /\b(?:stagger\x2dchildren|animate-(?:fade-rise|scale-in|rail-expand|rail-collapse|stat-flash-red|stat-flash-blue)|transition-(?:all|transform|opacity)|duration-(?:200|300|400|500))\b/g,
+  /\baccent\x2daccent\b/g,
 ]
 
 function files(target) {
@@ -38,7 +40,8 @@ const paths = targets.length
     ].map((target) => path.join(root, target))
 let violations = 0
 let checked = 0
-for (const file of paths.flatMap(files)) {
+const sources = paths.flatMap(files)
+for (const file of sources) {
   checked++
   const source = fs.readFileSync(file, 'utf8')
   for (const pattern of forbidden) {
@@ -51,8 +54,14 @@ for (const file of paths.flatMap(files)) {
     }
   }
 }
+violations += checkDesignRows(
+  sources.filter(
+    (file) =>
+      targets.length || file.startsWith(path.join(root, 'src/features/')),
+  ),
+)
 if (violations) {
-  console.error(`Design guard failed: ${violations} raw design references`)
+  console.error(`Design guard failed: ${violations} design violations`)
   process.exitCode = 1
 } else {
   console.log(

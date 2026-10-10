@@ -40,7 +40,7 @@ export function AutobuffPanel() {
       title="AutoBuff"
       size={hero ? 'hero' : 'compact'}
       tone={tone}
-      className="h-full w-full"
+      className={`h-full w-full ${tone === 'idle' ? '!opacity-100 [&>div:first-child]:opacity-60' : ''}`}
       leading={<Sparkles className="w-3 h-3 text-muted shrink-0" aria-hidden />}
     >
       <div className="flex min-h-0 flex-1 flex-col gap-2">
@@ -89,7 +89,9 @@ export function AutobuffPanel() {
           ) : available && effectiveMemoryAccess && !memoryReady ? (
             <span className="text-warn">
               {memoryAccessLabel(effectiveMemoryAccess)}
-              {memoryAction ? ` ${memoryAction}` : ''}
+              <span className="text-muted">
+                {memoryAction ? ` ${memoryAction}` : ''}
+              </span>
             </span>
           ) : null}
         </p>

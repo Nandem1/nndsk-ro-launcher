@@ -96,13 +96,13 @@ function ExecutablePicker({
           onClick={onPick}
           disabled={busy}
           className="min-w-0 flex-1 flex items-center justify-between gap-3 bg-field border border-line-strong
-            rounded-control px-3 py-2.5 text-sm text-left hover:border-accent/40 transition-colors
+            rounded-control px-3 py-2.5 text-sm text-left hover:border-muted focus-visible:outline focus-visible:outline-accent transition-colors
             disabled:opacity-50 disabled:cursor-wait"
         >
           <span className={path ? 'font-mono text-ink truncate' : 'text-muted'}>
             {busy ? 'Abriendo...' : path ? basename(path) : placeholder}
           </span>
-          <span className="text-xs text-accent shrink-0">Examinar</span>
+          <span className="text-xs text-muted shrink-0">Examinar</span>
         </button>
         {path && onClear && (
           <IconButton
@@ -309,7 +309,7 @@ export function ServerConfigModal({ mode, server, onSave, onClose }: Props) {
             <h4 className="text-detail font-semibold text-muted uppercase tracking-wider">
               Entorno
             </h4>
-            <div className="rounded-control border-t border-line bg-panel px-3 py-2.5">
+            <div className="border-t border-line py-2.5">
               <p className="text-xs text-ink">
                 Entorno Ragnarok administrado automáticamente
               </p>
@@ -373,14 +373,14 @@ export function ServerConfigModal({ mode, server, onSave, onClose }: Props) {
               <code className="text-muted">{'${username}'}</code>; no guardes
               valores secretos en esta configuración.
             </p>
-            <label className="flex items-start gap-2 rounded-control border border-line bg-surface px-3 py-2.5">
+            <label className="flex items-start gap-2 border-t border-line py-2.5">
               <input
                 type="checkbox"
                 checked={draft.requireWebview2}
                 onChange={(event) =>
                   setField('requireWebview2', event.target.checked)
                 }
-                className="mt-0.5 accent-accent"
+                className="mt-0.5"
               />
               <span className="text-caption leading-relaxed text-muted">
                 Forzar Microsoft Edge WebView2. Úsalo si el patcher tiene una

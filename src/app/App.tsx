@@ -86,7 +86,10 @@ export function App() {
                   </IconButton>
                 </div>
               )}
-              <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-2.5 pr-0.5">
+              <div
+                data-design-rail-scroll
+                className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-2.5 pr-0.5 [&>section]:shrink-0 [&>section>div:last-child]:flex-none"
+              >
                 <ServerList />
                 <ActiveClients />
                 <RunnerSelector />

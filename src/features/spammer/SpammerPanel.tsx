@@ -58,7 +58,7 @@ export function SpammerPanel() {
       title="Spammer"
       size={hero ? 'hero' : 'compact'}
       tone={tone}
-      className="h-full"
+      className={`h-full ${tone === 'idle' ? '!opacity-100 [&>div:first-child]:opacity-60' : ''}`}
       leading={<Zap className="w-3 h-3 text-muted shrink-0" aria-hidden />}
     >
       <div className="flex-1 min-h-0 overflow-y-auto space-y-2 pr-0.5">

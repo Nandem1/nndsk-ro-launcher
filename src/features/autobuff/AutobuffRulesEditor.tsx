@@ -171,7 +171,7 @@ export function AutobuffRulesEditor({
         </Button>
       </div>
 
-      <div className="min-h-14 flex-1 space-y-1 overflow-y-auto rounded-control border border-line bg-surface p-1.5">
+      <div className="min-h-14 flex-1 space-y-1 overflow-y-auto border-t border-line pt-2">
         {rules.length === 0 ? (
           <p className="px-1 py-2 text-caption text-muted">
             Añade un preset o una regla manual.
@@ -189,7 +189,7 @@ export function AutobuffRulesEditor({
             {rules.map((rule) => (
               <div
                 key={rule.id}
-                className="group grid grid-cols-[16px_minmax(0,1fr)_68px_84px_64px_20px] items-center gap-1.5 rounded-control-compact border-t border-line bg-panel px-2 py-1 transition-colors hover:border-line hover:bg-panel-raised"
+                className="group grid grid-cols-[16px_minmax(0,1fr)_68px_84px_64px_20px] items-center gap-1.5 border-t border-line px-2 py-1 transition-colors hover:bg-panel-raised"
               >
                 <Checkbox
                   checked={rule.enabled}

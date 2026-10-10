@@ -253,7 +253,7 @@ export function DarkSelect({
           transition-colors duration-150 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed
           ${
             variant === 'keycap'
-              ? 'font-mono font-medium text-accent hover:border-accent disabled:hover:border-line-strong'
+              ? 'font-mono font-medium text-ink hover:border-muted disabled:hover:border-line-strong'
               : 'text-ink hover:border-muted disabled:hover:border-line-strong'
           }
           ${small ? 'gap-1 rounded-control-compact px-2 py-1 text-detail' : 'gap-2 rounded-control px-3 py-2 text-sm'}`}

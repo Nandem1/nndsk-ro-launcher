@@ -13,7 +13,7 @@ const VARIANT_CLASSES: Record<ButtonVariant, string> = {
   primary:
     'border border-accent bg-accent text-on-accent font-semibold hover:border-ink',
   secondary:
-    'border border-line-strong bg-transparent text-ink hover:border-accent hover:bg-panel-raised',
+    'border border-line-strong bg-transparent text-ink hover:border-muted hover:bg-panel-raised',
   ghost:
     'border border-transparent text-muted hover:text-ink hover:bg-panel-raised',
   danger:
@@ -22,7 +22,7 @@ const VARIANT_CLASSES: Record<ButtonVariant, string> = {
     'border border-ok/50 bg-transparent text-ok hover:bg-panel-raised hover:border-ok',
   solid: 'font-semibold disabled:opacity-40',
   outline:
-    'border border-line-strong bg-transparent text-ink hover:border-accent hover:bg-panel-raised',
+    'border border-line-strong bg-transparent text-ink hover:border-muted hover:bg-panel-raised',
 }
 
 const PRIMARY_TONE_CLASSES: Record<Tone, string> = {

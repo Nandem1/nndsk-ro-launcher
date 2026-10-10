@@ -34,18 +34,26 @@ const pairs = ['surface', 'panel'].flatMap((background) =>
   ['muted', 'ok', 'bad', 'info', 'warn', 'accent'].map((foreground) => [
     foreground,
     background,
+    4.5,
   ]),
 )
-pairs.push(['on-accent', 'accent'])
+pairs.push(['on-accent', 'accent', 4.5])
+// Switch boundary against its surrounding surface, and knob against its track.
+for (const surface of ['surface', 'panel', 'modal']) {
+  pairs.push(['muted', surface, 3], ['ok', surface, 3])
+}
+pairs.push(['muted', 'field', 3], ['on-accent', 'ok', 3])
 let failed = false
-for (const [foreground, background] of pairs) {
+for (const [foreground, background, minimum] of pairs) {
   const a = luminance(channels[foreground])
   const b = luminance(channels[background])
   const ratio = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
   console.log(`${foreground} / ${background}: ${ratio.toFixed(3)}:1`)
-  if (ratio < 4.5) failed = true
+  if (ratio < minimum) failed = true
 }
 if (failed) {
-  console.error('Design contrast failed: minimum 4.5:1')
+  console.error(
+    'Design contrast failed: text needs 4.5:1; switch boundaries and knobs need 3:1',
+  )
   process.exitCode = 1
 }

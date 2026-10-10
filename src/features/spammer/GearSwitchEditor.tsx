@@ -18,13 +18,13 @@ import {
 type ChipTone = 'selection' | 'info'
 
 const CHIP_ACTIVE_CLASSES: Record<ChipTone, string> = {
-  selection: 'border-accent/50 bg-panel text-accent',
-  info: 'border-info/70 bg-panel text-info',
+  selection: 'border-accent bg-accent text-on-accent',
+  info: 'border-accent bg-accent text-on-accent',
 }
 
 const GEAR_TONE_LABEL: Record<ChipTone, string> = {
-  selection: 'text-accent',
-  info: 'text-info',
+  selection: 'text-muted',
+  info: 'text-muted',
 }
 
 const GearKeySet = memo(function GearKeySet({
@@ -119,17 +119,17 @@ export function GearSwitchEditor({
     onChange(toggleGearRuleKey(gear, trigger, field, key))
 
   return (
-    <div className="rounded-control bg-surface border border-line">
+    <div className="border-t border-line">
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
-        className="w-full flex items-center justify-between gap-2 px-2.5 py-2 text-left"
+        className="w-full flex items-center justify-between gap-2 py-2 text-left"
       >
         <span className="flex items-center gap-1.5 text-caption uppercase tracking-wide text-muted">
           <Swords className="w-3 h-3 shrink-0" aria-hidden />
           ATK / DEF Gear Switch
           {gear.enabled && (
-            <span className="rounded-inline bg-panel px-1 text-micro font-semibold text-accent normal-case tracking-normal">
+            <span className="px-1 text-micro font-semibold text-ok normal-case tracking-normal">
               {gearMode === 'atk' ? 'ATK' : gearMode === 'def' ? 'DEF' : 'on'}
             </span>
           )}
@@ -141,7 +141,7 @@ export function GearSwitchEditor({
       </button>
 
       {open && (
-        <div className="space-y-2 px-2.5 pb-2.5">
+        <div className="space-y-2 pb-2.5">
           <div className="flex items-center justify-between gap-2">
             <p className="text-caption text-muted leading-snug">
               Al mantener la tecla del spammer equipa ATK; al soltarla, DEF.
@@ -178,7 +178,7 @@ export function GearSwitchEditor({
               </div>
 
               {gear.rules.length === 0 ? (
-                <p className="rounded-control-compact border border-dashed border-panel-raised px-2 py-2 text-center text-caption text-muted">
+                <p className="border-t border-line py-2 text-center text-caption text-muted">
                   Agrega una tecla del spammer y define su equipo ATK / DEF.
                 </p>
               ) : (
@@ -186,12 +186,12 @@ export function GearSwitchEditor({
                   {gear.rules.map((rule) => (
                     <div
                       key={rule.trigger}
-                      className="space-y-1.5 rounded-control border-t border-line bg-panel px-2 py-2"
+                      className="space-y-1.5 border-t border-line py-2"
                     >
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-caption uppercase tracking-wide text-muted">
                           Trigger{' '}
-                          <span className="ml-1 rounded-inline font-mono border border-accent/30 bg-panel px-1.5 py-0.5 font-semibold text-accent">
+                          <span className="ml-1 font-mono px-1.5 py-0.5 font-semibold text-ink">
                             {rule.trigger}
                           </span>
                         </span>
@@ -250,7 +250,7 @@ export function GearSwitchEditor({
                   onChange={(event) =>
                     patch({ switchDelayMs: Number(event.target.value) })
                   }
-                  className="font-mono flex-1 accent-accent disabled:opacity-50"
+                  className="font-mono flex-1 disabled:opacity-50"
                 />
                 <span className="text-caption font-mono text-muted w-10 text-right shrink-0">
                   {gear.switchDelayMs}ms

@@ -60,7 +60,7 @@ export function ServerList() {
             <button
               type="button"
               onClick={() => void loadServers()}
-              className="text-xs text-muted hover:text-accent transition-colors self-start"
+              className="text-xs text-muted hover:text-ink focus-visible:outline focus-visible:outline-accent transition-colors self-start"
             >
               Reintentar
             </button>
@@ -77,8 +77,8 @@ export function ServerList() {
           {servers.map((server) => (
             <div
               key={server.id}
-              className={`flex items-center gap-1 px-2 rounded-control transition-colors group
-                ${selectedId === server.id ? 'bg-panel-raised border-t border-accent/50' : 'hover:bg-panel-raised border-t border-line'}`}
+              className={`flex items-center gap-1 px-2 border-t border-line border-l-[3px] transition-colors group
+                ${selectedId === server.id ? 'border-l-accent' : 'hover:bg-panel-raised border-l-transparent'}`}
             >
               <label className="min-w-0 flex-1 flex items-center gap-3 py-2.5 cursor-pointer">
                 <input
@@ -87,10 +87,10 @@ export function ServerList() {
                   value={server.id}
                   checked={selectedId === server.id}
                   onChange={() => selectServer(server.id)}
-                  className="accent-accent w-3.5 h-3.5 shrink-0"
+                  className="w-3.5 h-3.5 shrink-0"
                 />
                 <span
-                  className={`text-sm flex-1 truncate ${selectedId === server.id ? 'text-accent font-medium' : 'text-ink'}`}
+                  className={`text-sm text-ink flex-1 min-w-0 break-words ${selectedId === server.id ? 'font-medium' : ''}`}
                 >
                   {server.name}
                 </span>
@@ -101,7 +101,7 @@ export function ServerList() {
                   variant="ghost"
                   size="xs"
                   onClick={() => handleOpenEdit(server)}
-                  className="text-muted hover:text-accent"
+                  className="text-muted hover:text-ink"
                 >
                   <Pencil className="w-3 h-3" />
                 </IconButton>

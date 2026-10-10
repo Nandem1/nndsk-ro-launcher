@@ -64,7 +64,7 @@ export function AppHeader() {
     <header className="shrink-0 flex items-end justify-between px-4 py-2.5 border-b border-line bg-surface ">
       <div className="min-w-0 flex-1" data-tauri-drag-region>
         <h1 className="text-xl font-wordmark font-bold tracking-tight">
-          <span className="text-accent">RO</span>
+          <span className="text-ink">RO</span>
           <span className="text-ink">-Launcher</span>
         </h1>
         <p className="text-xs text-muted mt-0.5">Ragnarok Online · Linux</p>
