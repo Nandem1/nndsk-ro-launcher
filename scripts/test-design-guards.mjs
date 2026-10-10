@@ -32,5 +32,5 @@ for (const name of ['unknown', 'border', 'divider', 'valid']) {
       assert.match(result.stderr, new RegExp(`${prefix}-nonexistent`))
   if (name === 'border' || name === 'divider')
     assert.match(result.stderr, /without explicit border color/)
-  console.log(`${name}: expected exit ${result.status}`)
+  process.stdout.write(`${name}: expected exit ${result.status}\n`)
 }

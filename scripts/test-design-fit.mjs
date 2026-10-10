@@ -70,7 +70,7 @@ try {
       result.failures.some((failure) => failure.kind === kind),
       `${kind}: ${JSON.stringify(result.failures)}`,
     )
-    console.log(`${kind}: invalid fixture detected`)
+    process.stdout.write(`${kind}: invalid fixture detected\n`)
   }
 } finally {
   await browser.close()

@@ -81,8 +81,8 @@ if (violations) {
   console.error(`Design guard failed: ${violations} design violations`)
   process.exitCode = 1
 } else {
-  console.log(
-    `Design guard passed: ${checked} files, zero raw design references`,
+  process.stdout.write(
+    `Design guard passed: ${checked} files, zero raw design references\n`,
   )
   await import('./check-design-contrast.mjs')
 }

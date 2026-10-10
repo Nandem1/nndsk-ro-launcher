@@ -434,7 +434,7 @@ const capture = async (name) => {
     await page.screenshot({
       path: path.join(output, `${name}-${width}x${height}.png`),
     })
-  console.log(name, styles.length, 'elements rendered')
+  process.stdout.write(`${name}: ${styles.length} elements rendered\n`)
 }
 
 async function auditLines() {
@@ -1692,14 +1692,15 @@ if (width === 1440 && height === 900 && !baseline) {
     path: path.join(output, 'reference-vs-app-1440x900.png'),
   })
   conformance = await reviewConformance({ reference, page, port, output })
-  console.log('Unjustified conformance deviations:', conformance.failures)
+  process.stdout.write(
+    `Unjustified conformance deviations: ${conformance.failures.length}\n`,
+  )
   await reference.close()
   await comparison.close()
 }
-console.log('Console/page errors:', errors)
-console.log('Layout checks:', checks)
-console.log('Loaded fonts:', fonts)
-console.log('Contrast failures:', contrastFailures)
+process.stdout.write(
+  `Review ${width}x${height}: ${checks.length} scenes, ${errors.length} console/page errors, ${checks.reduce((total, check) => total + check.fit.failures.length, 0)} fit failures, ${contrastFailures.length} contrast failures, ${fonts.faces.filter((face) => face.status === 'loaded').length} font faces loaded\n`,
+)
 fs.writeFileSync(
   output === path.resolve('docs/design-review')
     ? `/tmp/ro-soft-fit-review-${width}x${height}.json`

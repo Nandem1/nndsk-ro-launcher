@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 const root = path.resolve(import.meta.dirname, '..')
+const report = (message) => process.stdout.write(`${message}\n`)
 const source = fs.readFileSync(path.join(root, 'src/index.css'), 'utf8')
 const channels = Object.fromEntries(
   [...source.matchAll(/--c-([\w-]+):\s*([\d ]+);/g)].map(([, name, value]) => [
@@ -62,14 +63,14 @@ for (const name of [
   'line-strong',
 ]) {
   const spread = Math.max(...channels[name]) - Math.min(...channels[name])
-  console.log(`${name} neutral spread: ${spread}`)
+  report(`${name} neutral spread: ${spread}`)
   if (spread > 6) failed = true
 }
 for (const [foreground, background, minimum] of pairs) {
   const a = luminance(channels[foreground])
   const b = luminance(channels[background])
   const ratio = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
-  console.log(`${foreground} / ${background}: ${ratio.toFixed(3)}:1`)
+  report(`${foreground} / ${background}: ${ratio.toFixed(3)}:1`)
   if (ratio < minimum) failed = true
 }
 if (failed) {
@@ -92,22 +93,22 @@ for (const tone of ['bad', 'ok', 'info', 'warn']) {
     const foreground =
       tone === 'bad' && alpha === 0.15 ? channels.ink : channels[tone]
     const contrast = ratio(foreground, background)
-    console.log(`tonal ${tone}/${alpha}: ${contrast.toFixed(3)}:1`)
+    report(`tonal ${tone}/${alpha}: ${contrast.toFixed(3)}:1`)
     if (contrast < 4.5) process.exitCode = 1
   }
 }
 const notice = blend(channels.warn, channels.panel, 0.09)
 const noticeContrast = ratio(channels.muted, notice)
-console.log(`notice muted/warn9% over panel: ${noticeContrast.toFixed(3)}:1`)
+report(`notice muted/warn9% over panel: ${noticeContrast.toFixed(3)}:1`)
 if (noticeContrast < 4.5) process.exitCode = 1
 
 // Approved exceptions: line-soft, line and off-switch track are decorative.
 for (const background of ['surface', 'panel', 'panel-raised']) {
   for (const foreground of ['line-soft', 'line', 'track'])
-    console.log(
+    report(
       `decorativo ${foreground}/${background}: ${ratio(channels[foreground], channels[background]).toFixed(3)}:1 (report only)`,
     )
-  console.log(
+  report(
     `focus accent/${background}: ${ratio(channels.accent, channels[background]).toFixed(3)}:1`,
   )
 }

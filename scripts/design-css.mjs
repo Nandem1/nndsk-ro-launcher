@@ -28,12 +28,18 @@ function canonical(value) {
     .replace(/#([\da-f]{3,8})\b/gi, (match, hex) => {
       if (![3, 4, 6, 8].includes(hex.length)) return match
       if (hex.length < 5) hex = [...hex].map((digit) => digit + digit).join('')
-      const channels = [0, 2, 4].map((offset) => parseInt(hex.slice(offset, offset + 2), 16))
+      const channels = [0, 2, 4].map((offset) =>
+        parseInt(hex.slice(offset, offset + 2), 16),
+      )
       const alpha = hex.length === 8 ? parseInt(hex.slice(6), 16) / 255 : 1
       return `rgb(${channels.join(' ')} / ${alpha})`
     })
     .replace(/rgba?\(([^()]+)\)/g, (_, body) => {
-      const parts = body.replace(/,/g, ' ').replace(/\//g, ' ').trim().split(/\s+/)
+      const parts = body
+        .replace(/,/g, ' ')
+        .replace(/\//g, ' ')
+        .trim()
+        .split(/\s+/)
       if (parts.some((part) => !/^[\d.]+$/.test(part))) return `rgb(${body})`
       return `rgb(${parts.slice(0, 3).map(Number).join(' ')} / ${Number(parts[3] ?? 1)})`
     })
@@ -51,7 +57,12 @@ function snapshot(file, replacements = {}) {
     }
   })
   const rules = new Map()
-  const sets = Object.fromEntries(['colors', 'border-radius', 'box-shadow', 'font-size'].map((key) => [key, new Set()]))
+  const sets = Object.fromEntries(
+    ['colors', 'border-radius', 'box-shadow', 'font-size'].map((key) => [
+      key,
+      new Set(),
+    ]),
+  )
   root.walkRules((rule) => {
     if (rule.selector === ':root') return
     const variables = new Map(globals)
@@ -59,17 +70,30 @@ function snapshot(file, replacements = {}) {
     const selector = selectorParser((selectors) => {
       selectors.walkClasses((node) => {
         let name = node.value
-        for (const [before, after] of Object.entries(replacements).sort(([a], [b]) => b.length - a.length)) {
+        for (const [before, after] of Object.entries(replacements).sort(
+          ([a], [b]) => b.length - a.length,
+        )) {
           const escaped = before.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-          name = name.replace(new RegExp(`(?<![\\w-])${escaped}(?![\\w-])`, 'g'), () => after)
+          name = name.replace(
+            new RegExp(`(?<![\\w-])${escaped}(?![\\w-])`, 'g'),
+            () => after,
+          )
         }
         node.value = name
         if (node.raws) delete node.raws.value
       })
-    }).processSync(rule.selector).replace(/\s+/g, ' ').trim()
+    })
+      .processSync(rule.selector)
+      .replace(/\s+/g, ' ')
+      .trim()
     const context = []
-    for (let parent = rule.parent; parent?.type !== 'root'; parent = parent?.parent) {
-      if (parent?.type === 'atrule') context.unshift(`@${parent.name} ${parent.params}`)
+    for (
+      let parent = rule.parent;
+      parent?.type !== 'root';
+      parent = parent?.parent
+    ) {
+      if (parent?.type === 'atrule')
+        context.unshift(`@${parent.name} ${parent.params}`)
     }
     const key = [...context, selector].join(' | ')
     const declarations = []
@@ -79,14 +103,19 @@ function snapshot(file, replacements = {}) {
       // The applied --tw-shadow and resolved box-shadow are compared below.
       if (decl.prop === '--tw-shadow-colored') return
       const value = canonical(resolve(decl.value, variables))
-      declarations.push(`${decl.prop}:${value}${decl.important ? '!important' : ''}`)
+      declarations.push(
+        `${decl.prop}:${value}${decl.important ? '!important' : ''}`,
+      )
       if (sets[decl.prop]) sets[decl.prop].add(value)
-      for (const match of value.matchAll(/rgb\([^()]+\)|\btransparent\b/g)) sets.colors.add(match[0])
+      for (const match of value.matchAll(/rgb\([^()]+\)|\btransparent\b/g))
+        sets.colors.add(match[0])
     })
     rules.set(key, [...(rules.get(key) ?? []), ...declarations])
   })
   return {
-    sets: Object.fromEntries(Object.entries(sets).map(([key, values]) => [key, [...values].sort()])),
+    sets: Object.fromEntries(
+      Object.entries(sets).map(([key, values]) => [key, [...values].sort()]),
+    ),
     rules: Object.fromEntries(rules),
   }
 }
@@ -95,7 +124,16 @@ const [command, baseline, current, mapFile] = process.argv.slice(2)
 if (command === 'snapshot' && baseline && current) {
   const result = snapshot(baseline)
   fs.writeFileSync(current, JSON.stringify(result, null, 2) + '\n')
-  console.log(Object.fromEntries(Object.entries(result.sets).map(([key, values]) => [key, values.length])))
+  process.stdout.write(
+    JSON.stringify(
+      Object.fromEntries(
+        Object.entries(result.sets).map(([key, values]) => [
+          key,
+          values.length,
+        ]),
+      ),
+    ) + '\n',
+  )
 } else if (command === 'compare' && baseline && current) {
   const mapping = mapFile ? JSON.parse(fs.readFileSync(mapFile, 'utf8')) : {}
   const before = snapshot(baseline, mapping)
@@ -104,26 +142,44 @@ if (command === 'snapshot' && baseline && current) {
   for (const [key, values] of Object.entries(before.sets)) {
     const added = after.sets[key].filter((value) => !values.includes(value))
     const removed = values.filter((value) => !after.sets[key].includes(value))
-    if (added.length || removed.length) failures.push({ set: key, added, removed })
+    if (added.length || removed.length)
+      failures.push({ set: key, added, removed })
   }
   for (const [selector, declarations] of Object.entries(before.rules)) {
-    if (JSON.stringify(declarations) !== JSON.stringify(after.rules[selector])) {
-      failures.push({ selector, before: declarations, after: after.rules[selector] })
+    if (
+      JSON.stringify(declarations) !== JSON.stringify(after.rules[selector])
+    ) {
+      failures.push({
+        selector,
+        before: declarations,
+        after: after.rules[selector],
+      })
     }
   }
   const baselineOrder = Object.keys(before.rules)
-  const currentOrder = Object.keys(after.rules).filter((key) => key in before.rules)
+  const currentOrder = Object.keys(after.rules).filter(
+    (key) => key in before.rules,
+  )
   if (JSON.stringify(baselineOrder) !== JSON.stringify(currentOrder)) {
-    failures.push({ cascade: 'Original rule order changed', firstMismatch: baselineOrder.find((key, index) => key !== currentOrder[index]) })
+    failures.push({
+      cascade: 'Original rule order changed',
+      firstMismatch: baselineOrder.find(
+        (key, index) => key !== currentOrder[index],
+      ),
+    })
   }
   if (failures.length) {
     console.error(JSON.stringify(failures.slice(0, 30), null, 2))
     console.error(`${failures.length} CSS differences`)
     process.exitCode = 1
   } else {
-    console.log(`Identical resolved value sets; ${Object.keys(before.rules).length} baseline rules preserved (including variants).`)
+    process.stdout.write(
+      `Identical resolved value sets; ${Object.keys(before.rules).length} baseline rules preserved (including variants).\n`,
+    )
   }
 } else {
-  console.error('Usage: node scripts/design-css.mjs snapshot <css> <json> | compare <baseline.css> <current.css> [class-map.json]')
+  console.error(
+    'Usage: node scripts/design-css.mjs snapshot <css> <json> | compare <baseline.css> <current.css> [class-map.json]',
+  )
   process.exitCode = 1
 }

@@ -150,8 +150,8 @@ export async function checkDesignClasses(files) {
     }
     visit(source)
   }
-  console.log(
-    `Compiled design classes: ${candidates} candidates, ${violations} violations`,
+  process.stdout.write(
+    `Compiled design classes: ${candidates} candidates, ${violations} violations\n`,
   )
   return violations
 }
