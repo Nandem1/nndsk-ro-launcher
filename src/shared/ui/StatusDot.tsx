@@ -7,7 +7,7 @@ const dotClasses: Record<Tone, string> = {
   warn: 'bg-warn',
   bad: 'bg-bad',
   info: 'bg-info',
-  neutral: 'bg-line-strong',
+  neutral: 'bg-muted',
 }
 
 export function StatusDot({

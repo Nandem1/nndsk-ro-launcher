@@ -13,6 +13,7 @@
     "format": "prettier --write src vite.config.ts",
     "format:check": "prettier --check src vite.config.ts",
     "check:design": "node scripts/check-design.mjs",
+    "check:design:fixtures": "node scripts/test-design-guards.mjs",
     "review:design": "node scripts/review-design.mjs",
     "preview": "vite preview",
     "tauri": "tauri",

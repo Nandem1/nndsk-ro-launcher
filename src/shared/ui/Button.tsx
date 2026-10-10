@@ -7,7 +7,7 @@ export type ButtonVariant =
 export type ButtonSize = 'xs' | 'sm' | 'md' | 'lg' | 'dialog' | 'dialog-sm'
 
 const BASE_CLASSES =
-  'idle-control inline-flex items-center justify-center gap-1.5 rounded-control font-medium select-none transition-colors duration-120 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent/50 disabled:pointer-events-none'
+  'idle-control inline-flex items-center justify-center gap-1.5 font-medium select-none transition-colors duration-120 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:pointer-events-none'
 
 const VARIANT_CLASSES: Record<ButtonVariant, string> = {
   primary: 'button-primary bg-accent text-on-accent font-semibold',
@@ -15,7 +15,7 @@ const VARIANT_CLASSES: Record<ButtonVariant, string> = {
   ghost: 'bg-transparent text-muted hover:text-ink hover:bg-panel-raised',
   danger: 'button-tonal-bad text-bad',
   success: 'button-tonal-ok text-ok',
-  solid: 'font-semibold',
+  solid: 'button-solid font-semibold',
   outline: 'bg-panel-raised text-ink hover:bg-line',
 }
 
@@ -44,12 +44,12 @@ function variantClasses(variant: ButtonVariant, tone?: Tone): string {
 }
 
 const SIZE_CLASSES: Record<ButtonSize, string> = {
-  xs: 'text-xs px-3 py-1',
-  sm: 'text-sm px-3.5 py-2',
-  md: 'text-sm px-3.5 py-2',
-  lg: 'text-sm font-semibold p-[13px] rounded-action',
-  dialog: 'text-sm px-3.5 py-2',
-  'dialog-sm': 'text-xs px-3.5 py-2',
+  xs: 'rounded-control text-xs leading-[normal] px-3 py-[5px]',
+  sm: 'rounded-control text-sm leading-[normal] px-3.5 py-2',
+  md: 'rounded-control text-sm leading-[normal] px-3.5 py-2',
+  lg: 'rounded-action text-action font-semibold leading-[normal] p-[13px]',
+  dialog: 'rounded-control text-sm leading-[normal] px-3.5 py-2',
+  'dialog-sm': 'rounded-control text-xs leading-[normal] px-3.5 py-2',
 }
 
 export function buttonClasses(
@@ -121,7 +121,7 @@ export function IconButton({
       type={type}
       aria-label={label}
       title={label}
-      className={`${BASE_CLASSES} ${variantClasses(variant, tone)} ${ICON_SIZE_CLASSES[size]} shrink-0 !px-0 !py-0 ${className}`}
+      className={`${BASE_CLASSES} rounded-control ${variantClasses(variant, tone)} ${ICON_SIZE_CLASSES[size]} shrink-0 !px-0 !py-0 ${className}`}
       {...rest}
     >
       {children}

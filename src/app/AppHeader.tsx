@@ -66,7 +66,7 @@ export function AppHeader() {
   return (
     <header className="h-16 shrink-0 flex items-center justify-between px-4 bg-surface">
       <div className="min-w-0 flex-1" data-tauri-drag-region>
-        <h1 className="text-brand font-sans font-semibold tracking-brand">
+        <h1 className="text-brand leading-[normal] font-sans font-semibold tracking-brand">
           <span className="text-accent">RO</span>
           <span className="text-ink">-Launcher</span>
         </h1>

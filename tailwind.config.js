@@ -23,6 +23,7 @@ export default {
         action: 'var(--radius-action)',
         segmented: 'var(--radius-segmented)',
         segment: 'var(--radius-segment)',
+        notice: 'var(--radius-notice)',
       },
       fontFamily: {
         sans: ['var(--font-sans)'],
@@ -35,6 +36,8 @@ export default {
         label: 'var(--text-label)',
         data: 'var(--text-data)',
         brand: 'var(--text-brand)',
+        key: 'var(--text-key)',
+        action: 'var(--text-action)',
         'panel-title': ['var(--text-panel-title)', { lineHeight: '1.25rem' }],
         ...Object.fromEntries(
           ['xs', 'sm', 'base', 'lg', 'xl'].map((size) => [

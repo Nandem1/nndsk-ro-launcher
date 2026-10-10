@@ -34,7 +34,7 @@ export function Checkbox({
       disabled={disabled}
       onClick={() => onChange(!checked)}
       className={`idle-control flex h-4 w-4 shrink-0 items-center justify-center rounded-pill border-[1.5px] transition-colors duration-120
-        focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent/50 disabled:cursor-not-allowed
+        focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed
         ${
           checked
             ? tone

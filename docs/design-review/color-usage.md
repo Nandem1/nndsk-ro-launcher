@@ -41,7 +41,8 @@ advertencias. Lógica de logs y estados intacta.
 | **Total** | **7** | **6** |
 
 Button encapsula fondos tonales y foco. index.css encapsula puntos/avisos,
-radios nativos, foco 2px accent/50% y mezcla de hover. Los valores base se mantienen.
+radios nativos, foco 2px accent sólido y mezcla de hover. Los colores de estado
+se mantienen; outline sube a #6B6F76 por decisión aprobada.
 La guardia impide border-t de tono: todos los paneles usan line-soft/1px.
 Avanzado mantiene pending/warning→warn, error→bad, listo→ok e informativo→neutral;
 no cambian readiness, acciones, productores ni el helper de presentación.
@@ -50,4 +51,14 @@ No reaparecen iconos decorativos en títulos/pestañas/disclosures. Estados,
 checkboxes y switches son redondos. El mapeo semántico permanece;
 la retirada de bordes no significa eliminar avisos o disponibilidad.
 
-[Revisión visual, contraste y bloqueo pendiente](README.md).
+[Revisión visual y contraste](README.md), [conformidad computada](conformance.md).
+
+Corrección de fidelidad sobre ee3521c: conteos accent/warn sin cambios. El foco
+no es un borde inicial ni de disabled; solo aparece con teclado en focus-visible.
+line-soft/line/track apagado son decorativos y se reportan sin umbral 3:1.
+Outline/panel 3.587:1 y outline/raised 3.339:1; accent sólido/foco 5.899/5.491:1.
+Los puntos y selecciones siguen sujetos a contraste de estado. La pista no se
+sustituye por field al deshabilitar un switch, y una tecla elegida conserva su
+accent/on-accent; disabled no aplica opacidad ni oculta la selección.
+Los puntos neutrales pasan de line-strong a muted: son estado, no un borde
+decorativo, y ahora también cumplen ≥3:1. No cambia el mapeo de estados.

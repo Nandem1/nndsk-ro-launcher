@@ -1,0 +1,1 @@
+export const Border = () => <button className="border rounded-control" />

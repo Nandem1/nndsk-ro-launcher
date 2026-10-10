@@ -265,7 +265,7 @@ export function DarkSelect({
         }}
         className={`idle-control w-full flex items-center justify-between border border-line bg-field text-left focus:outline-none hover:border-line-strong
           transition-colors duration-120 cursor-pointer disabled:cursor-not-allowed
-          font-mono tabular-nums text-data text-ink ${variant === 'keycap' ? 'font-medium' : ''}
+          font-mono tabular-nums text-data leading-[normal] text-ink ${variant === 'keycap' ? 'font-medium' : ''}
           ${small ? 'gap-1 rounded-control px-2 py-1' : 'gap-2 rounded-control px-3 py-2'}`}
       >
         <span className="truncate">

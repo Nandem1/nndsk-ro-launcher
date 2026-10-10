@@ -1,0 +1,1 @@
+export const Unknown = () => <button className="hover:bg-nonexistent text-nonexistent border-nonexistent ring-nonexistent rounded-nonexistent shadow-nonexistent fill-nonexistent stroke-nonexistent divide-nonexistent outline-nonexistent placeholder-nonexistent from-nonexistent to-nonexistent via-nonexistent" />

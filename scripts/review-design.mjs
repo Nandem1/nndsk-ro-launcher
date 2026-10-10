@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { chromium } from 'playwright'
+import { reviewConformance } from './design-conformance.mjs'
 
 const output = path.resolve(
   process.env.RO_DESIGN_REVIEW_OUTPUT ?? 'docs/design-review',
@@ -22,6 +23,7 @@ let railCheck = null
 let controlCheck = null
 const diagnosticChecks = []
 const contrastFailures = []
+let conformance = null
 const browser = await chromium.launch({ executablePath, headless: true })
 const page = await browser.newPage({ viewport: { width, height } })
 await page.route('**/favicon.ico', (route) =>
@@ -417,6 +419,21 @@ async function auditLines() {
 }
 
 async function verifyQuietControls() {
+  const initialRings = await page.evaluate(() =>
+    [...document.querySelectorAll('button, input, textarea, summary')]
+      .filter((element) => {
+        const css = getComputedStyle(element)
+        return (
+          (css.outlineStyle !== 'none' &&
+            parseFloat(css.outlineWidth) > 0 &&
+            !css.outlineColor.endsWith(', 0)')) ||
+          css.boxShadow !== 'none'
+        )
+      })
+      .map((element) => element.outerHTML.slice(0, 180)),
+  )
+  if (initialRings.length)
+    throw new Error(`Rings on initial load: ${JSON.stringify(initialRings)}`)
   const field = page.getByRole('spinbutton', { name: 'Porcentaje de HP' })
   const key = page.getByRole('button', { name: 'F2', exact: true }).first()
   const secondary = page.getByRole('button', {
@@ -431,6 +448,7 @@ async function verifyQuietControls() {
     ['secondary', secondary],
     ['select', select],
   ]) {
+    await page.evaluate(() => document.activeElement?.blur())
     await page.mouse.move(width - 1, height - 1)
     const read = () =>
       locator.evaluate((element) => {
@@ -442,13 +460,14 @@ async function verifyQuietControls() {
           border: css.borderTopColor,
           outline: css.outlineColor,
           outlineWidth: css.outlineWidth,
+          outlineStyle: css.outlineStyle,
           shadow: css.boxShadow,
           background: css.backgroundColor,
           borderWidth: css.borderTopWidth,
           line: rgb('line'),
           strong: rgb('line-strong'),
           raised: rgb('panel-raised'),
-          accent: `rgba(${root.getPropertyValue('--c-accent').trim().split(/\s+/).join(', ')}, 0.5)`,
+          accent: rgb('accent'),
         }
       })
     const resting = await read()
@@ -459,6 +478,14 @@ async function verifyQuietControls() {
       ),
     )
     const hover = await read()
+    await locator.click()
+    const mouseFocus = await read()
+    if (mouseFocus.outlineStyle !== 'none' || mouseFocus.shadow !== 'none')
+      throw new Error(
+        `Pointer focus ring: ${JSON.stringify({ name, mouseFocus })}`,
+      )
+    if (name === 'key') await locator.click() // restore the fixture's selection
+    if (name === 'select') await page.mouse.click(width - 1, height - 1)
     await locator.focus()
     await page.keyboard.press('Tab')
     await page.keyboard.press('Shift+Tab')
@@ -476,11 +503,63 @@ async function verifyQuietControls() {
       throw new Error(
         `Quiet control failed: ${JSON.stringify({ name, resting, hover, focus })}`,
       )
-    readings.push({ name, resting, hover, focus })
+    readings.push({ name, resting, hover, mouseFocus, focus })
   }
   await page.mouse.move(width - 1, height - 1)
   await page.evaluate(() => document.activeElement?.blur())
   return readings
+}
+
+async function verifyServerRowInteraction() {
+  const radio = page.locator('input[type="radio"]').nth(1)
+  const row = radio.locator('xpath=../..')
+  await page.evaluate(() => document.activeElement?.blur())
+  await page.mouse.move(width - 1, height - 1)
+  const rowRead = () =>
+    row.evaluate((element) => {
+      const css = getComputedStyle(element)
+      const control = getComputedStyle(element.querySelector('input'))
+      return {
+        background: css.backgroundColor,
+        radius: css.borderRadius,
+        outline: control.outlineColor,
+        outlineStyle: control.outlineStyle,
+        outlineWidth: control.outlineWidth,
+      }
+    })
+  const restingRow = await rowRead()
+  await row.hover()
+  await row.evaluate((e) =>
+    Promise.all(e.getAnimations().map((a) => a.finished)),
+  )
+  const hoverRow = await rowRead()
+  await radio.click()
+  const mouseRow = await rowRead()
+  if (mouseRow.outlineStyle !== 'none')
+    throw new Error(`Pointer ring on server radio: ${JSON.stringify(mouseRow)}`)
+  await radio.focus()
+  await page.keyboard.press('Tab')
+  await page.keyboard.press('Shift+Tab')
+  const focusRow = await rowRead()
+  if (
+    hoverRow.background !== 'rgb(28, 29, 32)' ||
+    focusRow.outline !== 'rgb(255, 92, 57)' ||
+    focusRow.outlineWidth !== '2px'
+  )
+    throw new Error(
+      `Server row interaction failed: ${JSON.stringify({ restingRow, hoverRow, focusRow })}`,
+    )
+  await page.locator('input[type="radio"]').first().click()
+  const reading = {
+    name: 'server-row/radio',
+    resting: restingRow,
+    hover: hoverRow,
+    mouseFocus: mouseRow,
+    focus: focusRow,
+  }
+  await page.mouse.move(width - 1, height - 1)
+  await page.evaluate(() => document.activeElement?.blur())
+  return reading
 }
 
 async function verifyDiagnosticTones(fault = false) {
@@ -778,6 +857,10 @@ async function verifySwitchContrast(state) {
         border: css.borderTopColor,
         track: css.backgroundColor,
         knob: knob.backgroundColor,
+        boundaryKind:
+          element.getAttribute('aria-checked') === 'false'
+            ? 'decorativo'
+            : 'estado',
         boundaryContrast: contrast(
           css.outlineStyle !== 'none' && parseFloat(css.outlineWidth)
             ? css.outlineColor
@@ -796,7 +879,8 @@ async function verifySwitchContrast(state) {
     readings.some(
       (reading) =>
         reading.opacity !== 1 ||
-        reading.boundaryContrast < 3 ||
+        (reading.boundaryKind !== 'decorativo' &&
+          reading.boundaryContrast < 3) ||
         reading.knobContrast < 3,
     )
   )
@@ -881,6 +965,7 @@ async function auditStateContrast() {
         const css = getComputedStyle(element)
         return {
           panel: element.querySelector('h2').textContent,
+          kind: 'decorativo',
           contrast: contrast(
             blend(rgba(css.borderTopColor), background(element)),
             background(element),
@@ -898,6 +983,16 @@ async function auditStateContrast() {
           css.outlineStyle !== 'none' && parseFloat(css.outlineWidth)
             ? css.outlineColor
             : css.borderTopColor
+        const choice = element.matches(
+          'input[type="radio"], input[type="checkbox"], [role="checkbox"]',
+        )
+        const hasText =
+          !!(
+            element.textContent.trim() ||
+            element.value ||
+            element.getAttribute('placeholder')
+          ) &&
+          !element.matches('[type="range"], [type="radio"], [type="checkbox"]')
         return {
           tag: element.tagName,
           type: element.type,
@@ -912,6 +1007,9 @@ async function auditStateContrast() {
           outline: css.outlineColor,
           outlineWidth: css.outlineWidth,
           textContrast: contrast(blend(rgba(css.color), bg), bg),
+          textMinimum: hasText ? 4.5 : 0,
+          boundaryMinimum: choice ? 3 : 0,
+          boundaryKind: choice ? 'estado' : 'decorativo',
           innerBorderContrast: contrast(
             blend(rgba(css.borderTopColor), bg),
             bg,
@@ -951,12 +1049,21 @@ async function auditStateContrast() {
             element.textContent.trim().slice(0, 65) ??
             element.type,
           textContrast: contrast(blend(rgba(css.color), bg), bg),
-          textMinimum: hasText ? 4.5 : paintedIcon ? 3 : 0,
+          textMinimum:
+            hasText &&
+            !element.matches(
+              '[type="range"], [type="radio"], [type="checkbox"]',
+            )
+              ? 4.5
+              : paintedIcon
+                ? 3
+                : 0,
           opacity: opacity(element),
           borderContrast:
             isField || isChoice
               ? contrast(blend(border, outside), outside)
               : null,
+          boundaryKind: isField ? 'decorativo' : 'estado',
         }
       })
     const notices = [...document.querySelectorAll('.notice-warn')].map(
@@ -968,7 +1075,22 @@ async function auditStateContrast() {
         ),
       }),
     )
-    return { idle, disabled, idleBorders, enabled, notices }
+    const points = [
+      ...document.querySelectorAll(
+        'span.bg-ok, span.bg-warn, span.bg-bad, span.bg-info, span.bg-muted, span.bg-line-strong',
+      ),
+    ]
+      .filter((element) => element.getBoundingClientRect().width === 8)
+      .map((element) => {
+        const css = getComputedStyle(element)
+        const bg = background(element.parentElement)
+        return {
+          color: css.backgroundColor,
+          opacity: opacity(element),
+          contrast: contrast(blend(rgba(css.backgroundColor), bg), bg),
+        }
+      })
+    return { idle, disabled, idleBorders, enabled, notices, points }
   })
   if (
     result.idle.some(
@@ -977,9 +1099,9 @@ async function auditStateContrast() {
     result.disabled.some(
       (reading) =>
         reading.opacity !== 1 ||
-        reading.textContrast < 4.5 ||
-        reading.boundaryContrast < 3 ||
-        reading.boundaryInsideContrast < 3,
+        reading.textContrast < reading.textMinimum ||
+        reading.boundaryContrast < reading.boundaryMinimum ||
+        reading.boundaryInsideContrast < reading.boundaryMinimum,
     )
   )
     throw new Error(`Idle/disabled contrast failed: ${JSON.stringify(result)}`)
@@ -995,8 +1117,15 @@ async function auditStateContrast() {
       `Rendered text/tonal contrast failed: ${JSON.stringify({ textFailures, notices: result.notices })}`,
     )
   const borders = result.enabled.filter(
-    (reading) => reading.borderContrast !== null && reading.borderContrast < 3,
+    (reading) =>
+      reading.boundaryKind !== 'decorativo' &&
+      reading.borderContrast !== null &&
+      reading.borderContrast < 3,
   )
+  if (result.points.some((point) => point.opacity !== 1 || point.contrast < 3))
+    throw new Error(
+      `Status point contrast failed: ${JSON.stringify(result.points)}`,
+    )
   if (borders.length)
     contrastFailures.push({
       kind: 'field-choice-boundary',
@@ -1241,6 +1370,7 @@ if (!baseline) {
 await page.goto(`http://127.0.0.1:${port}/?fixture=pending`)
 await page.getByText('DXVK · pendiente', { exact: true }).waitFor()
 if (!baseline) await verifyDiagnosticTones()
+if (!baseline) controlCheck.push(await verifyServerRowInteraction())
 await capture('prep-pending')
 await page.locator('[data-design-rail-scroll]').evaluate((element) => {
   element.scrollTop = element.scrollHeight
@@ -1303,6 +1433,8 @@ if (width === 1440 && height === 900 && !baseline) {
   await comparison.screenshot({
     path: path.join(output, 'reference-vs-app-1440x900.png'),
   })
+  conformance = await reviewConformance({ reference, page, port, output })
+  console.log('Unjustified conformance deviations:', conformance.failures)
   await reference.close()
   await comparison.close()
 }
@@ -1328,6 +1460,7 @@ fs.writeFileSync(
       controlCheck,
       diagnosticChecks,
       contrastFailures,
+      conformance,
     },
     null,
     2,
@@ -1336,6 +1469,7 @@ fs.writeFileSync(
 await browser.close()
 if (
   contrastFailures.length ||
+  conformance?.failures.length ||
   errors.length ||
   checks.some(
     (check) =>

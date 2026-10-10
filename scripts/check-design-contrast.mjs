@@ -44,10 +44,12 @@ for (const surface of ['surface', 'panel', 'modal']) {
 }
 pairs.push(['muted', 'field', 3], ['on-accent', 'ok', 3])
 pairs.push(['muted', 'track', 3], ['surface', 'ok', 3], ['ink', 'track', 3])
-// Idle text and disabled text/outer boundary. The internal line border is a
-// separator, not the visible control boundary (the muted outline supplies it).
+// Idle/disabled text is not attenuated. Quiet field borders are decorative.
 for (const surface of ['surface', 'panel', 'modal', 'field']) {
   pairs.push(['muted', surface, 4.5])
+}
+for (const surface of ['panel', 'panel-raised']) {
+  pairs.push(['outline', surface, 3], ['accent', surface, 3])
 }
 let failed = false
 for (const name of [
@@ -99,15 +101,13 @@ const noticeContrast = ratio(channels.muted, notice)
 console.log(`notice muted/warn9% over panel: ${noticeContrast.toFixed(3)}:1`)
 if (noticeContrast < 4.5) process.exitCode = 1
 
-// Report the reference's quiet borders honestly; the runtime review enforces
-// the requested 3:1 control-boundary gate, separate from structural lint.
+// Approved exceptions: line-soft, line and off-switch track are decorative.
 for (const background of ['surface', 'panel', 'panel-raised']) {
-  for (const foreground of ['line-soft', 'line', 'outline', 'track'])
+  for (const foreground of ['line-soft', 'line', 'track'])
     console.log(
-      `reference boundary ${foreground}/${background}: ${ratio(channels[foreground], channels[background]).toFixed(3)}:1`,
+      `decorativo ${foreground}/${background}: ${ratio(channels[foreground], channels[background]).toFixed(3)}:1 (report only)`,
     )
-  const focus = blend(channels.accent, channels[background], 0.5)
   console.log(
-    `reference focus accent50%/${background}: ${ratio(focus, channels[background]).toFixed(3)}:1`,
+    `focus accent/${background}: ${ratio(channels.accent, channels[background]).toFixed(3)}:1`,
   )
 }

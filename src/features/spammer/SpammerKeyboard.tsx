@@ -23,10 +23,10 @@ const KeyChip = memo(function KeyChip({
       type="button"
       disabled={disabled}
       onClick={onToggle}
-      className={`min-w-0 flex-1 h-7 px-1 rounded-control-compact font-mono text-caption font-medium transition-colors duration-120 idle-control ${
+      className={`min-w-0 flex-1 h-7 p-0 rounded-control-compact font-mono text-key leading-[normal] transition-colors duration-120 idle-control ${
         active
-          ? 'bg-accent text-on-accent'
-          : 'bg-panel-raised text-muted hover:bg-line hover:text-ink'
+          ? 'bg-accent text-on-accent disabled:text-on-accent font-medium'
+          : 'bg-panel-raised text-muted font-normal hover:bg-line hover:text-ink'
       }`}
     >
       {label}

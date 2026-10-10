@@ -78,7 +78,7 @@ export function RunnerSelector() {
       )}
       <div className="mt-2">
         <Button
-          size="xs"
+          size="sm"
           disabled={savingRunner || launcherBusy || importBusy}
           onClick={() => void importRuntime()}
         >

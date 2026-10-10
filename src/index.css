@@ -22,7 +22,7 @@
     --c-line-soft: 31 33 36;
     --c-track: 42 44 49;
     --c-track-fill: 107 111 118;
-    --c-outline: 74 78 85;
+    --c-outline: 107 111 118;
     --c-ink: 230 231 233;
     --c-muted: 139 143 150;
     --c-accent: 255 92 57;
@@ -43,6 +43,7 @@
     --radius-action: 11px;
     --radius-segmented: 11px;
     --radius-segment: 8px;
+    --radius-notice: 11px;
 
     --text-micro: 11px;
     --text-caption: 11px;
@@ -56,6 +57,8 @@
     --text-panel-title: 15px;
     --text-data: 12.5px;
     --text-brand: 17px;
+    --text-key: 11.5px;
+    --text-action: 14px;
     --weight-panel-title: 600;
     --tracking-panel-title: 0;
     --tracking-micro-label: 0;
@@ -130,13 +133,13 @@
     appearance: none;
     border: 1.5px solid rgb(var(--c-outline));
     border-radius: var(--radius-pill);
-    background-color: rgb(var(--c-field));
+    background-color: transparent;
   }
 
   input[type='checkbox']:checked,
   input[type='radio']:checked {
     border-color: rgb(var(--c-accent));
-    background-color: rgb(var(--c-field));
+    background-color: transparent;
   }
 
   input[type='checkbox']:not(:checked):not(:disabled):hover,
@@ -166,7 +169,7 @@
 
   input[type='checkbox']:focus-visible,
   input[type='radio']:focus-visible {
-    outline: 2px solid rgb(var(--c-accent) / 0.5);
+    outline: 2px solid rgb(var(--c-accent));
     outline-offset: 2px;
   }
 
@@ -222,41 +225,41 @@
   }
 
   input[type='range']:focus-visible {
-    outline: 2px solid rgb(var(--c-accent) / 0.5);
+    outline: 2px solid rgb(var(--c-accent));
     outline-offset: 2px;
   }
 }
 
 @layer components {
   .notice-warn {
-    @apply relative block rounded-control bg-warn/[0.09] pl-8 pr-3 py-3 text-muted;
+    @apply relative block rounded-notice bg-warn/[0.09] pl-8 pr-3.5 py-[11px] text-muted;
   }
 
   .notice-warn::before {
     content: '';
-    @apply absolute left-3.5 top-3.5 h-2 w-2 rounded-pill bg-warn;
+    @apply absolute left-3.5 top-[11px] h-2 w-2 rounded-pill bg-warn;
+  }
+
+  .notice-warn p {
+    font-size: var(--text-data);
+    line-height: 1.55;
   }
 
   .micro-label {
-    @apply font-sans text-label font-medium normal-case text-muted;
+    @apply font-sans text-label font-medium leading-[normal] self-center normal-case text-muted;
     letter-spacing: var(--tracking-micro-label);
   }
 
-  /* Line is a quiet inner separator; muted supplies the accessible outer
-     boundary. Disabled is a color state, never inherited opacity. */
+  /* Disabled is a text state, not a permanent focus ring or a new surface.
+     Decorative borders/tracks retain the approved component geometry. */
   .idle-control:disabled,
   .idle-control:disabled:hover {
-    @apply border border-line bg-field text-muted outline outline-1 outline-muted;
-    outline-offset: 0;
+    @apply text-muted;
   }
 
   .idle-control:disabled .text-ink,
   .idle-control:disabled .text-on-accent {
     @apply text-muted;
-  }
-
-  .idle-control:disabled[role='switch'] > span {
-    @apply bg-muted;
   }
 
   .idle-control:disabled[aria-checked='false'] > svg {
@@ -293,6 +296,11 @@
 @layer utilities {
   .button-primary:not(:disabled) {
     @apply bg-accent text-on-accent;
+  }
+
+  .button-primary:disabled,
+  .button-solid:disabled {
+    @apply bg-panel-raised text-muted;
   }
 
   .button-primary:hover:not(:disabled) {
@@ -369,8 +377,15 @@
   }
 
   :is(button, input, textarea, summary):focus-visible:not(:disabled) {
-    outline: 2px solid rgb(var(--c-accent) / 0.5);
+    outline: 2px solid rgb(var(--c-accent));
     outline-offset: 2px;
+  }
+
+  /* Text inputs may match :focus-visible after a pointer click in Chromium.
+     Modality is presentation-only; no focus, value or event is intercepted. */
+  html:not([data-focus-modality='keyboard'])
+    :is(button, input, textarea, summary, [tabindex]):focus-visible {
+    outline: none;
   }
 
   .font-mono {

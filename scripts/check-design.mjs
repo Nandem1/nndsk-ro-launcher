@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { checkDesignRows } from './check-design-rows.mjs'
+import { checkDesignClasses } from './check-design-classes.mjs'
 
 const root = path.resolve(import.meta.dirname, '..')
 const catalog = path.join(root, 'scripts/design-token-map.mjs')
@@ -30,10 +31,13 @@ function files(target) {
     return fs
       .readdirSync(target)
       .flatMap((name) => files(path.join(target, name)))
-  return sourceExtensions.test(target) && target !== catalog ? [target] : []
+  return (sourceExtensions.test(target) || targets.includes(target)) &&
+    target !== catalog
+    ? [target]
+    : []
 }
 
-const targets = process.argv.slice(2)
+const targets = process.argv.slice(2).map((target) => path.resolve(target))
 const paths = targets.length
   ? targets.map((target) => path.resolve(target))
   : [
@@ -66,6 +70,11 @@ violations += checkDesignRows(
       ['src/features/', 'src/app/'].some((directory) =>
         file.startsWith(path.join(root, directory)),
       ),
+  ),
+)
+violations += await checkDesignClasses(
+  sources.filter(
+    (file) => targets.length || file.startsWith(path.join(root, 'src')),
   ),
 )
 if (violations) {

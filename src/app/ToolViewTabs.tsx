@@ -22,7 +22,7 @@ export function ToolViewTabs() {
             type="button"
             onClick={() => setToolView(view)}
             aria-pressed={active}
-            className={`flex-1 flex items-center justify-center gap-1.5 rounded-segment px-2 py-1.5 text-data font-sans font-medium transition-colors duration-120 ${
+            className={`flex-1 flex items-center justify-center gap-1.5 rounded-segment px-7 py-1.5 text-data leading-[normal] font-sans font-medium transition-colors duration-120 ${
               active
                 ? 'bg-line text-ink'
                 : 'text-muted hover:bg-panel-raised hover:text-ink'

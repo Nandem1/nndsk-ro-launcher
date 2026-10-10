@@ -1,0 +1,1 @@
+export const Valid = () => <button className="border border-line rounded-control hover:bg-panel-raised" />

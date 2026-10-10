@@ -38,7 +38,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
       ref={ref}
       type={type}
       style={{ ...rangeStyle, ...style }}
-      className={`idle-control ${['range', 'checkbox', 'radio'].includes(type) ? '' : VARIANT_CLASSES[variant]} ${type === 'number' ? 'font-mono tabular-nums' : ''} ${className}`}
+      className={`idle-control ${['range', 'checkbox', 'radio'].includes(type) ? '' : `${VARIANT_CLASSES[variant]} leading-[normal]`} ${type === 'number' ? 'font-mono tabular-nums' : ''} ${className}`}
       {...rest}
     />
   )
