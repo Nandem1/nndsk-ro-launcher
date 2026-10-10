@@ -32,6 +32,10 @@ declarations, including variant selectors and media/keyframe contexts. Renamed
 utilities are supplied through a class map; changed values cannot be excused by it.
 It also checks original rule order so equal sets cannot hide a cascade regression.
 
+`scripts/migrate-design.mjs` is the idempotent palette-to-role migration tool;
+`node scripts/migrate-design.mjs --check` is read-only and should find no remaining
+legacy utilities. It is not a theme switch: current values belong in the tokens.
+
 After centralization: zero raw palette/overlay classes, zero arbitrary pixel text
 sizes, zero legacy radius/shadow classes. The 91 radius references, 27 shadow
 references and 143 arbitrary text references now use named tokens; repeated input

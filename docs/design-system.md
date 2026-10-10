@@ -98,10 +98,10 @@ nombre 500, radio circular accent. Editar/quitar siempre visibles con sus nombre
 y handlers originales. El mínimo permite crecer a nombres arbitrariamente largos,
 en vez de truncarlos; las cinco filas de la fixture caben en 40px.
 
-Cabecera 64px; rail 300px y gap 12px. No cambia la distribución de columnas,
-scroll único, botones inferiores fijos, cuerpos flexibles ni altura de Logs.
+Cabecera 64px; rail 300px y gap 12px. Se conserva la distribución de columnas,
+scroll único y botones inferiores fijos; cuerpos y Logs ceden altura según Encaje.
 Ventana permanece 1440×900, mínimo 1280×820, resizable false, decorations false;
-src-tauri no se modifica.
+su configuración vive en src-tauri/tauri.conf.json.
 
 ## Jerarquía y estados
 

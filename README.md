@@ -50,6 +50,11 @@ Build the AppImage with `npm run tauri:build:appimage`. Artifacts go to `target/
 See [AGENTS.md](AGENTS.md) for tests and contribution rules, and [docs/README.md](docs/README.md)
 for architecture and technical contracts.
 
+The frozen UI uses the soft graphite theme in a fixed 1440×900 window. See the
+[design system](docs/design-system.md) for tokens and visual gates, the
+[approved captures](docs/design-review/README.md) and the
+[manual premerge checklist](docs/design-review/premerge-checklist.md).
+
 ## Third-party projects
 
 [nndsk-ro-proton](https://github.com/Nandem1/nndsk-ro-proton) ·
