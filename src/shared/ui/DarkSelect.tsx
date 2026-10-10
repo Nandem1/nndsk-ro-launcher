@@ -28,11 +28,11 @@ interface Props {
 }
 
 const SELECTED_CLASSES: Record<Tone, string> = {
-  warn: 'bg-accent-strong/25 text-accent-soft',
-  ok: 'bg-ok/10 text-ok-soft',
-  bad: 'bg-bad/10 text-bad-soft',
-  info: 'bg-info/15 text-info-soft',
-  neutral: 'bg-panel-raised/80 text-ink',
+  warn: 'bg-panel-raised text-warn',
+  ok: 'bg-panel text-ok',
+  bad: 'bg-panel text-bad',
+  info: 'bg-panel text-info',
+  neutral: 'bg-panel-raised text-ink',
 }
 
 interface MenuPosition {
@@ -79,7 +79,7 @@ export function DarkSelect({
   placeholder = 'Seleccionar...',
   variant = keycap ? 'keycap' : 'default',
   size = compact ? 'sm' : 'md',
-  tone = 'warn',
+  tone,
 }: Props) {
   const small = size === 'sm'
   const [open, setOpen] = useState(false)
@@ -197,7 +197,7 @@ export function DarkSelect({
               width: menuPosition.width,
               maxHeight: menuPosition.maxHeight,
             }}
-            className={`z-[200] py-1 rounded-control border border-overlay-light/[0.08] bg-surface/90 backdrop-blur-panel shadow-panel overflow-y-auto overscroll-contain animate-scale-in ${
+            className={`z-[200] py-1 rounded-control border border-line-strong bg-field overflow-y-auto overscroll-contain ${
               menuPosition.openUp ? 'origin-bottom' : 'origin-top'
             }`}
           >
@@ -212,11 +212,13 @@ export function DarkSelect({
                     tabIndex={index === activeIndex ? 0 : -1}
                     onMouseMove={() => setActiveIndex(index)}
                     onClick={() => chooseOption(index)}
-                    className={`w-full text-left transition-colors truncate ${small ? 'px-2 py-1.5 text-detail' : 'px-3 py-2 text-sm'}
+                    className={`w-full text-left transition-colors duration-150 truncate ${small ? 'px-2 py-1.5 text-detail' : 'px-3 py-2 text-sm'}
                       ${
                         isSelected
-                          ? SELECTED_CLASSES[tone]
-                          : 'text-ink-bright hover:bg-panel-raised/80 hover:text-ink'
+                          ? tone
+                            ? SELECTED_CLASSES[tone]
+                            : 'bg-panel-raised text-accent'
+                          : 'text-ink hover:bg-panel-raised hover:text-ink'
                       }`}
                   >
                     {option.label}
@@ -247,18 +249,18 @@ export function DarkSelect({
             openMenu(event.key === 'ArrowUp' ? options.length - 1 : undefined)
           }
         }}
-        className={`w-full flex items-center justify-between border text-left focus:outline-none focus:border-accent/60 focus:ring-1 focus:ring-accent/20
-          transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed
+        className={`w-full flex items-center justify-between border border-line-strong bg-field text-left focus:outline-none focus:border-accent
+          transition-colors duration-150 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed
           ${
             variant === 'keycap'
-              ? 'border-accent/20 bg-accent/[0.04] font-medium text-accent-ink/90 hover:border-accent/40 hover:bg-accent/[0.07] disabled:hover:border-accent/20'
-              : 'border-line/80 bg-surface text-ink hover:border-line-strong disabled:hover:border-line/80'
+              ? 'font-mono font-medium text-accent hover:border-accent disabled:hover:border-line-strong'
+              : 'text-ink hover:border-muted disabled:hover:border-line-strong'
           }
           ${small ? 'gap-1 rounded-control-compact px-2 py-1 text-detail' : 'gap-2 rounded-control px-3 py-2 text-sm'}`}
       >
         <span className="truncate">{selected?.label ?? placeholder}</span>
         <ChevronDown
-          className={`w-3.5 h-3.5 text-muted shrink-0 transition-transform duration-200 ease-out-quart ${open ? 'rotate-180' : ''}`}
+          className={`w-3.5 h-3.5 text-muted shrink-0 transition-colors duration-150 ${open ? 'rotate-180' : ''}`}
           aria-hidden
         />
       </button>

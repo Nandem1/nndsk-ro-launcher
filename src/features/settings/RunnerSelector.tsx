@@ -96,20 +96,20 @@ export function RunnerSelector() {
         <p className="mt-1.5 text-caption text-muted">Guardando selección...</p>
       )}
       {(error || pickerError) && (
-        <p role="alert" className="mt-1.5 text-caption text-bad-bright">
+        <p role="alert" className="mt-1.5 text-caption text-bad">
           {pickerError || error}
         </p>
       )}
       {!detected && selectedRunner && (
-        <p className="mt-1.5 text-caption leading-relaxed text-accent-bright/80">
+        <p className="mt-1.5 text-caption leading-relaxed text-warn">
           Tu selección anterior está fuera del catálogo ofrecido y se conserva
           sin migrar su prefix. Para un entorno nuevo, selecciona uno de los dos
           runners administrados.
         </p>
       )}
       {server && serverRunner && (
-        <div className="mt-2 rounded-control-compact border border-accent/15 bg-accent/5 px-2.5 py-2">
-          <p className="text-caption leading-relaxed text-accent-light/90">
+        <div className="mt-2 rounded-control-compact border border-warn/15 bg-panel px-2.5 py-2">
+          <p className="text-caption leading-relaxed text-warn">
             Runner efectivo de {server.name}: {serverRunnerName}
           </p>
           <p className="mt-0.5 text-micro leading-relaxed text-muted">

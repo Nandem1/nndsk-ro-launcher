@@ -1,4 +1,3 @@
-import { useRef } from 'react'
 import { ChevronsLeft } from 'lucide-react'
 import { AppHeader } from './AppHeader'
 import { useAppInit } from './useAppInit'
@@ -27,7 +26,6 @@ import { IconButton } from '../shared/ui/Button'
 import { ToolViewTabs } from './ToolViewTabs'
 import { useUiModeStore } from './uiMode.store'
 import { useUiModeTransition } from './useUiModeTransition'
-import { useTransformLayoutTransition } from './useTransformLayoutTransition'
 import { StartupNotice } from './StartupNotice'
 import { MaintenanceNotice } from './MaintenanceNotice'
 import { useSelectedRuntimeStatus } from '../features/settings/useSelectedRuntimeStatus'
@@ -50,12 +48,6 @@ export function App() {
   const toolView = useUiModeStore((s) => s.toolView)
   const railExpanded = mode === 'prep' || railPeek
   const railWidth = railExpanded ? RAIL_EXPANDED_PX : RAIL_COLLAPSED_PX
-  const contentRef = useRef<HTMLDivElement>(null)
-  useTransformLayoutTransition(
-    railExpanded,
-    contentRef,
-    RAIL_EXPANDED_PX - RAIL_COLLAPSED_PX,
-  )
 
   if (phase === 'loading') return <LoadingScreen />
 
@@ -80,7 +72,7 @@ export function App() {
           {railExpanded ? (
             <div
               key="rail-full"
-              className="flex flex-col min-h-0 flex-1 gap-2.5 animate-rail-expand"
+              className="flex flex-col min-h-0 flex-1 gap-2.5 "
             >
               {mode === 'ingame' && (
                 <div className="shrink-0 flex justify-end pb-2">
@@ -112,22 +104,19 @@ export function App() {
           )}
         </div>
 
-        <div
-          ref={contentRef}
-          className="flex flex-col gap-2.5 min-h-0 will-change-transform"
-        >
+        <div className="flex flex-col gap-2.5 min-h-0">
           {mode === 'prep' && <ServerToolsPanel />}
 
           <ToolViewTabs />
 
           <div className="flex-1 min-h-0">
             {toolView === 'combat' ? (
-              <div className="grid h-full grid-cols-2 gap-2.5 items-stretch stagger-children">
+              <div className="grid h-full grid-cols-2 gap-2.5 items-stretch ">
                 <AutopotPanel />
                 <SpammerPanel />
               </div>
             ) : (
-              <div className="h-full stagger-children">
+              <div className="h-full ">
                 <AutobuffPanel />
               </div>
             )}

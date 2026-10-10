@@ -14,19 +14,19 @@ export function countLogErrors(logs: string[]): number {
 }
 
 export function logLineClass(line: string): string {
-  if (isLogError(line)) return 'text-bad-bright'
+  if (isLogError(line)) return 'text-bad'
   if (/\bwarn:/i.test(line) || PROBE_WARN.test(line)) {
-    return 'text-accent-bright'
+    return 'text-warn'
   }
   if (
     /Juego cerrado|Lanzando|Configurando|\[AutoPot\] Probe OK|\[Launch\]/i.test(
       line,
     )
   ) {
-    return 'text-ok-bright/80'
+    return 'text-ok'
   }
   if (/\[AutoPot\]/i.test(line)) {
-    return 'text-info-bright/90'
+    return 'text-info'
   }
-  return 'text-ink-soft'
+  return 'text-muted'
 }

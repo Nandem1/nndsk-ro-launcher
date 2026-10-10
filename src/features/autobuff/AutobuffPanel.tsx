@@ -41,9 +41,7 @@ export function AutobuffPanel() {
       size={hero ? 'hero' : 'compact'}
       tone={tone}
       className="h-full w-full"
-      leading={
-        <Sparkles className="w-3 h-3 text-line-strong shrink-0" aria-hidden />
-      }
+      leading={<Sparkles className="w-3 h-3 text-muted shrink-0" aria-hidden />}
     >
       <div className="flex min-h-0 flex-1 flex-col gap-2">
         <div className="flex shrink-0 items-start justify-between gap-2">
@@ -52,7 +50,7 @@ export function AutobuffPanel() {
               {status.lastAppliedRule ?? 'Sin buffs aplicados'}
             </p>
             <p
-              className={`text-caption ${launching ? 'text-muted animate-pulse-dot' : 'text-line-strong'}`}
+              className={`text-caption ${launching ? 'text-muted animate-pulse-dot' : 'text-muted'}`}
             >
               {!server
                 ? 'Selecciona un servidor'
@@ -81,15 +79,15 @@ export function AutobuffPanel() {
           onChange={(rules) => void updateField({ rules })}
         />
 
-        <p className="shrink-0 text-caption leading-snug text-line-strong">
+        <p className="shrink-0 text-caption leading-snug text-muted">
           Activa cada buff y asigna la tecla donde lo tienes configurado en el
           juego.
         </p>
         <p className="shrink-0 text-caption leading-snug min-h-[calc(1em*1.375)]">
           {error && available ? (
-            <span className="text-bad-bright/90">{error}</span>
+            <span className="text-bad">{error}</span>
           ) : available && effectiveMemoryAccess && !memoryReady ? (
-            <span className="text-accent/90">
+            <span className="text-warn">
               {memoryAccessLabel(effectiveMemoryAccess)}
               {memoryAction ? ` ${memoryAction}` : ''}
             </span>

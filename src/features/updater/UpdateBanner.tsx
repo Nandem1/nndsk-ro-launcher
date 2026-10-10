@@ -30,10 +30,10 @@ export function UpdateBanner() {
   const clientsActive = clientsBlockUpdate({ launchStatus, clients })
   const tone =
     kind === 'failed'
-      ? 'border-bad/30 bg-bad/10 text-bad-ink'
+      ? 'border-bad/30 bg-panel text-bad'
       : kind === 'readyToRestart'
-        ? 'border-ok/30 bg-ok/10 text-ok-ink'
-        : 'border-accent/30 bg-accent/10 text-accent-ink'
+        ? 'border-ok/30 bg-panel text-ok'
+        : 'border-warn/30 bg-panel text-warn'
 
   return (
     <div

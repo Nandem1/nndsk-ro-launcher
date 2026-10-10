@@ -7,19 +7,10 @@ interface ToggleSwitchProps {
   tone?: Tone
 }
 
-const ON_CLASSES: Record<Tone, string> = {
-  ok: 'bg-ok/80 border-ok-bright/50 shadow-glow-ok',
-  warn: 'bg-accent/80 border-accent-bright/50 shadow-glow-warn',
-  bad: 'bg-bad/10 border-bad/30 shadow-glow-bad',
-  info: 'bg-info/15 border-info/70',
-  neutral: 'bg-panel-raised border-line/80',
-}
-
 export function ToggleSwitch({
   checked,
   disabled = false,
   onChange,
-  tone = 'ok',
 }: ToggleSwitchProps) {
   return (
     <button
@@ -28,13 +19,13 @@ export function ToggleSwitch({
       aria-checked={checked}
       disabled={disabled}
       onClick={() => onChange(!checked)}
-      className={`relative w-9 h-5 rounded-pill border transition-[background-color,border-color,box-shadow] duration-200 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed ${
-        checked ? ON_CLASSES[tone] : 'bg-panel-raised border-line/80'
+      className={`relative w-[34px] h-[18px] rounded-pill border transition-colors duration-150 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed ${
+        checked ? 'bg-ok border-ok/50' : 'bg-field border-line-strong'
       }`}
     >
       <span
-        className={`absolute top-0.5 left-0.5 w-3.5 h-3.5 rounded-pill bg-overlay-light shadow-control transition-transform duration-200 ease-spring ${
-          checked ? 'translate-x-4' : 'translate-x-0'
+        className={`absolute top-px w-3.5 h-3.5 rounded-pill transition-colors duration-150 ${
+          checked ? 'left-[17px] bg-on-accent' : 'left-px bg-muted'
         }`}
       />
     </button>

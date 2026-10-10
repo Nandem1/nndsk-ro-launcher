@@ -1,0 +1,118 @@
+{
+  "viewport": {
+    "width": 1100,
+    "height": 800
+  },
+  "csp": "default-src 'self'; img-src 'self' asset: data:; style-src 'self' 'unsafe-inline'; connect-src ipc: http://ipc.localhost",
+  "errors": [],
+  "checks": [
+    {
+      "scene": "prep",
+      "overflow": [],
+      "clippedText": []
+    },
+    {
+      "scene": "server",
+      "overflow": [],
+      "clippedText": []
+    },
+    {
+      "scene": "ingame",
+      "overflow": [],
+      "clippedText": []
+    },
+    {
+      "scene": "scanner",
+      "overflow": [],
+      "clippedText": []
+    },
+    {
+      "scene": "active",
+      "overflow": [],
+      "clippedText": []
+    }
+  ],
+  "fonts": {
+    "faces": [
+      {
+        "family": "IBM Plex Sans",
+        "weight": "400",
+        "status": "loaded"
+      },
+      {
+        "family": "IBM Plex Sans",
+        "weight": "500",
+        "status": "loaded"
+      },
+      {
+        "family": "IBM Plex Sans",
+        "weight": "600",
+        "status": "loaded"
+      },
+      {
+        "family": "IBM Plex Sans",
+        "weight": "700",
+        "status": "loaded"
+      },
+      {
+        "family": "IBM Plex Mono",
+        "weight": "400",
+        "status": "loaded"
+      },
+      {
+        "family": "IBM Plex Mono",
+        "weight": "500",
+        "status": "loaded"
+      },
+      {
+        "family": "IBM Plex Mono",
+        "weight": "600",
+        "status": "loaded"
+      },
+      {
+        "family": "Barlow Condensed",
+        "weight": "700",
+        "status": "loaded"
+      }
+    ],
+    "actual": {
+      "ui": "\"IBM Plex Sans\", sans-serif",
+      "data": "\"IBM Plex Mono\", monospace",
+      "wordmark": "\"Barlow Condensed\", sans-serif"
+    }
+  },
+  "fontResponses": [
+    {
+      "url": "/assets/ibm-plex-sans-latin-400-normal-CDDApCn2.woff2",
+      "status": 200
+    },
+    {
+      "url": "/assets/barlow-condensed-latin-700-normal-v1xN8_Wq.woff2",
+      "status": 200
+    },
+    {
+      "url": "/assets/ibm-plex-sans-latin-500-normal-6ng42L7E.woff2",
+      "status": 200
+    },
+    {
+      "url": "/assets/ibm-plex-mono-latin-400-normal-DMJ8VG8y.woff2",
+      "status": 200
+    },
+    {
+      "url": "/assets/ibm-plex-sans-latin-600-normal-CuJfVYMP.woff2",
+      "status": 200
+    },
+    {
+      "url": "/assets/ibm-plex-mono-latin-500-normal-DSY6xOcd.woff2",
+      "status": 200
+    },
+    {
+      "url": "/assets/ibm-plex-mono-latin-600-normal-BgSNZQsw.woff2",
+      "status": 200
+    },
+    {
+      "url": "/assets/ibm-plex-sans-latin-700-normal-Bxkt5Cjx.woff2",
+      "status": 200
+    }
+  ]
+}

@@ -16,7 +16,7 @@ export function ToolViewTabs() {
   const setToolView = useUiModeStore((s) => s.setToolView)
 
   return (
-    <div className="shrink-0 flex gap-1 rounded-control border border-panel-raised/60 bg-surface/40 p-1">
+    <div className="shrink-0 flex gap-1 rounded-control border border-line bg-surface p-1">
       {TABS.map(({ view, label, icon: Icon }) => {
         const active = toolView === view
         return (
@@ -25,10 +25,10 @@ export function ToolViewTabs() {
             type="button"
             onClick={() => setToolView(view)}
             aria-pressed={active}
-            className={`flex-1 flex items-center justify-center gap-1.5 rounded-control-compact px-2 py-1.5 text-detail font-medium transition-colors motion-safe:active:scale-[0.98] ${
+            className={`flex-1 flex items-center justify-center gap-1.5 rounded-control-compact px-2 py-1.5 text-detail font-medium transition-colors ${
               active
-                ? 'bg-accent/15 text-accent-soft border border-accent/40'
-                : 'border border-transparent text-muted hover:text-ink-dim hover:bg-overlay-light/[0.04]'
+                ? 'bg-panel text-accent border border-accent/40'
+                : 'border border-transparent text-muted hover:text-ink hover:bg-panel-raised'
             }`}
           >
             <Icon className="w-3.5 h-3.5 shrink-0" />

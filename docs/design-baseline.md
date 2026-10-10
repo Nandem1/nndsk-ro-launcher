@@ -1,5 +1,8 @@
 # Design baseline
 
+Historical evidence for the centralization at `e09b9a7`, before the visual rework.
+The current theme intentionally changes these values; see [design-system.md](design-system.md).
+
 Captured from `90a4980` before changing styles, on `refactor/design-architecture`.
 Generated CSS and resolved snapshots are local evidence under `/tmp`, not repository artifacts.
 

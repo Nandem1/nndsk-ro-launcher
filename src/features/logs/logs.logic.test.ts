@@ -26,10 +26,10 @@ describe('countLogErrors', () => {
 
 describe('logLineClass', () => {
   it('asigna clases según severidad o fuente', () => {
-    expect(logLineClass('ERROR prefix inválido')).toBe('text-bad-bright')
-    expect(logLineClass('warn: audio fallback')).toBe('text-accent-bright')
-    expect(logLineClass('[AutoPot] Probe OK')).toBe('text-ok-bright/80')
-    expect(logLineClass('[AutoPot] HP/SP listo')).toBe('text-info-bright/90')
-    expect(logLineClass('línea normal')).toBe('text-ink-soft')
+    expect(logLineClass('ERROR prefix inválido')).toBe('text-bad')
+    expect(logLineClass('warn: audio fallback')).toBe('text-warn')
+    expect(logLineClass('[AutoPot] Probe OK')).toBe('text-ok')
+    expect(logLineClass('[AutoPot] HP/SP listo')).toBe('text-info')
+    expect(logLineClass('línea normal')).toBe('text-muted')
   })
 })

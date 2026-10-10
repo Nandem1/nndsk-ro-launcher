@@ -17,7 +17,7 @@ export function WindowControls() {
       <IconButton
         label="Cerrar"
         size="sm"
-        className="hover:text-bad-soft"
+        className="hover:text-bad"
         onClick={() => {
           void getCurrentWindow().close()
         }}

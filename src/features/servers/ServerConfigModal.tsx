@@ -88,23 +88,21 @@ function ExecutablePicker({
     <div className="flex flex-col gap-1.5 min-w-0">
       <div className="flex items-center justify-between gap-2">
         <FieldLabel>{label}</FieldLabel>
-        {optional && (
-          <span className="text-caption text-line-strong">Opcional</span>
-        )}
+        {optional && <span className="text-caption text-muted">Opcional</span>}
       </div>
       <div className="flex gap-1.5 min-w-0">
         <button
           type="button"
           onClick={onPick}
           disabled={busy}
-          className="min-w-0 flex-1 flex items-center justify-between gap-3 bg-surface/60 border border-line/80
+          className="min-w-0 flex-1 flex items-center justify-between gap-3 bg-field border border-line-strong
             rounded-control px-3 py-2.5 text-sm text-left hover:border-accent/40 transition-colors
             disabled:opacity-50 disabled:cursor-wait"
         >
-          <span className={path ? 'text-ink truncate' : 'text-line-strong'}>
+          <span className={path ? 'font-mono text-ink truncate' : 'text-muted'}>
             {busy ? 'Abriendo...' : path ? basename(path) : placeholder}
           </span>
-          <span className="text-xs text-accent-bright shrink-0">Examinar</span>
+          <span className="text-xs text-accent shrink-0">Examinar</span>
         </button>
         {path && onClear && (
           <IconButton
@@ -119,7 +117,7 @@ function ExecutablePicker({
       </div>
       {path && (
         <p
-          className="text-caption text-line-strong font-mono truncate px-1"
+          className="text-caption text-muted font-mono truncate px-1"
           title={path}
         >
           {path}
@@ -149,8 +147,8 @@ function ArgEditor({
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
         spellCheck={false}
-        className="resize-y bg-surface/60 border border-line/80 rounded-control px-3 py-2 text-detail leading-relaxed
-          font-mono text-ink-bright placeholder:text-line focus:outline-none focus:border-accent/60 focus:ring-1 focus:ring-accent/20"
+        className="resize-y bg-field border border-line-strong rounded-control px-3 py-2 text-detail leading-relaxed
+          font-mono text-ink placeholder:text-muted focus:outline-none focus:border-accent/60 "
       />
     </label>
   )
@@ -251,7 +249,7 @@ export function ServerConfigModal({ mode, server, onSave, onClose }: Props) {
         aria-labelledby={titleId}
         className={`${modalSurfaceClasses('glass')} w-[560px] max-w-full max-h-[92vh]`}
       >
-        <div className="flex items-start justify-between gap-3 px-6 pt-5 pb-4 border-b border-overlay-light/[0.06]">
+        <div className="flex items-start justify-between gap-3 px-6 pt-5 pb-4 border-b border-line">
           <div>
             <h3 id={titleId} className="text-ink font-semibold text-lg">
               {title}
@@ -277,7 +275,7 @@ export function ServerConfigModal({ mode, server, onSave, onClose }: Props) {
           className="min-h-0 overflow-y-auto px-6 py-4 flex flex-col gap-5"
         >
           <section className="flex flex-col gap-3">
-            <h4 className="text-detail font-semibold text-ink-soft uppercase tracking-wider">
+            <h4 className="text-detail font-semibold text-muted uppercase tracking-wider">
               Cliente
             </h4>
             <label className="flex flex-col gap-1.5">
@@ -307,12 +305,12 @@ export function ServerConfigModal({ mode, server, onSave, onClose }: Props) {
             />
           </section>
 
-          <section className="flex flex-col gap-3 border-t border-overlay-light/[0.06] pt-4">
-            <h4 className="text-detail font-semibold text-ink-soft uppercase tracking-wider">
+          <section className="flex flex-col gap-3 border-t border-line pt-4">
+            <h4 className="text-detail font-semibold text-muted uppercase tracking-wider">
               Entorno
             </h4>
-            <div className="rounded-control border border-accent/15 bg-accent/5 px-3 py-2.5">
-              <p className="text-xs text-ink-dim">
+            <div className="rounded-control border-t border-line bg-panel px-3 py-2.5">
+              <p className="text-xs text-ink">
                 Entorno Ragnarok administrado automáticamente
               </p>
               <p className="mt-1 text-caption leading-relaxed text-muted">
@@ -335,8 +333,8 @@ export function ServerConfigModal({ mode, server, onSave, onClose }: Props) {
             </div>
           </section>
 
-          <section className="flex flex-col gap-3 border-t border-overlay-light/[0.06] pt-4">
-            <h4 className="text-detail font-semibold text-ink-soft uppercase tracking-wider">
+          <section className="flex flex-col gap-3 border-t border-line pt-4">
+            <h4 className="text-detail font-semibold text-muted uppercase tracking-wider">
               Lanzamiento
             </h4>
             <div className="flex flex-col gap-1.5">
@@ -349,7 +347,7 @@ export function ServerConfigModal({ mode, server, onSave, onClose }: Props) {
                 }
               />
               {draft.strategy === 'patcher' && !draft.patcherPath && (
-                <span className="text-caption text-accent-bright/80">
+                <span className="text-caption text-warn">
                   Esta estrategia requiere seleccionar un patcher.
                 </span>
               )}
@@ -369,13 +367,13 @@ export function ServerConfigModal({ mode, server, onSave, onClose }: Props) {
                 placeholder={'--server=sakura\n${username}'}
               />
             </div>
-            <p className="text-caption text-line-strong leading-relaxed">
+            <p className="text-caption text-muted leading-relaxed">
               Una línea equivale a un argumento completo. Para credenciales usa
               plantillas como{' '}
               <code className="text-muted">{'${username}'}</code>; no guardes
               valores secretos en esta configuración.
             </p>
-            <label className="flex items-start gap-2 rounded-control border border-overlay-light/[0.05] bg-surface/30 px-3 py-2.5">
+            <label className="flex items-start gap-2 rounded-control border border-line bg-surface px-3 py-2.5">
               <input
                 type="checkbox"
                 checked={draft.requireWebview2}
@@ -392,9 +390,9 @@ export function ServerConfigModal({ mode, server, onSave, onClose }: Props) {
           </section>
         </form>
 
-        <div className="px-6 py-4 border-t border-overlay-light/[0.06] bg-surface/20">
+        <div className="px-6 py-4 border-t border-line bg-surface">
           {shownError && (
-            <p role="alert" className="text-xs text-bad-bright mb-3">
+            <p role="alert" className="text-xs text-bad mb-3">
               {shownError}
             </p>
           )}

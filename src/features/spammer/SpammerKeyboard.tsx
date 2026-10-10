@@ -23,10 +23,10 @@ const KeyChip = memo(function KeyChip({
       type="button"
       disabled={disabled}
       onClick={onToggle}
-      className={`min-w-0 flex-1 px-1 py-1 rounded-control-compact text-caption font-semibold border transition-colors motion-safe:active:scale-[0.97] disabled:opacity-40 ${
+      className={`min-w-0 flex-1 px-1 py-1 rounded-control-compact font-mono text-caption font-semibold border transition-colors disabled:opacity-40 ${
         active
-          ? 'border-accent/70 bg-accent/15 text-accent-soft'
-          : 'border-panel-raised/80 bg-surface/50 text-line-strong hover:text-ink-soft'
+          ? 'border-accent/70 bg-panel text-accent'
+          : 'border-line bg-surface text-muted hover:text-muted'
       }`}
     >
       {label}
@@ -55,14 +55,14 @@ export function SpammerKeyboard({
     onKeysChange(toggleSpammerKey(config, key).keys)
 
   return (
-    <div className="space-y-1.5 rounded-control bg-surface/40 border border-panel-raised/60 px-2.5 py-2">
+    <div className="space-y-1.5 rounded-control bg-surface border border-line px-2.5 py-2">
       <div className="flex justify-between text-caption">
-        <span className="text-line-strong uppercase tracking-wide">Teclas</span>
+        <span className="text-muted uppercase tracking-wide">Teclas</span>
         <span
           className={
             available && armed
-              ? 'text-accent-bright/90 font-medium truncate ml-2'
-              : 'text-line truncate ml-2'
+              ? 'font-mono text-ok font-medium truncate ml-2'
+              : 'font-mono text-muted truncate ml-2'
           }
         >
           {label}
@@ -103,7 +103,7 @@ export function SpammerKeyboard({
           ))}
         </div>
       </div>
-      <p className="text-caption text-line-strong leading-snug">
+      <p className="text-caption text-muted leading-snug">
         Skill en barra + target con click izquierdo
       </p>
     </div>

@@ -26,12 +26,8 @@ export function ServerToolsPanel() {
 
   if (!server) {
     return (
-      <Panel
-        title="Herramientas"
-        size="compact"
-        className="shrink-0 animate-fade-rise"
-      >
-        <p className="text-detail text-line-strong text-center py-1">
+      <Panel title="Herramientas" size="compact" className="shrink-0 ">
+        <p className="text-detail text-muted text-center py-1">
           Selecciona un servidor
         </p>
       </Panel>
@@ -45,20 +41,22 @@ export function ServerToolsPanel() {
     <Panel
       title="Herramientas"
       size="compact"
-      className="shrink-0 animate-fade-rise"
+      className="shrink-0 "
       action={
         <button
           type="button"
           onClick={refresh}
           disabled={busy}
-          className="text-line-strong hover:text-ink-soft transition-colors disabled:opacity-40"
+          className="text-muted hover:text-muted transition-colors disabled:opacity-40"
           title="Volver a escanear"
         >
-          <RotateCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
+          <RotateCw
+            className={`w-3 h-3 ${loading ? 'animate-pulse-dot' : ''}`}
+          />
         </button>
       }
     >
-      {error && <p className="text-caption text-bad-bright mb-1.5">{error}</p>}
+      {error && <p className="text-caption text-bad mb-1.5">{error}</p>}
 
       {status && (
         <>
@@ -76,12 +74,9 @@ export function ServerToolsPanel() {
           />
           <ClientDiagnostics status={status} />
           {!!status.dgvoodoo.issues.length && (
-            <div className="mt-2 rounded-control border border-accent/10 bg-accent/5 px-2.5 py-2">
+            <div className="mt-2 rounded-control border border-warn/50 bg-panel px-2.5 py-2">
               {status.dgvoodoo.issues.map((issue) => (
-                <p
-                  key={issue}
-                  className="text-caption leading-snug text-accent-bright/80"
-                >
+                <p key={issue} className="text-caption leading-snug text-warn">
                   {issue}
                 </p>
               ))}
@@ -91,7 +86,7 @@ export function ServerToolsPanel() {
       )}
 
       {loading && !status && (
-        <p className="text-caption text-line-strong py-1 text-center">
+        <p className="text-caption text-muted py-1 text-center">
           Escaneando...
         </p>
       )}
@@ -110,7 +105,7 @@ function ClientDiagnostics({ status }: { status: ServerToolsStatus }) {
   }
 
   return (
-    <div className="mt-2 rounded-control border border-overlay-light/[0.04] bg-surface/30 px-2.5 py-2">
+    <div className="mt-2 rounded-control border border-line bg-surface px-2.5 py-2">
       <p className="text-caption text-muted">
         Cliente {diagnostics.architecture ?? 'PE'}
         {diagnostics.graphicsApis.length
@@ -118,10 +113,7 @@ function ClientDiagnostics({ status }: { status: ServerToolsStatus }) {
           : ''}
       </p>
       {diagnostics.warnings.map((warning) => (
-        <p
-          key={warning}
-          className="mt-1 text-caption leading-snug text-accent-bright/80"
-        >
+        <p key={warning} className="mt-1 text-caption leading-snug text-warn">
           {warning}
         </p>
       ))}
@@ -185,14 +177,14 @@ function CompactToolCard({
   const btnClass = buttonClasses('secondary', 'xs')
 
   return (
-    <div className="rounded-control border border-overlay-light/[0.04] bg-surface/40 px-2.5 py-2 flex flex-col gap-1.5 min-w-0">
+    <div className="rounded-control border border-line bg-surface px-2.5 py-2 flex flex-col gap-1.5 min-w-0">
       <div className="flex items-center gap-1.5 min-w-0">
         <StatusDot status={dotOk ? 'ok' : 'neutral'} />
-        <span className="text-detail text-ink-dim font-medium shrink-0">
+        <span className="text-detail text-ink font-medium shrink-0">
           {label}
         </span>
         <span
-          className="text-caption text-line-strong truncate font-mono"
+          className="text-caption text-muted truncate font-mono"
           title={detail}
         >
           {detail}

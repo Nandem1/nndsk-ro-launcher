@@ -95,14 +95,14 @@ export function LaunchFieldsModal({
         </div>
 
         <div className="mt-3 flex items-start justify-between gap-3">
-          <p className="text-caption leading-relaxed text-accent-bright/80">
+          <p className="text-caption leading-relaxed text-warn">
             Los valores se ocultan por defecto. El protocolo del cliente puede
             exponerlos temporalmente en los argumentos del proceso de Windows.
           </p>
           <button
             type="button"
             onClick={() => setShowValues((current) => !current)}
-            className="shrink-0 text-caption text-muted hover:text-ink-bright"
+            className="shrink-0 text-caption text-muted hover:text-ink"
           >
             {showValues ? 'Ocultar' : 'Mostrar'}
           </button>
@@ -123,7 +123,6 @@ export function LaunchFieldsModal({
           <Button
             variant="solid"
             size="dialog"
-            tone="warn"
             type="submit"
             disabled={!complete}
           >

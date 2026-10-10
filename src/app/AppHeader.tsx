@@ -13,9 +13,9 @@ function IngameStatusChip() {
   const running = clients.filter((client) => client.status === 'running').length
 
   return (
-    <div className="flex items-center gap-2 px-3 py-1.5 rounded-pill border border-overlay-light/[0.06] bg-panel/50 shadow-panel animate-fade-rise">
+    <div className="flex items-center gap-2 px-3 py-1.5 rounded-pill border border-line bg-panel ">
       <StatusDot status={launching ? 'warning' : 'ok'} pulse />
-      <span className="text-detail text-ink-dim font-medium truncate max-w-[220px]">
+      <span className="text-detail text-ink font-medium truncate max-w-[220px]">
         {launching ? 'Iniciando...' : 'En juego'}
         {clients.length === 1
           ? ` · ${clients[0].serverName}`
@@ -48,9 +48,11 @@ function VersionChip() {
   if (!version) return null
 
   return (
-    <div className="flex items-center gap-2 px-3 py-1.5 rounded-pill border border-overlay-light/[0.06] bg-panel/50">
+    <div className="flex items-center gap-2 px-3 py-1.5 rounded-pill border border-line bg-panel">
       <StatusDot status={copy.dot} pulse={copy.dot === 'warning'} />
-      <span className="text-detail text-ink-soft font-medium">v{version}</span>
+      <span className="text-detail text-muted font-mono font-medium">
+        v{version}
+      </span>
     </div>
   )
 }
@@ -59,10 +61,10 @@ export function AppHeader() {
   const ingame = useUiModeStore((s) => s.mode === 'ingame')
 
   return (
-    <header className="shrink-0 flex items-end justify-between px-4 py-2.5 border-b border-overlay-light/[0.06] bg-surface/60 backdrop-blur-panel">
+    <header className="shrink-0 flex items-end justify-between px-4 py-2.5 border-b border-line bg-surface ">
       <div className="min-w-0 flex-1" data-tauri-drag-region>
-        <h1 className="text-xl font-bold tracking-tight">
-          <span className="text-accent-bright">RO</span>
+        <h1 className="text-xl font-wordmark font-bold tracking-tight">
+          <span className="text-accent">RO</span>
           <span className="text-ink">-Launcher</span>
         </h1>
         <p className="text-xs text-muted mt-0.5">Ragnarok Online · Linux</p>
@@ -72,9 +74,8 @@ export function AppHeader() {
         {ingame ? (
           <IngameStatusChip />
         ) : (
-          <p className="text-detail text-line-strong tracking-wide">
-            Developed by:{' '}
-            <span className="text-ink-soft font-medium">nndsk</span>
+          <p className="text-detail text-muted tracking-wide">
+            Developed by: <span className="text-muted font-medium">nndsk</span>
           </p>
         )}
         <WindowControls />

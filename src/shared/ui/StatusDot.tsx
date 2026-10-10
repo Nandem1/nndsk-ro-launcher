@@ -3,10 +3,10 @@ import type { Tone } from './types'
 type DotStatus = 'ok' | 'warning' | 'error' | 'neutral'
 
 const dotClasses: Record<Tone, string> = {
-  ok: 'bg-ok shadow-dot-ok',
-  warn: 'bg-accent shadow-dot-warn',
-  bad: 'bg-bad shadow-dot-bad',
-  info: 'bg-info/15',
+  ok: 'bg-ok',
+  warn: 'bg-warn',
+  bad: 'bg-bad',
+  info: 'bg-info',
   neutral: 'bg-line-strong',
 }
 

@@ -29,7 +29,7 @@ export function DiscordPresenceToggle() {
         <p className="mt-1 text-caption text-muted">Guardando selección...</p>
       )}
       {error && !saving && (
-        <p role="alert" className="mt-1 text-caption text-bad-bright">
+        <p role="alert" className="mt-1 text-caption text-bad">
           {error}
         </p>
       )}

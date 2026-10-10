@@ -15,16 +15,13 @@ export function MaintenanceNotice({
 
   return (
     <div
-      className="mx-3 mt-3 flex shrink-0 items-center gap-3 rounded-control border border-accent/30 bg-accent/10 px-3 py-2 text-accent-ink"
+      className="mx-3 mt-3 flex shrink-0 items-center gap-3 rounded-control border border-warn/30 bg-panel px-3 py-2 text-warn"
       role="status"
     >
-      <CheckCircle2
-        className="h-4 w-4 shrink-0 text-accent-bright"
-        aria-hidden
-      />
+      <CheckCircle2 className="h-4 w-4 shrink-0 text-warn" aria-hidden />
       <div className="min-w-0 flex-1">
         <p className="text-xs font-semibold">Mantenimiento completado</p>
-        <p className="truncate text-caption text-accent-soft/70">
+        <p className="truncate text-caption text-warn">
           {notices.map((notice) => notice.message).join(' · ')}
         </p>
       </div>
@@ -32,7 +29,7 @@ export function MaintenanceNotice({
         type="button"
         onClick={onDismiss}
         aria-label="Descartar aviso"
-        className="flex h-6 w-6 items-center justify-center rounded-inline text-accent-light/70 transition-colors hover:bg-accent/10 hover:text-accent-ink"
+        className="flex h-6 w-6 items-center justify-center rounded-inline text-warn transition-colors hover:bg-panel-raised hover:text-warn"
       >
         <X className="h-3.5 w-3.5" aria-hidden />
       </button>

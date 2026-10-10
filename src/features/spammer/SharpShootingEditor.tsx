@@ -30,7 +30,7 @@ export function SharpShootingEditor({
   }
 
   return (
-    <div className="rounded-control bg-surface/40 border border-panel-raised/60">
+    <div className="rounded-control bg-surface border border-line">
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
@@ -40,13 +40,13 @@ export function SharpShootingEditor({
           <Crosshair className="w-3 h-3 shrink-0" aria-hidden />
           Sharp Shooting / Focused Arrow Strike
           {shiftMode.enabled && (
-            <span className="rounded-inline bg-special/15 px-1 text-micro font-semibold text-special-soft normal-case tracking-normal">
+            <span className="rounded-inline bg-panel px-1 text-micro font-semibold text-special normal-case tracking-normal">
               {shiftActive ? 'SHIFT' : 'on'}
             </span>
           )}
         </span>
         <ChevronDown
-          className={`w-3 h-3 text-line-strong transition-transform ${open ? 'rotate-180' : ''}`}
+          className={`w-3 h-3 text-muted transition-colors ${open ? 'rotate-180' : ''}`}
           aria-hidden
         />
       </button>
@@ -54,7 +54,7 @@ export function SharpShootingEditor({
       {open && (
         <div className="space-y-2 px-2.5 pb-2.5">
           <div className="flex items-start justify-between gap-2">
-            <p className="text-caption text-line-strong leading-snug">
+            <p className="text-caption text-muted leading-snug">
               Mantiene Shift durante skill + click. AutoPot usa Shift con sus
               teclas configuradas mientras el modo está activo.
             </p>
@@ -62,17 +62,17 @@ export function SharpShootingEditor({
               checked={shiftMode.enabled}
               disabled={disabled || spammerKeys.length === 0}
               onChange={setEnabled}
-              tone="warn"
+              tone="ok"
             />
           </div>
 
           {shiftMode.enabled && (
-            <div className="space-y-1.5 border-t border-panel-raised/60 pt-2">
-              <span className="text-caption uppercase tracking-wide text-line-strong">
+            <div className="space-y-1.5 border-t border-line pt-2">
+              <span className="text-caption uppercase tracking-wide text-muted">
                 Triggers con Shift
               </span>
               {spammerKeys.length === 0 ? (
-                <p className="text-caption text-line-strong">
+                <p className="text-caption text-muted">
                   Selecciona una tecla en el spammer.
                 </p>
               ) : (
@@ -91,8 +91,8 @@ export function SharpShootingEditor({
                         }
                         className={`min-w-8 rounded-control-compact border px-2 py-1 text-caption font-semibold transition-colors disabled:opacity-40 ${
                           selected
-                            ? 'border-special/70 bg-special/15 text-special-ink'
-                            : 'border-panel-raised bg-panel/40 text-muted hover:border-line hover:text-ink-dim'
+                            ? 'border-special/70 bg-panel text-special'
+                            : 'border-panel-raised bg-panel text-muted hover:border-line hover:text-ink'
                         }`}
                       >
                         {key}

@@ -1,101 +1,71 @@
+@import '@fontsource/ibm-plex-sans/latin-400.css';
+@import '@fontsource/ibm-plex-sans/latin-500.css';
+@import '@fontsource/ibm-plex-sans/latin-600.css';
+@import '@fontsource/ibm-plex-sans/latin-700.css';
+@import '@fontsource/ibm-plex-mono/latin-400.css';
+@import '@fontsource/ibm-plex-mono/latin-500.css';
+@import '@fontsource/ibm-plex-mono/latin-600.css';
+@import '@fontsource/barlow-condensed/latin-700.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
   :root {
-    --c-surface: 9 9 11;
-    --c-panel: 24 24 27;
-    --c-panel-raised: 39 39 42;
-    --c-line: 63 63 70;
-    --c-line-strong: 82 82 91;
-    --c-muted: 113 113 122;
-    --c-ink-soft: 161 161 170;
-    --c-ink-dim: 212 212 216;
-    --c-ink-bright: 228 228 231;
-    --c-ink: 244 244 245;
-    --c-accent-ink: 254 243 199;
-    --c-accent-soft: 253 230 138;
-    --c-accent-light: 252 211 77;
-    --c-accent-bright: 251 191 36;
-    --c-accent: 245 158 11;
-    --c-warn: var(--c-accent);
-    --c-accent-strong: 217 119 6;
-    --c-ok-ink: 209 250 229;
-    --c-ok-soft: 110 231 183;
-    --c-ok-bright: 52 211 153;
-    --c-ok: 16 185 129;
-    --c-bad-ink: 254 226 226;
-    --c-bad-soft: 252 165 165;
-    --c-bad-bright: 248 113 113;
-    --c-bad: 239 68 68;
-    --c-bad-strong: 220 38 38;
-    --c-info-soft: 186 230 253;
-    --c-info-bright: 56 189 248;
-    --c-info: 14 165 233;
-    --c-info-strong: 2 132 199;
-    --c-special-ink: 221 214 254;
-    --c-special-soft: 196 181 253;
-    --c-special: 139 92 246;
-    --c-overlay-light: 255 255 255;
+    --c-surface: 15 20 18;
+    --c-panel: 22 28 25;
+    --c-panel-raised: 27 36 32;
+    --c-field: 11 16 14;
+    --c-modal: 18 24 21;
+    --c-line: 42 51 46;
+    --c-line-strong: 58 70 63;
+    --c-ink: 232 238 232;
+    --c-muted: 138 150 141;
+    --c-accent: 255 92 57;
+    --c-on-accent: 20 17 15;
+    --c-warn: 226 163 58;
+    --c-ok: 127 176 105;
+    --c-bad: 224 96 74;
+    --c-info: 91 155 213;
+    --c-special: 79 179 169;
     --c-overlay-dark: 0 0 0;
 
-    --radius-inline: 0.25rem;
-    --radius-control-compact: 0.375rem;
-    --radius-control: 0.5rem;
-    --radius-panel: 0.75rem;
-    --radius-modal: 1rem;
-    --radius-pill: 9999px;
+    --radius-inline: 0;
+    --radius-control-compact: 0;
+    --radius-control: 0;
+    --radius-panel: 0;
+    --radius-modal: 0;
+    --radius-pill: 0;
 
-    --text-micro: 9px;
-    --text-caption: 10px;
+    --text-micro: 11px;
+    --text-caption: 11px;
     --text-detail: 11px;
     --text-label: 12px;
-    --text-xs: 0.75rem;
-    --text-sm: 0.875rem;
-    --text-base: 1rem;
-    --text-lg: 1.125rem;
-    --text-xl: 1.25rem;
+    --text-xs: 12px;
+    --text-sm: 13px;
+    --text-base: 15px;
+    --text-lg: 18px;
+    --text-xl: 18px;
+    --text-panel-title: 15px;
+    --weight-panel-title: 600;
+    --tracking-panel-title: 0;
     --leading-xs: 1rem;
     --leading-sm: 1.25rem;
     --leading-base: 1.5rem;
     --leading-lg: 1.75rem;
     --leading-xl: 1.75rem;
-    --font-sans:
-      ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji',
-      'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
-    --font-mono:
-      ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono',
-      'Courier New', monospace;
+    --font-sans: 'IBM Plex Sans', sans-serif;
+    --font-mono: 'IBM Plex Mono', monospace;
+    --font-wordmark: 'Barlow Condensed', sans-serif;
 
-    --shadow-panel:
-      inset 0 1px 0 0 rgb(var(--c-overlay-light) / 0.05),
-      0 8px 24px -12px rgb(var(--c-overlay-dark) / 0.7);
-    --shadow-modal: 0 25px 50px -12px rgb(var(--c-overlay-dark) / 0.25);
-    --shadow-control:
-      0 1px 3px 0 rgb(var(--c-overlay-dark) / 0.1),
-      0 1px 2px -1px rgb(var(--c-overlay-dark) / 0.1);
-    --shadow-glow-warn: 0 0 20px -6px rgb(var(--c-accent) / 0.3);
-    --shadow-glow-ok: 0 0 20px -6px rgb(var(--c-ok) / 0.3);
-    --shadow-glow-bad: 0 0 20px -6px rgb(var(--c-bad) / 0.3);
-    --shadow-dot-ok: 0 0 6px rgb(var(--c-ok) / 0.5);
-    --shadow-dot-warn: 0 0 6px rgb(var(--c-accent) / 0.5);
-    --shadow-dot-bad: 0 0 6px rgb(var(--c-bad) / 0.5);
-    --shadow-check-warn: inset 0 0 0 1px rgb(var(--c-accent) / 0.06);
-    --blur-panel: 4px;
-    --gradient-panel-direction: to bottom;
-    --gradient-progress-direction: to right;
-    --body-illumination:
-      radial-gradient(
-        ellipse 80% 50% at 50% -20%,
-        rgb(var(--c-accent) / 0.08),
-        transparent
-      ),
-      radial-gradient(
-        ellipse 60% 40% at 100% 100%,
-        rgb(var(--c-accent) / 0.04),
-        transparent
-      );
+    --shadow-panel: none;
+    --shadow-modal: none;
+    --shadow-control: none;
+    --blur-panel: 0px;
+    --background-panel: none;
+    --background-progress: none;
+    --body-illumination: none;
   }
 
   html,
@@ -106,7 +76,7 @@
   }
 
   body {
-    @apply bg-surface text-ink antialiased;
+    @apply bg-surface text-ink text-base leading-normal font-sans antialiased;
     color-scheme: dark;
     background-image: var(--body-illumination);
   }
@@ -138,88 +108,86 @@
     margin: 0;
     -webkit-appearance: none;
   }
-}
 
-@layer utilities {
-  @keyframes stat-flash-red {
-    0%,
-    100% {
-      filter: brightness(1);
-    }
-    50% {
-      filter: brightness(1.6);
-    }
+  input[type='checkbox'],
+  input[type='radio'] {
+    appearance: none;
+    border: 1px solid rgb(var(--c-line-strong));
+    border-radius: var(--radius-control);
+    background-color: rgb(var(--c-field));
   }
 
-  @keyframes stat-flash-blue {
-    0%,
-    100% {
-      filter: brightness(1);
-    }
-    50% {
-      filter: brightness(1.5);
-    }
+  input[type='checkbox']:checked,
+  input[type='radio']:checked {
+    border-color: rgb(var(--c-accent));
+    background-color: rgb(var(--c-accent));
   }
 
-  .animate-stat-flash-red {
-    animation: stat-flash-red 0.45s ease-out;
+  input[type='checkbox']:checked::after {
+    content: '';
+    display: block;
+    width: 35%;
+    height: 65%;
+    margin: 0 auto;
+    border-right: 2px solid rgb(var(--c-on-accent));
+    border-bottom: 2px solid rgb(var(--c-on-accent));
+    transform: rotate(45deg);
   }
 
-  .animate-stat-flash-blue {
-    animation: stat-flash-blue 0.45s ease-out;
+  input[type='radio']:checked::after {
+    content: '';
+    display: block;
+    width: 45%;
+    height: 45%;
+    margin: 27.5%;
+    background-color: rgb(var(--c-on-accent));
   }
 
-  @keyframes rail-expand {
-    from {
-      opacity: 0.4;
-      transform: translateX(-24px);
-    }
-    to {
-      opacity: 1;
-      transform: translateX(0);
-    }
+  input[type='checkbox']:focus-visible,
+  input[type='radio']:focus-visible {
+    outline: 2px solid rgb(var(--c-accent));
+    outline-offset: 2px;
   }
 
-  @keyframes rail-collapse {
-    from {
-      opacity: 0.4;
-      transform: translateX(24px);
-    }
-    to {
-      opacity: 1;
-      transform: translateX(0);
-    }
+  input[type='range'] {
+    appearance: none;
+    height: 1rem;
+    background: transparent;
   }
 
-  .animate-rail-expand {
-    animation: rail-expand 0.38s cubic-bezier(0.25, 1, 0.5, 1) both;
+  input[type='range']::-webkit-slider-runnable-track {
+    height: 4px;
+    border: 1px solid rgb(var(--c-line));
+    background: rgb(var(--c-panel-raised));
   }
 
-  .animate-rail-collapse {
-    animation: rail-collapse 0.38s cubic-bezier(0.25, 1, 0.5, 1) both;
+  input[type='range']::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 12px;
+    height: 12px;
+    margin-top: -5px;
+    border: 1px solid rgb(var(--c-accent));
+    border-radius: var(--radius-control);
+    background: rgb(var(--c-accent));
   }
 
-  .stagger-children > * {
-    animation: fade-rise 0.4s cubic-bezier(0.25, 1, 0.5, 1) both;
+  input[type='range']::-moz-range-track {
+    height: 4px;
+    border: 1px solid rgb(var(--c-line));
+    background: rgb(var(--c-panel-raised));
   }
 
-  .stagger-children > *:nth-child(1) {
-    animation-delay: 0ms;
+  input[type='range']::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    border: 1px solid rgb(var(--c-accent));
+    border-radius: var(--radius-control);
+    background: rgb(var(--c-accent));
   }
-  .stagger-children > *:nth-child(2) {
-    animation-delay: 40ms;
-  }
-  .stagger-children > *:nth-child(3) {
-    animation-delay: 80ms;
-  }
-  .stagger-children > *:nth-child(4) {
-    animation-delay: 120ms;
-  }
-  .stagger-children > *:nth-child(5) {
-    animation-delay: 160ms;
-  }
-  .stagger-children > *:nth-child(6) {
-    animation-delay: 200ms;
+
+  input[type='range']:focus-visible {
+    outline: 1px solid rgb(var(--c-accent));
+    outline-offset: 2px;
   }
 }
 

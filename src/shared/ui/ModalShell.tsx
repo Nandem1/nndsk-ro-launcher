@@ -18,7 +18,7 @@ export function ModalShell({
 }: ModalShellProps) {
   return (
     <div
-      className={`fixed inset-0 flex items-center justify-center p-4 backdrop-blur-panel ${LAYER_CLASSES[layer]} ${className}`}
+      className={`fixed inset-0 flex items-center justify-center p-4 animate-modal-fade ${LAYER_CLASSES[layer]} ${className}`}
       {...rest}
     >
       {children}
@@ -28,6 +28,6 @@ export function ModalShell({
 
 export function modalSurfaceClasses(variant: 'plain' | 'glass' = 'plain') {
   return variant === 'glass'
-    ? 'border border-overlay-light/[0.08] bg-panel-gradient from-panel-raised/95 to-panel/95 rounded-modal flex flex-col shadow-panel shadow-modal animate-scale-in overflow-hidden'
-    : 'rounded-modal border border-overlay-light/[0.08] bg-panel p-5 shadow-modal'
+    ? 'border border-line-strong bg-modal rounded-modal flex flex-col overflow-hidden'
+    : 'rounded-modal border border-line-strong bg-modal p-5'
 }

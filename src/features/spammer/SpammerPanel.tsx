@@ -50,7 +50,7 @@ export function SpammerPanel() {
     available,
     config.enabled && status.armed,
     !!error,
-    'warning',
+    'success',
   )
 
   return (
@@ -59,22 +59,20 @@ export function SpammerPanel() {
       size={hero ? 'hero' : 'compact'}
       tone={tone}
       className="h-full"
-      leading={
-        <Zap className="w-3 h-3 text-line-strong shrink-0" aria-hidden />
-      }
+      leading={<Zap className="w-3 h-3 text-muted shrink-0" aria-hidden />}
     >
       <div className="flex-1 min-h-0 overflow-y-auto space-y-2 pr-0.5">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
             <p
               className={`text-sm font-semibold truncate ${
-                status.spamming ? 'text-accent-soft' : 'text-ink'
+                status.spamming ? 'text-ok' : 'text-ink'
               }`}
             >
               {statusLabel}
             </p>
             <p
-              className={`text-caption ${launching ? 'text-muted animate-pulse-dot' : 'text-line-strong'}`}
+              className={`text-caption ${launching ? 'text-muted animate-pulse-dot' : 'text-muted'}`}
             >
               {statusText}
             </p>
@@ -83,7 +81,7 @@ export function SpammerPanel() {
             checked={config.enabled && available && config.keys.length > 0}
             disabled={!available || busy || config.keys.length === 0}
             onChange={(enabled) => void setEnabled(enabled)}
-            tone="warn"
+            tone="ok"
           />
         </div>
 
@@ -120,7 +118,7 @@ export function SpammerPanel() {
 
         <p className="text-caption leading-snug min-h-[calc(1em*1.375)]">
           {error && available ? (
-            <span className="text-bad-bright/90">{error}</span>
+            <span className="text-bad">{error}</span>
           ) : null}
         </p>
       </div>

@@ -43,7 +43,7 @@ export function UpdatePanel() {
           onClick={() => void check()}
         >
           <RefreshCw
-            className={`h-3 w-3 ${busy && copy.canCheck === false ? 'animate-spin' : ''}`}
+            className={`h-3 w-3 ${busy && copy.canCheck === false ? 'animate-pulse-dot' : ''}`}
             aria-hidden
           />
           Comprobar
@@ -51,19 +51,19 @@ export function UpdatePanel() {
       }
       className="shrink-0"
     >
-      <p className="text-caption leading-relaxed text-ink-soft">{copy.line}</p>
+      <p className="text-caption leading-relaxed text-muted">{copy.line}</p>
       {copy.detail && (
         <p className="mt-1 text-caption leading-relaxed text-muted">
           {copy.detail}
         </p>
       )}
       {clientsActive && (copy.canInstall || copy.canRelaunch) && (
-        <p role="alert" className="mt-1 text-caption text-accent-light/90">
+        <p role="alert" className="mt-1 text-caption text-warn">
           Cierra los clientes del juego antes de instalar
         </p>
       )}
       {error && (
-        <p role="alert" className="mt-1 text-caption text-bad-bright">
+        <p role="alert" className="mt-1 text-caption text-bad">
           {error}
         </p>
       )}

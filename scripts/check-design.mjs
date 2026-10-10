@@ -11,19 +11,31 @@ const forbidden = [
   /\btext-\[(?:\d+(?:\.\d+)?|\.\d+)px\]/gi,
   /(?<![\w-])rounded-(?:none|sm|md|lg|xl|2xl|3xl|full)(?![\w-])/g,
   /(?<![\w-])shadow-(?:sm|md|lg|xl|2xl|inner|glass|glow-(?:amber|emerald|red)|\[[^\]]+\])(?![\w-])/g,
+  /\b(?:bg-(?:panel|progress)-gradient|bg-gradient-[\w-]+|backdrop\x2dblur(?:-[\w-]+)?|shadow-(?:glow|dot)-[\w-]+|overlay\x2dlight|tracking-\[[^\]]+\])(?![\w-])/g,
+  /\b(?:ink-(?:soft|dim|bright)|accent-(?:ink|soft|light|bright|strong)|ok-(?:ink|soft|bright)|bad-(?:ink|soft|bright|strong)|info-(?:soft|bright|strong)|special-(?:ink|soft))(?![\w-])/g,
+  /\b(?:stagger\x2dchildren|animate-(?:fade-rise|scale-in|rail-expand|rail-collapse|stat-flash-red|stat-flash-blue)|transition-(?:all|transform|opacity)|duration-(?:200|300|400|500))\b/g,
 ]
 
 function files(target) {
   const stat = fs.lstatSync(target)
   if (stat.isSymbolicLink()) return []
-  if (stat.isDirectory()) return fs.readdirSync(target).flatMap((name) => files(path.join(target, name)))
+  if (stat.isDirectory())
+    return fs
+      .readdirSync(target)
+      .flatMap((name) => files(path.join(target, name)))
   return sourceExtensions.test(target) && target !== catalog ? [target] : []
 }
 
 const targets = process.argv.slice(2)
 const paths = targets.length
   ? targets.map((target) => path.resolve(target))
-  : ['src', 'scripts', 'index.html', 'tailwind.config.js', 'postcss.config.js'].map((target) => path.join(root, target))
+  : [
+      'src',
+      'scripts',
+      'index.html',
+      'tailwind.config.js',
+      'postcss.config.js',
+    ].map((target) => path.join(root, target))
 let violations = 0
 let checked = 0
 for (const file of paths.flatMap(files)) {
@@ -32,7 +44,9 @@ for (const file of paths.flatMap(files)) {
   for (const pattern of forbidden) {
     for (const match of source.matchAll(pattern)) {
       const line = source.slice(0, match.index).split('\n').length
-      console.error(`${path.relative(root, file)}:${line}: ${match[0]} — use a design token or primitive`)
+      console.error(
+        `${path.relative(root, file)}:${line}: ${match[0]} — use a design token or primitive`,
+      )
       violations++
     }
   }
@@ -41,5 +55,8 @@ if (violations) {
   console.error(`Design guard failed: ${violations} raw design references`)
   process.exitCode = 1
 } else {
-  console.log(`Design guard passed: ${checked} files, zero raw design references`)
+  console.log(
+    `Design guard passed: ${checked} files, zero raw design references`,
+  )
+  await import('./check-design-contrast.mjs')
 }

@@ -10,10 +10,10 @@ export function LoadingScreen() {
         <WindowControls />
       </div>
       <div className="flex-1 flex flex-col items-center justify-center gap-4">
-        <span className="text-xl font-bold tracking-widest text-ink-bright">
+        <span className="text-xl font-wordmark font-bold tracking-widest text-ink">
           RO LAUNCHER
         </span>
-        <div className="w-8 h-8 rounded-pill border-2 border-line border-t-accent animate-spin" />
+        <div className="w-8 h-8 rounded-pill border-2 border-line border-t-accent animate-pulse-dot" />
       </div>
     </div>
   )

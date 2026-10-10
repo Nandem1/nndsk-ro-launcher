@@ -70,7 +70,7 @@ export function ActiveClients() {
         <button
           type="button"
           onClick={() => void stopAll()}
-          className="inline-flex items-center gap-1 text-caption text-muted hover:text-bad-bright transition-colors"
+          className="inline-flex items-center gap-1 text-caption text-muted hover:text-bad transition-colors"
         >
           <XCircle className="w-3.5 h-3.5" />
           Detener todos
@@ -81,17 +81,17 @@ export function ActiveClients() {
         {clients.map((client, index) => (
           <div
             key={client.clientId}
-            className="flex items-center gap-2 rounded-control border border-overlay-light/[0.05] bg-surface/30 px-2.5 py-2"
+            className="flex items-center gap-2 rounded-control border-t border-line bg-panel px-2.5 py-2"
           >
             <StatusDot
               status={client.status === 'running' ? 'ok' : 'warning'}
               pulse={client.status !== 'stopping'}
             />
             <div className="min-w-0 flex-1">
-              <p className="truncate text-xs font-medium text-ink-bright">
+              <p className="truncate text-xs font-medium text-ink">
                 {client.serverName} · Cliente {index + 1}
               </p>
-              <p className="text-caption text-line-strong tabular-nums">
+              <p className="text-caption font-mono text-muted tabular-nums">
                 {statusLabels[client.status]}
                 {client.pid ? ` · PID ${client.pid}` : ''}
               </p>
@@ -110,7 +110,7 @@ export function ActiveClients() {
         ))}
       </div>
       {clients.length > 1 && (
-        <p className="mt-2 text-caption leading-relaxed text-accent-bright/70">
+        <p className="mt-2 text-caption leading-relaxed text-warn">
           AutoPot, AutoBuff y Spammer se habilitan nuevamente cuando quede un
           solo cliente.
         </p>

@@ -7,42 +7,43 @@ export type ButtonVariant =
 export type ButtonSize = 'xs' | 'sm' | 'md' | 'lg' | 'dialog' | 'dialog-sm'
 
 const BASE_CLASSES =
-  'inline-flex items-center justify-center gap-1.5 rounded-control font-medium select-none transition-[transform,background-color,border-color,color,box-shadow] duration-150 ease-out-quart focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:opacity-50 disabled:pointer-events-none motion-safe:hover:-translate-y-px motion-safe:active:translate-y-0 motion-safe:active:scale-[0.97]'
+  'inline-flex items-center justify-center gap-1.5 rounded-control font-medium select-none transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50 disabled:pointer-events-none'
 
 const VARIANT_CLASSES: Record<ButtonVariant, string> = {
   primary:
-    'border border-accent/30 bg-accent/10 text-accent-ink hover:bg-accent/15 hover:border-accent/50 hover:shadow-glow-warn',
+    'border border-accent bg-accent text-on-accent font-semibold hover:border-ink',
   secondary:
-    'border border-line/60 bg-panel/40 text-ink-dim hover:border-accent/40 hover:text-accent-light hover:bg-accent/5',
+    'border border-line-strong bg-transparent text-ink hover:border-accent hover:bg-panel-raised',
   ghost:
-    'border border-transparent text-muted hover:text-ink-dim hover:bg-overlay-light/[0.04]',
+    'border border-transparent text-muted hover:text-ink hover:bg-panel-raised',
   danger:
-    'border border-bad/30 bg-bad/10 text-bad-soft hover:bg-bad/15 hover:border-bad/50 hover:shadow-glow-bad',
+    'border border-bad/50 bg-transparent text-bad hover:bg-panel-raised hover:border-bad',
   success:
-    'border border-ok/30 bg-ok/10 text-ok-soft hover:bg-ok/15 hover:border-ok/50 hover:shadow-glow-ok',
-  solid: 'font-semibold text-surface disabled:opacity-40',
-  outline: 'border border-line text-ink-soft hover:text-ink',
+    'border border-ok/50 bg-transparent text-ok hover:bg-panel-raised hover:border-ok',
+  solid: 'font-semibold disabled:opacity-40',
+  outline:
+    'border border-line-strong bg-transparent text-ink hover:border-accent hover:bg-panel-raised',
 }
 
 const PRIMARY_TONE_CLASSES: Record<Tone, string> = {
-  warn: VARIANT_CLASSES.primary,
+  warn: 'border border-warn/50 bg-transparent text-warn hover:border-warn hover:bg-panel-raised',
   ok: VARIANT_CLASSES.success,
   bad: VARIANT_CLASSES.danger,
-  info: 'border border-info/70 bg-info/15 text-info-soft',
+  info: 'border border-info/50 bg-transparent text-info hover:border-info hover:bg-panel-raised',
   neutral: VARIANT_CLASSES.secondary,
 }
 
 const SOLID_TONE_CLASSES: Record<Tone, string> = {
-  warn: 'bg-accent',
-  ok: 'bg-ok',
-  bad: 'bg-bad/10',
-  info: 'bg-info/15',
-  neutral: 'bg-panel-raised',
+  warn: 'bg-warn text-on-accent',
+  ok: 'bg-ok text-on-accent',
+  bad: 'bg-bad text-on-accent',
+  info: 'bg-info text-on-accent',
+  neutral: 'bg-panel-raised text-ink',
 }
 
 function variantClasses(variant: ButtonVariant, tone?: Tone): string {
   if (variant === 'solid')
-    return `${VARIANT_CLASSES.solid} ${SOLID_TONE_CLASSES[tone ?? 'warn']}`
+    return `${VARIANT_CLASSES.solid} ${tone ? SOLID_TONE_CLASSES[tone] : 'bg-accent text-on-accent'}`
   if (tone && ['primary', 'danger', 'success'].includes(variant))
     return PRIMARY_TONE_CLASSES[tone]
   return VARIANT_CLASSES[variant]
@@ -64,7 +65,7 @@ export function buttonClasses(
   tone?: Tone,
 ): string {
   const base = ['solid', 'outline'].includes(variant)
-    ? 'flex-1 rounded-panel'
+    ? 'flex-1 rounded-panel transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent'
     : BASE_CLASSES
   return `${base} ${variantClasses(variant, tone)} ${SIZE_CLASSES[size]} ${block ? 'w-full' : ''}`
 }

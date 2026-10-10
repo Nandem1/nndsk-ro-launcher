@@ -372,7 +372,7 @@ export function MemoryScannerModal({
               disabled={busy}
               onChange={(event) => setHp(event.target.value)}
               placeholder={step === 'initial' ? 'Ej. 13619' : 'Ej. 13430'}
-              className="input-no-spinner disabled:opacity-50"
+              className="font-mono input-no-spinner disabled:opacity-50"
             />
           </label>
         ) : step === 'name' ? (
@@ -407,7 +407,7 @@ export function MemoryScannerModal({
               disabled={busy}
               onChange={(event) => setLevel(event.target.value)}
               placeholder={step === 'level' ? 'Ej. 99' : 'Ej. 100'}
-              className="input-no-spinner disabled:opacity-50"
+              className="font-mono input-no-spinner disabled:opacity-50"
             />
           </label>
         ) : step === 'map' || step === 'mapRefine' ? (
@@ -428,23 +428,23 @@ export function MemoryScannerModal({
             />
           </label>
         ) : step === 'confirmed' && resolvedHpBase ? (
-          <div className="mt-4 space-y-2 rounded-panel border border-ok/20 bg-ok/5 p-3">
+          <div className="mt-4 space-y-2 rounded-panel border border-ok/20 bg-panel p-3">
             <div className="flex items-center justify-between gap-3">
               <span className="text-detail text-muted">HP base</span>
-              <code className="text-xs text-ok-soft">{resolvedHpBase}</code>
+              <code className="text-xs text-ok">{resolvedHpBase}</code>
             </div>
             <div className="flex items-center justify-between gap-3">
               <span className="text-detail text-muted">
                 Nombre {detectedName ? `'${detectedName.characterName}'` : ''}
               </span>
-              <code className="text-xs text-ink-dim">
+              <code className="text-xs text-ink">
                 {detectedName?.nameAddress ?? 'No configurado'}
               </code>
             </div>
             {detectedLevel && (
               <div className="flex items-center justify-between gap-3">
                 <span className="text-detail text-muted">Nivel Discord</span>
-                <code className="text-xs text-ink-dim">
+                <code className="text-xs text-ink">
                   {detectedLevel.levelAddress}
                 </code>
               </div>
@@ -454,7 +454,7 @@ export function MemoryScannerModal({
                 <span className="text-detail text-muted">
                   Mapa '{detectedMap.mapName}'
                 </span>
-                <code className="text-xs text-ink-dim">
+                <code className="text-xs text-ink">
                   {detectedMap.mapAddress}
                 </code>
               </div>
@@ -463,7 +463,7 @@ export function MemoryScannerModal({
               <>
                 <div className="flex items-center justify-between gap-3 text-detail">
                   <span className="text-muted">Valores confirmados</span>
-                  <span className="text-ink-bright">
+                  <span className="font-mono text-ink">
                     HP {confirmed.currentHp.toLocaleString()} /{' '}
                     {confirmed.maxHp.toLocaleString()} · SP{' '}
                     {confirmed.currentSp.toLocaleString()} /{' '}
@@ -474,7 +474,7 @@ export function MemoryScannerModal({
                   <span className="text-detail text-muted">
                     Buffer de estados
                   </span>
-                  <code className="text-xs text-ink-dim">
+                  <code className="text-xs text-ink">
                     {confirmed.statusBuffer}
                   </code>
                 </div>
@@ -484,11 +484,11 @@ export function MemoryScannerModal({
         ) : null}
 
         {busy && (
-          <p className="mt-3 text-detail text-accent-bright/80 animate-pulse-dot">
+          <p className="mt-3 text-detail text-warn animate-pulse-dot">
             {busyLabel}
           </p>
         )}
-        {error && <p className="mt-3 text-detail text-bad-bright">{error}</p>}
+        {error && <p className="mt-3 text-detail text-bad">{error}</p>}
 
         <div className="mt-5 flex gap-2">
           <Button
@@ -536,7 +536,6 @@ export function MemoryScannerModal({
                 disabled={busy || !name.trim()}
                 variant="solid"
                 size="dialog-sm"
-                tone="warn"
               >
                 Buscar nombre
               </Button>
@@ -562,7 +561,6 @@ export function MemoryScannerModal({
                 }}
                 variant="solid"
                 size="dialog-sm"
-                tone="warn"
               >
                 Ubicar Discord
               </Button>
@@ -592,7 +590,6 @@ export function MemoryScannerModal({
                 }
                 variant="solid"
                 size="dialog-sm"
-                tone="warn"
               >
                 {step === 'level' || step === 'map' ? 'Buscar' : 'Comparar'}
               </Button>
@@ -603,7 +600,6 @@ export function MemoryScannerModal({
               disabled={busy || parsedHp === null}
               variant="solid"
               size="dialog"
-              tone="warn"
             >
               {step === 'initial' ? 'Buscar' : 'Comparar'}
             </Button>
