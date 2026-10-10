@@ -2,19 +2,33 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { chromium } from 'playwright'
 import { reviewConformance } from './design-conformance.mjs'
+import { auditFit } from './design-fit.mjs'
 
+const minimum = process.argv.includes('--minimum')
 const output = path.resolve(
-  process.env.RO_DESIGN_REVIEW_OUTPUT ?? 'docs/design-review',
+  process.env.RO_DESIGN_REVIEW_OUTPUT ??
+    (minimum ? '/tmp/ro-soft-fit-minimum' : 'docs/design-review'),
 )
 const baseline = process.env.RO_DESIGN_BASELINE === '1'
-const port = process.argv[2] ?? '5175'
-const width = Number(process.argv[3] ?? 1440)
-const height = Number(process.argv[4] ?? 900)
+const port =
+  process.argv.slice(2).find((argument) => !argument.startsWith('--')) ?? '5175'
+const width = minimum ? 1280 : 1440
+const height = minimum ? 820 : 900
 const executablePath = process.env.RO_DESIGN_CHROMIUM ?? '/usr/bin/chromium'
 fs.mkdirSync(output, { recursive: true })
 const csp = JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf8')).app
   .security.csp
 const checks = []
+const screenshotScenes = new Set([
+  'prep-empty',
+  'prep-combat-fit',
+  'prep-buffs',
+  'active-editors',
+  'ingame-buffs',
+  'server',
+  'scanner',
+  'prep-ready',
+])
 const switchContrast = []
 const stateContrast = []
 let selectCheck = null
@@ -24,6 +38,7 @@ let controlCheck = null
 const diagnosticChecks = []
 const contrastFailures = []
 let conformance = null
+const fitDetails = { notices: [], buffs: [], readyActions: [] }
 const browser = await chromium.launch({ executablePath, headless: true })
 const page = await browser.newPage({ viewport: { width, height } })
 await page.route('**/favicon.ico', (route) =>
@@ -57,8 +72,15 @@ page.on('console', (message) => {
   if (message.type() === 'error') errors.push(message.text())
 })
 await page.addInitScript(() => {
+  const fit = location.search.includes('fixture=fit-')
+  const fitRules =
+    location.search.includes('fit-ingame') ||
+    location.search.includes('fit-starting')
+      ? 8
+      : 6
   const pending = location.search.includes('fixture=pending')
-  const realistic = location.search.includes('fixture=realistic') || pending
+  const realistic =
+    location.search.includes('fixture=realistic') || pending || fit
   const server = {
     id: 'design-fixture',
     name: 'TestRO',
@@ -78,6 +100,35 @@ await page.addInitScript(() => {
     id: 'nndsk-ro-proton-0.1.0-dev.2',
     name: pending ? 'nndsk-ro-proton 0.1.0-dev.2' : 'nndsk-ro-proton',
     path: '/fixture/proton',
+  }
+  if (fit) {
+    server.name = 'SakuraRO'
+    server.runner =
+      '/home/nndsk/.local/share/ro-launcher/runners/wine-7.16-staging-tkg-amd64/bin/wine'
+    server.autobuff = {
+      enabled: false,
+      delayMs: 100,
+      rules: [
+        'Concentration Potion',
+        'Awakening Potion',
+        'Berserk Potion',
+        'Fireproof Potion',
+        'Waterproof Potion',
+        'Windproof Potion',
+        'Earthproof Potion',
+        'Box of Gloom',
+      ]
+        .slice(0, fitRules)
+        .map((label, index) => ({
+          id: `rule-${index}`,
+          label,
+          statusId: [37, 38, 39, 910, 908, 911, 909, 3][index],
+          key: `F${index + 1}`,
+          cooldownMs: 1000 + index * 100,
+          priority: (index + 1) * 10,
+          enabled: true,
+        })),
+    }
   }
   const tool = { found: false, path: null, label: null }
   const deps = {
@@ -155,6 +206,13 @@ await page.addInitScript(() => {
       },
     })
   }
+  if (fit && !/fit-ready|fit-starting|fit-ingame/.test(location.search)) {
+    deps.readyToLaunch = false
+    deps.prefixOk = false
+    deps.prefixWarning =
+      'El entorno se validará con el runtime administrado antes de jugar'
+    deps.canReset = false
+  }
   const tools = {
     gameDir: '/fixture',
     openSetup: tool,
@@ -202,6 +260,16 @@ await page.addInitScript(() => {
     tools.diagnostics.warnings = [
       'Se detectó anti-cheat. Confirma con el servidor si Wine, DXVK y la versión de dgVoodoo están permitidos.',
       'Gepard Shield 3.0 (FileVersion 26.8.26.1, SHA-256 e2f624d2e345...) reconocido; recomendación nndsk-ro-proton administrado. Validated se confirma en Dependencias si el runtime coincide.',
+    ]
+  }
+  if (fit) {
+    tools.diagnostics.graphicsApis = ['DirectDraw', 'Direct3D 9']
+    tools.diagnostics.warnings = [
+      'El cliente carga DirectDraw y Direct3D 9; cambiar el modo gráfico no evita resolver ambas cadenas de DLL.',
+      'Una dependencia local usa WebView2Loader; el loader no sustituye al Edge WebView2 Runtime.',
+      'El patcher es administrado (.NET); Wine Mono puede renderizar distinto a .NET Framework nativo.',
+      'Se detectó anti-cheat. Confirma con el servidor si Wine, DXVK y la versión de dgVoodoo están permitidos.',
+      'Build de Gepard no validada (SHA-256 e89eb47d8386...); conserva un prefix separado al probar runners.',
     ]
   }
   const responses = {
@@ -257,6 +325,8 @@ await page.addInitScript(() => {
       currentWebview: { label: 'main' },
     },
     invoke: async (command, args) => {
+      if (command === 'launch_game' && location.search.includes('fit-starting'))
+        return new Promise(() => {})
       if (command === 'plugin:app|version') return '0.2.1'
       if (command === 'plugin:event|listen') {
         const id = ++callbackId
@@ -282,6 +352,7 @@ const capture = async (name) => {
     ...(await auditLayout()),
     ...(await auditBoxes()),
     ...(await auditLines()),
+    fit: await auditFit(page),
   })
   await page.evaluate(() => {
     for (const animation of document.getAnimations()) {
@@ -359,9 +430,10 @@ const capture = async (name) => {
     `/tmp/ro-soft-${baseline ? 'before' : 'after'}-${width}x${height}-${name}.json`,
     JSON.stringify(styles, null, 2),
   )
-  await page.screenshot({
-    path: path.join(output, `${name}-${width}x${height}.png`),
-  })
+  if (baseline || screenshotScenes.has(name))
+    await page.screenshot({
+      path: path.join(output, `${name}-${width}x${height}.png`),
+    })
   console.log(name, styles.length, 'elements rendered')
 }
 
@@ -652,7 +724,7 @@ async function auditBoxes() {
         continue
       // Native control surfaces, modal shells and the log well are intentional boxes.
       if (
-        element.matches('[role="dialog"]') ||
+        element.matches('[role="dialog"], [data-design-log-tabs]') ||
         (element.classList.contains('font-mono') &&
           /auto|scroll/.test(css.overflowY))
       )
@@ -745,6 +817,7 @@ async function auditLayout() {
       }
       if (
         css.textOverflow === 'ellipsis' &&
+        !element.closest('[title]') &&
         element.scrollWidth > element.clientWidth + 1
       )
         clippedText.push(`${element.tagName}: ${label}`)
@@ -1301,8 +1374,15 @@ await railScroll.evaluate((element) => {
 })
 await capture('prep-realistic-open-scrolled')
 const armSelect = page.getByRole('combobox')
+await armSelect.evaluate((element) => {
+  const rail = element.closest('[data-design-rail-scroll]')
+  rail.scrollTop +=
+    element.getBoundingClientRect().bottom -
+    (rail.getBoundingClientRect().bottom - 8)
+})
 await armSelect.click()
 await page.getByRole('listbox').waitFor()
+await capture('advanced-select')
 const menuBounds = await page.getByRole('listbox').boundingBox()
 if (
   !menuBounds ||
@@ -1386,6 +1466,187 @@ await page.goto(`http://127.0.0.1:${port}/?fixture=empty`)
 await page.getByText('Sin servidores — agrega uno con +').waitFor()
 await capture('prep-empty')
 if (!baseline) await verifySwitchContrast('off')
+
+await page.goto(`http://127.0.0.1:${port}/?fixture=fit-combat`)
+await page
+  .getByRole('button', { name: 'Editar SakuraRO', exact: true })
+  .waitFor()
+await page.getByText('HoneyRO Patcher.exe', { exact: true }).waitFor()
+await page.evaluate(() => {
+  for (const line of [
+    'Diagnóstico local: cliente DirectDraw y Direct3D 9; prefix aislado /fixture/prefixes/sakuraro/wine-7.16-staging-tkg-amd64; no se modifican ejecutables ni anti-cheat.',
+    'OpenSetup /fixture/Setup.exe y patcher /fixture/HoneyRO Patcher.exe encontrados; configuración dgVoodoo conf OK. Las rutas completas se conservan para revisión.',
+    'Revisión de encaje completada; las líneas largas de logs siguen accesibles en su pozo, sin scroll anidado ni solape con las reglas de AutoBuff.',
+  ])
+    window.__designEmit('ro-launcher://log', { line })
+})
+await page
+  .getByText('Revisión de encaje completada', { exact: false })
+  .waitFor()
+await capture('prep-combat-fit')
+if (!baseline) {
+  for (const title of ['Runner predeterminado', 'Herramientas']) {
+    const panel = page
+      .locator('section')
+      .filter({ has: page.getByRole('heading', { name: title, exact: true }) })
+    const notice = panel.locator('.notice-warn')
+    const collapsed = await notice.boundingBox()
+    const content = await notice.textContent()
+    await panel
+      .getByRole('button', { name: 'Mostrar más', exact: true })
+      .click()
+    if ((await notice.textContent()) !== content)
+      throw new Error('Notice text changed on expansion')
+    const expanded = await notice.boundingBox()
+    await capture(
+      `fit-notice-${title === 'Herramientas' ? 'tools' : 'runner'}-expanded`,
+    )
+    await panel
+      .getByRole('button', { name: 'Mostrar menos', exact: true })
+      .click()
+    fitDetails.notices.push({
+      panel: title,
+      collapsed: collapsed.height,
+      expanded: expanded.height,
+      gained: expanded.height - collapsed.height,
+    })
+  }
+  const rail = page.locator('[data-design-rail-scroll]')
+  await page
+    .getByRole('heading', { name: 'Avanzado', exact: true })
+    .scrollIntoViewIfNeeded()
+  await capture('fit-advanced-reachable')
+  await rail.evaluate((element) => {
+    element.scrollTop = 0
+  })
+}
+await page.getByRole('button', { name: 'Buffs', exact: true }).click()
+await page.getByRole('heading', { name: 'AutoBuff', exact: true }).waitFor()
+await capture('prep-buffs')
+if (!baseline) {
+  const buffPanel = page.locator('section').filter({
+    has: page.getByRole('heading', { name: 'AutoBuff', exact: true }),
+  })
+  await buffPanel
+    .getByRole('button', { name: 'Mostrar catálogo', exact: true })
+    .click()
+  await buffPanel
+    .getByRole('button', { name: '+ Manual', exact: true })
+    .scrollIntoViewIfNeeded()
+  if (
+    (await buffPanel
+      .getByRole('button', { name: '+ Manual', exact: true })
+      .isVisible()) !== true
+  )
+    throw new Error('Manual preset is inaccessible')
+  await capture('prep-buffs-catalog')
+  await buffPanel
+    .getByRole('button', { name: 'Ocultar catálogo', exact: true })
+    .click()
+  const scroll = buffPanel.locator('[data-design-panel-scroll]')
+  const rows = buffPanel.locator('[data-design-buff-row]')
+  const statusBefore = await buffPanel
+    .getByText('Sin buffs aplicados', { exact: true })
+    .boundingBox()
+  for (const row of await rows.all()) {
+    await row.evaluate((element) => element.scrollIntoView({ block: 'center' }))
+    const fits = await row.evaluate((element) => {
+      const body = element
+        .closest('[data-design-panel-scroll]')
+        .getBoundingClientRect()
+      const bounds = element.getBoundingClientRect()
+      return bounds.top >= body.top - 1 && bounds.bottom <= body.bottom + 1
+    })
+    if (!fits) throw new Error('A buff row cannot be shown at full height')
+  }
+  const sticky = await buffPanel
+    .getByText('Cooldown', { exact: true })
+    .boundingBox()
+  const bodyBounds = await scroll.boundingBox()
+  const statusAfter = await buffPanel
+    .getByText('Sin buffs aplicados', { exact: true })
+    .boundingBox()
+  if (
+    Math.abs(statusAfter.y - statusBefore.y) > 1 ||
+    sticky.y < bodyBounds.y - 1 ||
+    sticky.y > bodyBounds.y + 10
+  )
+    throw new Error('Buff status/table header moved with rows')
+  fitDetails.buffs.push({
+    scene: 'prep',
+    rules: await rows.count(),
+    allRowsReachable: true,
+    statusFixed: true,
+    headerSticky: true,
+  })
+  await scroll.evaluate((element) => {
+    element.scrollTop = 0
+  })
+}
+await page
+  .locator('section')
+  .filter({ has: page.getByRole('heading', { name: 'AutoBuff', exact: true }) })
+  .locator('[aria-haspopup="listbox"]')
+  .first()
+  .click({ force: baseline })
+await page.getByRole('listbox').waitFor()
+await capture('prep-buffs-select')
+await page.keyboard.press('Escape')
+
+await page.goto(`http://127.0.0.1:${port}/?fixture=fit-ingame`)
+await page
+  .getByRole('button', { name: 'Editar SakuraRO', exact: true })
+  .waitFor()
+await page.evaluate(() =>
+  window.__designEmit('ro-launcher://game-client', {
+    clientId: 'design-client',
+    serverId: 'design-fixture',
+    serverName: 'SakuraRO',
+    status: 'running',
+    pid: 42,
+    memoryAccess: 'processVmReadv',
+    profileMemory: 'valid',
+  }),
+)
+await page.getByRole('button', { name: 'Buffs', exact: true }).click()
+await page.getByRole('heading', { name: 'AutoBuff', exact: true }).waitFor()
+await capture('ingame-buffs')
+
+await page.goto(`http://127.0.0.1:${port}/?fixture=fit-starting`)
+await page.getByRole('button', { name: 'Jugar', exact: true }).waitFor()
+await page.getByRole('button', { name: 'Buffs', exact: true }).click()
+await page.getByRole('button', { name: 'Jugar', exact: true }).click()
+await page.getByText('Iniciando juego...', { exact: true }).first().waitFor()
+await capture('ingame-buffs-starting')
+
+await page.goto(`http://127.0.0.1:${port}/?fixture=fit-ready`)
+await page
+  .getByRole('button', { name: 'Editar SakuraRO', exact: true })
+  .waitFor()
+await page.getByText('HoneyRO Patcher.exe', { exact: true }).waitFor()
+await capture('prep-ready')
+if (!baseline) {
+  const tools = page.locator('section').filter({
+    has: page.getByRole('heading', { name: 'Herramientas', exact: true }),
+  })
+  for (const name of ['Abrir', 'Config'])
+    for (const button of await tools
+      .getByRole('button', { name, exact: true })
+      .all()) {
+      if (await button.isDisabled())
+        throw new Error(`Ready tool is disabled: ${name}`)
+      const reading = stateContrast
+        .at(-1)
+        .enabled.find((reading) => reading.label === name)
+      if (!reading || reading.textContrast < 4.5)
+        throw new Error(`Ready tool contrast: ${name}`)
+      fitDetails.readyActions.push({
+        name,
+        enabled: true,
+        contrast: reading.textContrast,
+      })
+    }
+}
 // The approved HTML is unchanged. Load the same local font faces rather than
 // its example CDN, then capture only its first (preparation) board.
 if (width === 1440 && height === 900 && !baseline) {
@@ -1414,12 +1675,9 @@ if (width === 1440 && height === 900 && !baseline) {
   }
   await reference.addStyleTag({ content: faces.join('\n') })
   await reference.evaluate(() => document.fonts.ready)
-  const refImage = await reference
-    .locator('body > div')
-    .first()
-    .screenshot({ path: path.join(output, 'reference-1440x900.png') })
+  const refImage = await reference.locator('body > div').first().screenshot()
   const appImage = fs.readFileSync(
-    path.join(output, 'prep-pending-1440x900.png'),
+    path.join(output, 'prep-combat-fit-1440x900.png'),
   )
   const comparison = await browser.newPage({
     viewport: { width: width * 2, height },
@@ -1443,7 +1701,9 @@ console.log('Layout checks:', checks)
 console.log('Loaded fonts:', fonts)
 console.log('Contrast failures:', contrastFailures)
 fs.writeFileSync(
-  path.join(output, `review-${width}x${height}.json`),
+  output === path.resolve('docs/design-review')
+    ? `/tmp/ro-soft-fit-review-${width}x${height}.json`
+    : path.join(output, `review-${width}x${height}.json`),
   JSON.stringify(
     {
       viewport: { width, height },
@@ -1461,6 +1721,7 @@ fs.writeFileSync(
       diagnosticChecks,
       contrastFailures,
       conformance,
+      fitDetails,
     },
     null,
     2,
@@ -1475,6 +1736,7 @@ if (
     (check) =>
       check.overflow.length ||
       check.clippedText.length ||
+      check.fit.failures.length ||
       (!baseline && check.nestedBoxes.length),
   ) ||
   fontResponses.some((response) => response.status !== 200)

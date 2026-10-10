@@ -351,6 +351,55 @@ export async function reviewConformance({ reference, page, port, output }) {
     board.locator('.sg .on'),
     page.getByRole('button', { name: 'Combate', exact: true }),
   )
+  // Approved reduced scale: derive from the reference segmented rule, without
+  // editing refined.html. Container 28px, segment 20px/r7, Sans 12px/500.
+  await board.locator('.sg').evaluate((element) => {
+    const probe = element.cloneNode(true)
+    probe.dataset.conformance = 'logs'
+    probe.style.height = '28px'
+    probe.style.boxSizing = 'border-box'
+    for (const segment of probe.children) {
+      segment.style.cssText =
+        'height:20px;box-sizing:border-box;display:flex;align-items:center;padding:0 8px;border-radius:7px;font-size:12px'
+    }
+    element.parentElement.append(probe)
+  })
+  const logReference = reference.locator('[data-conformance="logs"]')
+  const logApp = page.locator('[data-design-log-tabs]')
+  await pair(
+    'Pestañas de Logs · escala derivada',
+    logReference,
+    logApp,
+    {},
+    { text: false },
+  )
+  const logRow = rows.at(-1)
+  logRow.reference.segment = await read(logReference.locator('.on'))
+  logRow.app.segment = await read(
+    logApp.getByRole('button', { name: 'Juego', exact: true }),
+  )
+  for (const property of properties) {
+    if (
+      equivalent(
+        property,
+        logRow.reference.segment[property],
+        logRow.app.segment[property],
+      )
+    )
+      continue
+    logRow.differences.push({
+      property: `segment.${property}`,
+      reference: logRow.reference.segment[property],
+      app: logRow.app.segment[property],
+      reason:
+        property === 'borderColor' &&
+        parseFloat(logRow.reference.segment.borderWidth) === 0 &&
+        parseFloat(logRow.app.segment.borderWidth) === 0
+          ? 'Borde no pintado del segmento (0px).'
+          : undefined,
+    })
+  }
+  await logReference.evaluate((element) => element.remove())
   const range = pot.locator('input[type="range"]').first()
   const track = await rangePart(page, range, '::-webkit-slider-runnable-track')
   add(
@@ -393,7 +442,7 @@ export async function reviewConformance({ reference, page, port, output }) {
     panel('Herramientas').locator('.notice-warn').first(),
     {
       height:
-        'Avisos completos y hash/FileVersion reales; el bloque crece sin cortar texto.',
+        'Decisión fit aprobada: dos líneas con expansión local; el contenido completo sigue disponible.',
       paddingLeft:
         'Punto con ::before, no un hijo nuevo: 14px exteriores + 8px punto + 10px separación = 32px hasta el texto.',
     },
@@ -423,7 +472,7 @@ export async function reviewConformance({ reference, page, port, output }) {
   )
   const failures = conformanceFailures(rows)
   const format = (value) =>
-    `bg ${value.backgroundColor}; borde ${value.borderWidth}/${value.borderColor}; r ${value.borderRadius}; ${value.fontFamily} ${value.fontSize}/${value.fontWeight}; h ${value.height}; p ${[value.paddingTop, value.paddingRight, value.paddingBottom, value.paddingLeft].join(' ')}`
+    `bg ${value.backgroundColor}; borde ${value.borderWidth}/${value.borderColor}; r ${value.borderRadius}; ${value.fontFamily} ${value.fontSize}/${value.fontWeight}; h ${value.height}; p ${[value.paddingTop, value.paddingRight, value.paddingBottom, value.paddingLeft].join(' ')}${value.segment ? `<br>Segmento: ${format(value.segment)}` : ''}`
   const table = rows
     .map(
       (row) =>

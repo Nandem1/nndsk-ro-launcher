@@ -3,6 +3,10 @@ import { useLauncherStore } from '../launcher/launcher.store'
 import { countLogErrors } from './logs.logic'
 import { useLogsStore } from './logs.store'
 import { LogPanelView } from './LogPanelView'
+import {
+  segmentedClasses,
+  segmentClasses,
+} from '../../shared/ui/segmentedControl'
 
 type LogChannel = 'game' | 'tools'
 
@@ -21,11 +25,7 @@ function LogTab({
     <button
       type="button"
       onClick={onClick}
-      className={`px-2 py-0.5 border-b-2 text-caption font-semibold normal-case tracking-normal transition-colors inline-flex items-center gap-1 focus-visible:outline focus-visible:outline-accent ${
-        active
-          ? 'text-ink border-accent'
-          : 'text-muted hover:text-ink border-transparent'
-      }`}
+      className={segmentClasses(active, true)}
     >
       {children}
       {badge != null && badge > 0 && (
@@ -66,19 +66,21 @@ export function UnifiedLogPanel() {
       compact
       leading={
         <div className="flex gap-1">
-          <LogTab
-            active={channel === 'game'}
-            onClick={() => setChannel('game')}
-          >
-            Juego
-          </LogTab>
-          <LogTab
-            active={channel === 'tools'}
-            onClick={() => setChannel('tools')}
-            badge={toolErrorCount}
-          >
-            Tools
-          </LogTab>
+          <div data-design-log-tabs className={segmentedClasses(true)}>
+            <LogTab
+              active={channel === 'game'}
+              onClick={() => setChannel('game')}
+            >
+              Juego
+            </LogTab>
+            <LogTab
+              active={channel === 'tools'}
+              onClick={() => setChannel('tools')}
+              badge={toolErrorCount}
+            >
+              Tools
+            </LogTab>
+          </div>
           {isRunning && channel === 'game' && toolErrorCount > 0 && (
             <span className="text-micro text-muted self-center ml-0.5">
               · {toolErrorCount} en Tools

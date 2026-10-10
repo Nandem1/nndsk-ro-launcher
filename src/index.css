@@ -231,6 +231,22 @@
 }
 
 @layer components {
+  /* Preparation trades duplicated section padding for one 4px gap. The
+     controls retain their geometry; Logs yields height before these bodies. */
+  .combat-fit > div {
+    padding-block: 0;
+  }
+
+  .combat-fit > .border-t > button {
+    padding-block: 4px;
+  }
+
+  /* Expanding all diagnostics cannot fit alongside the complete combat
+     controls. Keep the heading fixed and scroll only this panel's body. */
+  .server-tools-panel:has([data-design-clamp='false']) {
+    max-height: max(180px, calc(100dvh - 680px));
+  }
+
   .notice-warn {
     @apply relative block rounded-notice bg-warn/[0.09] pl-8 pr-3.5 py-[11px] text-muted;
   }
@@ -283,13 +299,26 @@
     @apply text-muted;
   }
 
-  .panel-idle .text-ink,
+  .panel-idle .text-ink:not(h2),
   .panel-idle .text-ok,
   .panel-idle .text-bad,
   .panel-idle .text-warn,
   .panel-idle .text-info,
   .panel-idle .text-special {
     @apply text-muted;
+  }
+}
+
+/* The fixed production window is 1440×900; this is the smaller audit viewport
+   fallback, not a change of mode. One reachable scroll per tool, never spill. */
+@media (max-height: 850px) {
+  [data-design-tool-body] {
+    flex-shrink: 1;
+    flex-basis: 0;
+  }
+
+  .combat-fit {
+    overflow-y: auto;
   }
 }
 

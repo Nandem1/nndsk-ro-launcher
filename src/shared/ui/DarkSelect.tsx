@@ -202,7 +202,12 @@ export function DarkSelect({
             onKeyDown={handleMenuKeyDown}
             style={{
               position: 'fixed',
-              top: menuPosition.top,
+              // Anchor upward menus by their actual painted height, not the
+              // maximum height reserved for a long list (e.g. two options).
+              top: menuPosition.openUp
+                ? menuPosition.top + menuPosition.maxHeight
+                : menuPosition.top,
+              transform: menuPosition.openUp ? 'translateY(-100%)' : undefined,
               left: menuPosition.left,
               width: menuPosition.width,
               maxHeight: menuPosition.maxHeight,
@@ -219,6 +224,7 @@ export function DarkSelect({
                     type="button"
                     role="option"
                     aria-selected={isSelected}
+                    title={option.label}
                     tabIndex={index === activeIndex ? 0 : -1}
                     onMouseMove={() => setActiveIndex(index)}
                     onClick={() => chooseOption(index)}
@@ -251,6 +257,7 @@ export function DarkSelect({
         aria-label={ariaLabel}
         aria-labelledby={ariaLabelledBy}
         aria-haspopup="listbox"
+        title={selected?.label ?? placeholder}
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
         onClick={() => {

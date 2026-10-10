@@ -63,7 +63,7 @@ con licencias OFL en public/licenses. CSP sin cambios; font-src hereda self.
 
 | Primitivo/patrón | Estilo |
 | --- | --- |
-| Panel glass/idle; default/compact/hero | panel, borde 1px line-soft, radio 14; padding exterior 16/18; cabecera sin línea. tone conserva API, no colorea borde |
+| Panel glass/idle; default/compact/hero | panel, borde 1px line-soft, radio 14; padding exterior 16/18; título siempre ink; cabecera sin línea. tone conserva API, no colorea borde; scrollBody designa el único cuerpo desplazable |
 | Button secondary/outline; xs/sm/md/lg/dialog/dialog-sm | panel-raised, sin borde, radio 9, 13px/500 y 14/8 en sm/md; xs conserva tamaño compacto |
 | Button primary | accent/on-accent/600; Jugar y Preparar entorno radio 11, 14px, padding 13; disabled raised/muted |
 | Button ghost | transparente, muted, hover ink |
@@ -74,10 +74,11 @@ con licencias OFL en public/licenses. CSP sin cambios; font-src hereda self.
 | StatusDot | círculo de 8px; mismos estados/pulse, neutral muted (≥3:1, no line-strong) |
 | Teclas | panel-raised, sin borde, radio 7, alto 28; elegidas accent/on-accent |
 | Combate/Buffs | segmentado panel/line-soft, radio 11, padding 3; activo line/ink y radio 8; sin subrayado/iconos |
+| Juego/Tools | mismo segmentado a escala reducida: contenedor 28px, segmento 20px/radio 7, Sans 12px/500; sin subrayado |
 | Slider | pista track de 4px, fill track-fill, thumb ink circular 14 |
 | HP/SP | pista panel-raised de 6px, redondeada; rellenos actuales bad/info |
 | ModalShell | modal, line-soft/1px, radio 16, scrim sólido |
-| Avisos | notice-warn: warn/9%, radio 11, padding 11/14, punto warn; texto Sans 12.5px muted, sin barra |
+| Avisos | notice-warn: warn/9%, radio 11, padding 11/14, punto warn; texto Sans 12.5px muted, sin barra. CollapsibleNotice: dos líneas, chevron Mostrar más/menos y estado local; datos Mono 12px/break-all |
 | Scrollbar | 6px, pista transparente, pulgar line-strong redondeado |
 
 Foco: contorno de 2px accent sólido, solo en :focus-visible al navegar con
@@ -114,7 +115,8 @@ Warn: aviso tonal o punto de estado, nunca Cliente ni un párrafo largo coloread
 Avanzado conserva exactamente el mapeo de presentación de graphite:
 pending/warning→warn, error→bad, listo→ok, informativo→neutral.
 El estado ya no colorea la tarjeta; aparece en sus puntos/textos existentes.
-Idle usa muted sin opacidad. Disabled mantiene la superficie/radio del control
+El título de todo Panel permanece ink incluso idle; solo contenido/controles
+se atenúan a muted sin opacidad. Disabled mantiene la superficie/radio del control
 y texto muted; las acciones primary/solid pasan a raised/muted. No se añade
 un borde ni contorno permanente. Switches mantienen pista y perilla de su estado;
 teclas elegidas conservan accent/on-accent también disabled. Disponibilidad intacta.
@@ -171,7 +173,60 @@ Tema: cambiar tokens de index.css y pocos mapas/primitivos compartidos;
 no introducir colores ni radios crudos en features. El catálogo de migración
 incluye los cuatro colores nuevos.
 
-`npm run review:design -- 5175 1440 900` y `-- 5175 1280 820` usan el build
+`npm run review:design -- 5175` y `-- 5175 --minimum` usan el build
 de producción con Chromium, CSP real e IPC simulado. El primero genera también
 la comparación lado a lado. Pendiente manual: tauri:dev con clientes reales
 y aspecto en WebKit con la configuración de Hyprland, incluido texto fantasma.
+
+## Encaje
+
+En preparación, Logs cede altura desde su máximo existente (196px a 900px de
+ventana) hasta 120px antes de reducir los cuerpos de Combate. Se elimina padding
+vertical duplicado: una separación de 4px por grupo, sin reducir teclas/campos.
+AutoPot y Spammer muestran todos los controles sin scroll interior a 1440×900.
+
+AutoBuff: min-h-0 y recorte exterior; estado/switch fijos; catálogo y reglas
+comparten un único cuerpo overflow-y-auto. La cabecera de tabla es sticky y
+todas las filas pueden verse completas al desplazarse. Catálogo abierto sin
+reglas y cerrado con reglas al montar; chevron con nombre accesible y estado
+local, no persistido. Ninguna opción ni acción se retira.
+
+Los avisos de Herramientas y Runner efectivo comienzan con line-clamp-2.
+Expandir conserva literalmente todo el contenido. El aviso técnico usa Mono
+12px/break-all; campos/selects conservan elipsis y title completo. El rail tiene
+un solo scroll, tarjetas sin encogerse y acciones inferiores fijas; Avanzado es
+alcanzable aunque se expanda una ruta larga.
+
+Expandir los cinco diagnósticos de Herramientas no cabe junto a Combate completo:
+solo entonces su cuerpo usa scroll, con cabecera fija y un presupuesto de altura
+max(180px, 100dvh − 680px). Sin expansión no hay scroll activo. La ventana real
+sigue fija a 1440×900; la prueba opcional 1280×820 permite un único scroll de
+respaldo en cada cuerpo de Combate, porque el espacio de esa prueba no basta.
+Sin scroll horizontal ni scroll anidado. La barra existente sigue siendo 6px.
+
+## Congelado
+
+[refined.html](design-reference/refined.html) es la referencia **inmutable**.
+[conformance.md](design-review/conformance.md) y el detector de recortes/solapes
+son la compuerta local antes de cualquier cambio visual. El detector comprueba
+contenedores visibles, salida/solape entre paneles, scroll único y anclaje de
+DarkSelect al disparador dentro del viewport. Los únicos recortes intencionales
+son los avisos expandibles y la elipsis con tooltip; contenido fuera del área de
+scroll debe seguir siendo alcanzable íntegramente. Las pruebas negativas de
+recorte, escape, solape, scroll anidado y menú desanclado impiden falsos verdes.
+
+Para cambiar un token:
+
+1. Editar su valor en src/index.css; si se añade un rol/nombre, registrar también
+   scripts/design-token-map.mjs y tailwind.config.js. No editar la referencia.
+2. Actualizar esta tabla y el cálculo de contraste en scripts/check-design-contrast.mjs
+   cuando corresponda. Una divergencia visual de la referencia requiere aprobación,
+   no una excepción genérica para hacer pasar el arnés.
+3. Ejecutar npm run check:design, npm run check:design:fixtures,
+   npm run check:design:fit, npm run lint, npm run format:check, npm test y npm run build.
+4. Servir producción con npm run preview -- --host 127.0.0.1 --port 5175;
+   ejecutar npm run review:design -- 5175. Genera solo las ocho escenas 1440×900,
+   comparación y conformidad. npm run review:design -- 5175 --minimum prueba
+   1280×820 y guarda sus artefactos fuera del repo.
+5. Revisar diff/capturas y completar [la checklist manual](design-review/premerge-checklist.md).
+   Los informes JSON y volcados DOM quedan en /tmp, no en design-review.

@@ -39,6 +39,7 @@ interface PanelProps {
   tone?: PanelTone
   size?: PanelSize
   variant?: 'glass' | 'idle'
+  scrollBody?: boolean
 }
 
 export function Panel({
@@ -52,6 +53,7 @@ export function Panel({
   tone = 'neutral',
   size = hero ? 'hero' : compact ? 'compact' : 'default',
   variant = 'glass',
+  scrollBody = false,
 }: PanelProps) {
   const headerPad = 'px-[18px] pt-4 pb-2'
   const bodyPad = 'px-[18px] pt-2 pb-4'
@@ -67,16 +69,15 @@ export function Panel({
         className={`flex items-center justify-between gap-2 shrink-0 ${headerPad}`}
       >
         <div className="flex items-center gap-2 min-w-0">
-          <h2
-            className={`${titleClass} ${effectiveTone === 'idle' ? 'text-muted' : 'text-ink'}`}
-          >
-            {title}
-          </h2>
+          <h2 className={`${titleClass} text-ink`}>{title}</h2>
           {leading}
         </div>
         {action}
       </div>
-      <div className={`flex-1 min-h-0 flex flex-col ${bodyPad}`}>
+      <div
+        data-design-panel-scroll={scrollBody || undefined}
+        className={`flex-1 min-h-0 flex flex-col ${bodyPad} ${scrollBody ? 'overflow-y-auto' : ''}`}
+      >
         {children}
       </div>
     </section>

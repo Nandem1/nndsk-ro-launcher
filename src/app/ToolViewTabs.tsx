@@ -1,4 +1,5 @@
 import { useUiModeStore, type ToolView } from './uiMode.store'
+import { segmentedClasses, segmentClasses } from '../shared/ui/segmentedControl'
 
 const TABS: {
   view: ToolView
@@ -13,7 +14,7 @@ export function ToolViewTabs() {
   const setToolView = useUiModeStore((s) => s.setToolView)
 
   return (
-    <div className="shrink-0 flex gap-1 rounded-segmented border border-line-soft bg-panel p-[3px]">
+    <div className={segmentedClasses()}>
       {TABS.map(({ view, label }) => {
         const active = toolView === view
         return (
@@ -22,11 +23,7 @@ export function ToolViewTabs() {
             type="button"
             onClick={() => setToolView(view)}
             aria-pressed={active}
-            className={`flex-1 flex items-center justify-center gap-1.5 rounded-segment px-7 py-1.5 text-data leading-[normal] font-sans font-medium transition-colors duration-120 ${
-              active
-                ? 'bg-line text-ink'
-                : 'text-muted hover:bg-panel-raised hover:text-ink'
-            }`}
+            className={segmentClasses(active)}
           >
             {label}
           </button>

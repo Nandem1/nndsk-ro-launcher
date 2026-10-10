@@ -59,7 +59,10 @@ export function SpammerPanel() {
       tone={tone}
       className="h-full"
     >
-      <div className="flex-1 min-h-0 overflow-y-auto space-y-2 pr-0.5">
+      <div
+        data-design-panel-scroll
+        className={`flex-1 min-h-0 ${hero ? 'overflow-y-auto space-y-2 pr-0.5' : 'combat-fit space-y-1'}`}
+      >
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
             <p

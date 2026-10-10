@@ -4,6 +4,7 @@ import { Panel } from '../../shared/ui/Panel'
 import { StatusDot } from '../../shared/ui/StatusDot'
 import { DataText } from '../../shared/ui/DataText'
 import { buttonClasses } from '../../shared/ui/Button'
+import { CollapsibleNotice } from '../../shared/ui/CollapsibleNotice'
 import { useSelectedServer } from './useSelectedServer'
 import { useServerTools } from './useServerTools'
 import { useCurrentAdvancedStatus } from '../settings/useSelectedRuntimeStatus'
@@ -42,7 +43,8 @@ export function ServerToolsPanel() {
     <Panel
       title="Herramientas"
       size="compact"
-      className="shrink-0 "
+      className="server-tools-panel shrink-0"
+      scrollBody
       action={
         <button
           type="button"
@@ -75,13 +77,13 @@ export function ServerToolsPanel() {
           />
           <ClientDiagnostics status={status} />
           {!!status.dgvoodoo.issues.length && (
-            <div className="mt-2 notice-warn">
+            <CollapsibleNotice className="mt-2">
               {status.dgvoodoo.issues.map((issue) => (
                 <p key={issue} className="text-caption leading-snug text-muted">
-                  <DataText>{issue}</DataText>
+                  <DataText className="text-xs break-all">{issue}</DataText>
                 </p>
               ))}
-            </div>
+            </CollapsibleNotice>
           )}
         </>
       )}
@@ -106,7 +108,7 @@ function ClientDiagnostics({ status }: { status: ServerToolsStatus }) {
   }
 
   return (
-    <div className="mt-2 py-2">
+    <div className="mt-1 py-1">
       <p className="text-caption text-muted font-mono tabular-nums">
         Cliente {diagnostics.architecture ?? 'PE'}
         {diagnostics.graphicsApis.length
@@ -114,13 +116,13 @@ function ClientDiagnostics({ status }: { status: ServerToolsStatus }) {
           : ''}
       </p>
       {!!diagnostics.warnings.length && (
-        <div className="mt-2 notice-warn space-y-1">
+        <CollapsibleNotice className="mt-1">
           {diagnostics.warnings.map((warning) => (
             <p key={warning} className="text-caption leading-snug text-muted">
-              <DataText>{warning}</DataText>
+              <DataText className="text-xs break-all">{warning}</DataText>
             </p>
           ))}
-        </div>
+        </CollapsibleNotice>
       )}
     </div>
   )
@@ -182,7 +184,7 @@ function CompactToolCard({
   const btnClass = buttonClasses('secondary', 'xs')
 
   return (
-    <div className="px-2.5 py-2 flex flex-col gap-1.5 min-w-0">
+    <div className="px-2.5 py-1 flex flex-col gap-1 min-w-0">
       <div className="flex flex-wrap items-center gap-1.5 min-w-0">
         <StatusDot status={dotOk ? 'ok' : 'neutral'} />
         <span className="text-detail text-ink font-medium shrink-0">

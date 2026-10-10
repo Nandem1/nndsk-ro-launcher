@@ -268,6 +268,7 @@ export function ServerConfigModal({ mode, server, onSave, onClose }: Props) {
         <form
           id={formId}
           onSubmit={handleSubmit}
+          data-design-panel-scroll
           className="min-h-0 overflow-y-auto px-6 py-4 flex flex-col gap-5"
         >
           <section className="flex flex-col gap-3">

@@ -37,6 +37,11 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
     <input
       ref={ref}
       type={type}
+      title={
+        ['text', 'search', 'url', 'email'].includes(type) && rest.value != null
+          ? String(rest.value)
+          : undefined
+      }
       style={{ ...rangeStyle, ...style }}
       className={`idle-control ${['range', 'checkbox', 'radio'].includes(type) ? '' : `${VARIANT_CLASSES[variant]} leading-[normal]`} ${type === 'number' ? 'font-mono tabular-nums' : ''} ${className}`}
       {...rest}

@@ -5,6 +5,7 @@ import { Panel } from '../../shared/ui/Panel'
 import { DarkSelect } from '../../shared/ui/DarkSelect'
 import { Button } from '../../shared/ui/Button'
 import { DataText } from '../../shared/ui/DataText'
+import { CollapsibleNotice } from '../../shared/ui/CollapsibleNotice'
 import { runSafely } from '../../shared/async'
 import { isLauncherBusy, useLauncherStore } from '../launcher/launcher.store'
 import { useSelectedServer } from '../servers/useSelectedServer'
@@ -111,17 +112,17 @@ export function RunnerSelector() {
         </p>
       )}
       {server && serverRunner && (
-        <div className="mt-2 notice-warn">
+        <CollapsibleNotice className="mt-2">
           <p className="text-caption leading-relaxed text-muted">
             Runner efectivo de {server.name}:{' '}
-            <span className="text-muted font-mono tabular-nums">
+            <span className="text-muted text-xs font-mono tabular-nums break-all">
               {serverRunnerName}
             </span>
           </p>
           <p className="mt-0.5 text-micro leading-relaxed text-muted">
             Propio del servidor; el predeterminado global no lo reemplaza.
           </p>
-        </div>
+        </CollapsibleNotice>
       )}
     </Panel>
   )

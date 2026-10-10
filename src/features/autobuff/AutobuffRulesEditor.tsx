@@ -114,12 +114,14 @@ function makeRule(): AutobuffRule {
 interface AutobuffRulesEditorProps {
   rules: AutobuffRule[]
   disabled: boolean
+  catalogOpen?: boolean
   onChange: (rules: AutobuffRule[]) => void
 }
 
 export function AutobuffRulesEditor({
   rules,
   disabled,
+  catalogOpen = true,
   onChange,
 }: AutobuffRulesEditorProps) {
   const hasStatusId = (statusId: number, exceptId?: string) =>
@@ -141,7 +143,7 @@ export function AutobuffRulesEditor({
 
   return (
     <>
-      <div className="shrink-0 space-y-1.5">
+      <div hidden={!catalogOpen} className="space-y-1.5 pb-2">
         {PRESET_GROUPS.map((group) => (
           <div key={group.label}>
             <p className="mb-0.5 micro-label">{group.label}</p>
@@ -170,14 +172,14 @@ export function AutobuffRulesEditor({
         </Button>
       </div>
 
-      <div className="min-h-14 flex-1 space-y-1 overflow-y-auto border-t border-line pt-2">
+      <div className="space-y-1 border-t border-line">
         {rules.length === 0 ? (
           <p className="px-1 py-2 text-caption text-muted">
             Añade un preset o una regla manual.
           </p>
         ) : (
           <>
-            <div className="grid grid-cols-[16px_minmax(0,1fr)_68px_84px_80px_20px] items-center gap-1.5 px-2 micro-label">
+            <div className="sticky top-0 z-10 bg-panel grid grid-cols-[16px_minmax(0,1fr)_68px_84px_80px_20px] items-center gap-1.5 px-2 py-2 micro-label">
               <span />
               <span>Buff</span>
               <span className="text-center">Tecla</span>
@@ -188,6 +190,7 @@ export function AutobuffRulesEditor({
             {rules.map((rule) => (
               <div
                 key={rule.id}
+                data-design-buff-row
                 className="group grid grid-cols-[16px_minmax(0,1fr)_68px_84px_80px_20px] items-center gap-1.5 px-2 py-1 transition-colors hover:bg-panel-raised"
               >
                 <Checkbox

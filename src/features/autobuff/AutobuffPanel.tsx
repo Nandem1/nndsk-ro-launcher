@@ -1,4 +1,7 @@
 import { useUiModeStore } from '../../app/uiMode.store'
+import { useState } from 'react'
+import { ChevronDown } from 'lucide-react'
+import { IconButton } from '../../shared/ui/Button'
 import { Panel, resolveToolTone } from '../../shared/ui/Panel'
 import { ToggleSwitch } from '../../shared/ui/ToggleSwitch'
 import { useLauncherStore } from '../launcher/launcher.store'
@@ -16,6 +19,9 @@ export function AutobuffPanel() {
   const server = useSelectedServer()
   const { config, status, busy, isRunning, error, setEnabled, updateField } =
     useAutobuff(server)
+  const [catalogOpen, setCatalogOpen] = useState(
+    () => config.rules.length === 0,
+  )
   const launching = useLauncherStore((state) => state.status === 'launching')
   const multipleClients = useLauncherStore((state) => state.clients.length > 1)
   const hero = useUiModeStore((state) => state.mode === 'ingame')
@@ -40,7 +46,20 @@ export function AutobuffPanel() {
       title="AutoBuff"
       size={hero ? 'hero' : 'compact'}
       tone={tone}
-      className="h-full w-full"
+      className="h-full w-full min-h-0 overflow-hidden"
+      action={
+        <IconButton
+          label={catalogOpen ? 'Ocultar catálogo' : 'Mostrar catálogo'}
+          size="xs"
+          aria-expanded={catalogOpen}
+          onClick={() => setCatalogOpen(!catalogOpen)}
+        >
+          <ChevronDown
+            className={`h-3.5 w-3.5 ${catalogOpen ? 'rotate-180' : ''}`}
+            aria-hidden
+          />
+        </IconButton>
+      }
     >
       <div className="flex min-h-0 flex-1 flex-col gap-2">
         <div className="flex shrink-0 items-start justify-between gap-2">
@@ -74,11 +93,17 @@ export function AutobuffPanel() {
           />
         </div>
 
-        <AutobuffRulesEditor
-          rules={config.rules}
-          disabled={!server || busy}
-          onChange={(rules) => void updateField({ rules })}
-        />
+        <div
+          data-design-panel-scroll
+          className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+        >
+          <AutobuffRulesEditor
+            rules={config.rules}
+            catalogOpen={catalogOpen}
+            disabled={!server || busy}
+            onChange={(rules) => void updateField({ rules })}
+          />
+        </div>
 
         <p className="shrink-0 text-caption leading-snug text-muted">
           Activa cada buff y asigna la tecla donde lo tienes configurado en el
