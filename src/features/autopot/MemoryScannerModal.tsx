@@ -2,6 +2,9 @@ import { useEffect, useId, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { api } from '../../shared/api'
 import { runSafely } from '../../shared/async'
+import { Button } from '../../shared/ui/Button'
+import { Input } from '../../shared/ui/Input'
+import { ModalShell, modalSurfaceClasses } from '../../shared/ui/ModalShell'
 import type {
   DetectedLevelAddress,
   DetectedMapAddress,
@@ -335,8 +338,8 @@ export function MemoryScannerModal({
               : 'Guardando direcciones…'
 
   return createPortal(
-    <div
-      className="fixed inset-0 z-[70] flex items-center justify-center bg-overlay-dark/70 p-4 backdrop-blur-panel"
+    <ModalShell
+      layer="scanner"
       role="presentation"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) cancel()
@@ -347,7 +350,7 @@ export function MemoryScannerModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="w-[410px] rounded-modal border border-overlay-light/[0.08] bg-panel p-5 shadow-modal"
+        className={`w-[410px] ${modalSurfaceClasses()}`}
       >
         <h3 id={titleId} className="text-base font-semibold text-ink">
           Encontrar memoria de {serverName}
@@ -359,7 +362,7 @@ export function MemoryScannerModal({
             <span className="text-detail uppercase tracking-wider text-muted">
               {step === 'initial' ? 'HP actual' : 'Nuevo HP actual'}
             </span>
-            <input
+            <Input
               autoFocus
               type="number"
               min={1}
@@ -369,7 +372,7 @@ export function MemoryScannerModal({
               disabled={busy}
               onChange={(event) => setHp(event.target.value)}
               placeholder={step === 'initial' ? 'Ej. 13619' : 'Ej. 13430'}
-              className="input-no-spinner rounded-control border border-line/80 bg-surface/70 px-3 py-2.5 text-sm text-ink outline-none focus:border-accent/60 disabled:opacity-50"
+              className="input-no-spinner disabled:opacity-50"
             />
           </label>
         ) : step === 'name' ? (
@@ -377,7 +380,7 @@ export function MemoryScannerModal({
             <span className="text-detail uppercase tracking-wider text-muted">
               Nombre exacto
             </span>
-            <input
+            <Input
               autoFocus
               type="text"
               maxLength={39}
@@ -386,7 +389,7 @@ export function MemoryScannerModal({
               onChange={(event) => setName(event.target.value)}
               placeholder="Ej. NombrePJ"
               spellCheck={false}
-              className="rounded-control border border-line/80 bg-surface/70 px-3 py-2.5 text-sm text-ink outline-none focus:border-accent/60 disabled:opacity-50"
+              className="disabled:opacity-50"
             />
           </label>
         ) : step === 'level' || step === 'levelRefine' ? (
@@ -394,7 +397,7 @@ export function MemoryScannerModal({
             <span className="text-detail uppercase tracking-wider text-muted">
               {step === 'level' ? 'Nivel actual' : 'Nuevo nivel'}
             </span>
-            <input
+            <Input
               autoFocus
               type="number"
               min={1}
@@ -404,7 +407,7 @@ export function MemoryScannerModal({
               disabled={busy}
               onChange={(event) => setLevel(event.target.value)}
               placeholder={step === 'level' ? 'Ej. 99' : 'Ej. 100'}
-              className="input-no-spinner rounded-control border border-line/80 bg-surface/70 px-3 py-2.5 text-sm text-ink outline-none focus:border-accent/60 disabled:opacity-50"
+              className="input-no-spinner disabled:opacity-50"
             />
           </label>
         ) : step === 'map' || step === 'mapRefine' ? (
@@ -412,7 +415,7 @@ export function MemoryScannerModal({
             <span className="text-detail uppercase tracking-wider text-muted">
               {step === 'map' ? 'Mapa actual' : 'Nuevo mapa'}
             </span>
-            <input
+            <Input
               autoFocus
               type="text"
               maxLength={39}
@@ -421,7 +424,7 @@ export function MemoryScannerModal({
               onChange={(event) => setMapName(event.target.value)}
               placeholder={step === 'map' ? 'Ej. prontera' : 'Ej. izlude'}
               spellCheck={false}
-              className="rounded-control border border-line/80 bg-surface/70 px-3 py-2.5 text-sm text-ink outline-none focus:border-accent/60 disabled:opacity-50"
+              className="disabled:opacity-50"
             />
           </label>
         ) : step === 'confirmed' && resolvedHpBase ? (
@@ -488,25 +491,28 @@ export function MemoryScannerModal({
         {error && <p className="mt-3 text-detail text-bad-bright">{error}</p>}
 
         <div className="mt-5 flex gap-2">
-          <button
+          <Button
             type="button"
             onClick={cancel}
-            className="flex-1 rounded-panel border border-line py-2.5 text-sm text-ink-soft hover:text-ink"
+            variant="outline"
+            size="dialog"
           >
             Cancelar
-          </button>
+          </Button>
           {step === 'confirmed' ? (
-            <button
+            <Button
               type="button"
               disabled={busy || !resolvedHpBase}
               onClick={() => void save()}
-              className="flex-1 rounded-panel bg-ok py-2.5 text-sm font-semibold text-surface disabled:opacity-40"
+              variant="solid"
+              size="dialog"
+              tone="ok"
             >
               Guardar direcciones
-            </button>
+            </Button>
           ) : step === 'name' ? (
             <>
-              <button
+              <Button
                 type="button"
                 disabled={busy}
                 onClick={() => {
@@ -517,56 +523,66 @@ export function MemoryScannerModal({
                   }
                   setStep('confirmed')
                 }}
-                className="flex-1 rounded-panel border border-line py-2.5 text-xs text-ink-soft hover:text-ink disabled:opacity-40"
+                variant="outline"
+                size="dialog-sm"
+                className="disabled:opacity-40"
               >
                 {existingHpBase && !confirmed
                   ? 'Recalibrar HP'
                   : 'Omitir nombre'}
-              </button>
-              <button
+              </Button>
+              <Button
                 type="submit"
                 disabled={busy || !name.trim()}
-                className="flex-1 rounded-panel bg-accent py-2.5 text-xs font-semibold text-surface disabled:opacity-40"
+                variant="solid"
+                size="dialog-sm"
+                tone="warn"
               >
                 Buscar nombre
-              </button>
+              </Button>
             </>
           ) : step === 'discord' ? (
             <>
-              <button
+              <Button
                 type="button"
                 disabled={busy}
                 onClick={skipPresence}
-                className="flex-1 rounded-panel border border-line py-2.5 text-xs text-ink-soft hover:text-ink disabled:opacity-40"
+                variant="outline"
+                size="dialog-sm"
+                className="disabled:opacity-40"
               >
                 Saltar
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
                 disabled={busy}
                 onClick={() => {
                   setError(null)
                   setStep('level')
                 }}
-                className="flex-1 rounded-panel bg-accent py-2.5 text-xs font-semibold text-surface disabled:opacity-40"
+                variant="solid"
+                size="dialog-sm"
+                tone="warn"
               >
                 Ubicar Discord
-              </button>
+              </Button>
             </>
           ) : step === 'level' ||
             step === 'levelRefine' ||
             step === 'map' ||
             step === 'mapRefine' ? (
             <>
-              <button
+              <Button
                 type="button"
                 disabled={busy}
                 onClick={skipPresence}
-                className="flex-1 rounded-panel border border-line py-2.5 text-xs text-ink-soft hover:text-ink disabled:opacity-40"
+                variant="outline"
+                size="dialog-sm"
+                className="disabled:opacity-40"
               >
                 Saltar
-              </button>
-              <button
+              </Button>
+              <Button
                 type="submit"
                 disabled={
                   busy ||
@@ -574,23 +590,27 @@ export function MemoryScannerModal({
                     ? parsedLevel === null
                     : !parsedMap)
                 }
-                className="flex-1 rounded-panel bg-accent py-2.5 text-xs font-semibold text-surface disabled:opacity-40"
+                variant="solid"
+                size="dialog-sm"
+                tone="warn"
               >
                 {step === 'level' || step === 'map' ? 'Buscar' : 'Comparar'}
-              </button>
+              </Button>
             </>
           ) : (
-            <button
+            <Button
               type="submit"
               disabled={busy || parsedHp === null}
-              className="flex-1 rounded-panel bg-accent py-2.5 text-sm font-semibold text-surface disabled:opacity-40"
+              variant="solid"
+              size="dialog"
+              tone="warn"
             >
               {step === 'initial' ? 'Buscar' : 'Comparar'}
-            </button>
+            </Button>
           )}
         </div>
       </form>
-    </div>,
+    </ModalShell>,
     document.body,
   )
 }

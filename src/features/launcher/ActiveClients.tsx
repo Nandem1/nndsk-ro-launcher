@@ -98,7 +98,8 @@ export function ActiveClients() {
             </div>
             <IconButton
               label={`Detener ${client.serverName} cliente ${index + 1}`}
-              variant="danger"
+              variant="primary"
+              tone="bad"
               size="xs"
               disabled={client.status === 'stopping'}
               onClick={() => void stopClient(client.clientId)}

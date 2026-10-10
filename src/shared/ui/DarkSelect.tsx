@@ -7,6 +7,7 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 import { ChevronDown } from 'lucide-react'
+import type { Tone } from './types'
 
 interface Option {
   value: string
@@ -21,6 +22,17 @@ interface Props {
   compact?: boolean
   keycap?: boolean
   placeholder?: string
+  variant?: 'default' | 'keycap'
+  size?: 'sm' | 'md'
+  tone?: Tone
+}
+
+const SELECTED_CLASSES: Record<Tone, string> = {
+  warn: 'bg-accent-strong/25 text-accent-soft',
+  ok: 'bg-ok/10 text-ok-soft',
+  bad: 'bg-bad/10 text-bad-soft',
+  info: 'bg-info/15 text-info-soft',
+  neutral: 'bg-panel-raised/80 text-ink',
 }
 
 interface MenuPosition {
@@ -65,7 +77,11 @@ export function DarkSelect({
   compact = false,
   keycap = false,
   placeholder = 'Seleccionar...',
+  variant = keycap ? 'keycap' : 'default',
+  size = compact ? 'sm' : 'md',
+  tone = 'warn',
 }: Props) {
+  const small = size === 'sm'
   const [open, setOpen] = useState(false)
   const [activeIndex, setActiveIndex] = useState(-1)
   const [menuPosition, setMenuPosition] = useState<MenuPosition | null>(null)
@@ -196,10 +212,10 @@ export function DarkSelect({
                     tabIndex={index === activeIndex ? 0 : -1}
                     onMouseMove={() => setActiveIndex(index)}
                     onClick={() => chooseOption(index)}
-                    className={`w-full text-left transition-colors truncate ${compact ? 'px-2 py-1.5 text-detail' : 'px-3 py-2 text-sm'}
+                    className={`w-full text-left transition-colors truncate ${small ? 'px-2 py-1.5 text-detail' : 'px-3 py-2 text-sm'}
                       ${
                         isSelected
-                          ? 'bg-accent-strong/25 text-accent-soft'
+                          ? SELECTED_CLASSES[tone]
                           : 'text-ink-bright hover:bg-panel-raised/80 hover:text-ink'
                       }`}
                   >
@@ -234,11 +250,11 @@ export function DarkSelect({
         className={`w-full flex items-center justify-between border text-left focus:outline-none focus:border-accent/60 focus:ring-1 focus:ring-accent/20
           transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed
           ${
-            keycap
+            variant === 'keycap'
               ? 'border-accent/20 bg-accent/[0.04] font-medium text-accent-ink/90 hover:border-accent/40 hover:bg-accent/[0.07] disabled:hover:border-accent/20'
               : 'border-line/80 bg-surface text-ink hover:border-line-strong disabled:hover:border-line/80'
           }
-          ${compact ? 'gap-1 rounded-control-compact px-2 py-1 text-detail' : 'gap-2 rounded-control px-3 py-2 text-sm'}`}
+          ${small ? 'gap-1 rounded-control-compact px-2 py-1 text-detail' : 'gap-2 rounded-control px-3 py-2 text-sm'}`}
       >
         <span className="truncate">{selected?.label ?? placeholder}</span>
         <ChevronDown

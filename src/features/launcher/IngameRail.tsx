@@ -66,7 +66,8 @@ export function IngameRail() {
 
       <IconButton
         label={clients.length > 1 ? 'Detener todos' : 'Detener juego'}
-        variant="danger"
+        variant="primary"
+        tone="bad"
         size="lg"
         className="mt-auto"
         onClick={() => void handleStop()}

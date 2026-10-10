@@ -111,6 +111,11 @@ if (command === 'snapshot' && baseline && current) {
       failures.push({ selector, before: declarations, after: after.rules[selector] })
     }
   }
+  const baselineOrder = Object.keys(before.rules)
+  const currentOrder = Object.keys(after.rules).filter((key) => key in before.rules)
+  if (JSON.stringify(baselineOrder) !== JSON.stringify(currentOrder)) {
+    failures.push({ cascade: 'Original rule order changed', firstMismatch: baselineOrder.find((key, index) => key !== currentOrder[index]) })
+  }
   if (failures.length) {
     console.error(JSON.stringify(failures.slice(0, 30), null, 2))
     console.error(`${failures.length} CSS differences`)

@@ -62,7 +62,7 @@ export function SharpShootingEditor({
               checked={shiftMode.enabled}
               disabled={disabled || spammerKeys.length === 0}
               onChange={setEnabled}
-              tone="amber"
+              tone="warn"
             />
           </div>
 

@@ -58,7 +58,7 @@ export function LogPanelView({
       title={title}
       className={className}
       leading={leading}
-      compact={compact}
+      size={compact ? 'compact' : 'default'}
       action={
         logs.length > 0 ? (
           <div className="flex gap-2">

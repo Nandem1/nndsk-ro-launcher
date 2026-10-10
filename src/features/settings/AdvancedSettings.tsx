@@ -372,8 +372,8 @@ export function AdvancedSettings() {
   return (
     <Panel
       title="Avanzado"
-      compact
-      tone={hasIssue ? 'warning' : 'neutral'}
+      size="compact"
+      tone={hasIssue ? 'warn' : 'neutral'}
       className="shrink-0"
     >
       <div

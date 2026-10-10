@@ -56,8 +56,7 @@ export function SpammerPanel() {
   return (
     <Panel
       title="Spammer"
-      compact
-      hero={hero}
+      size={hero ? 'hero' : 'compact'}
       tone={tone}
       className="h-full"
       leading={
@@ -84,7 +83,7 @@ export function SpammerPanel() {
             checked={config.enabled && available && config.keys.length > 0}
             disabled={!available || busy || config.keys.length === 0}
             onChange={(enabled) => void setEnabled(enabled)}
-            tone="amber"
+            tone="warn"
           />
         </div>
 

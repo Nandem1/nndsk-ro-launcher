@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react'
+import type { Tone } from './types'
 
-export type PanelTone = 'neutral' | 'idle' | 'success' | 'warning' | 'danger'
+export type PanelTone = Tone | 'idle' | 'success' | 'warning' | 'danger'
+export type PanelSize = 'default' | 'compact' | 'hero'
 
 export function resolveToolTone(
   available: boolean,
@@ -20,6 +22,10 @@ const TONE_CLASSES: Record<PanelTone, string> = {
   success: 'border-ok/30 shadow-glow-ok',
   warning: 'border-accent/30 shadow-glow-warn',
   danger: 'border-bad/30 shadow-glow-bad',
+  ok: 'border-ok/30 shadow-glow-ok',
+  warn: 'border-accent/30 shadow-glow-warn',
+  bad: 'border-bad/30 shadow-glow-bad',
+  info: 'border-info/70',
 }
 
 interface PanelProps {
@@ -31,6 +37,8 @@ interface PanelProps {
   compact?: boolean
   hero?: boolean
   tone?: PanelTone
+  size?: PanelSize
+  variant?: 'glass' | 'idle'
 }
 
 export function Panel({
@@ -42,16 +50,30 @@ export function Panel({
   compact = false,
   hero = false,
   tone = 'neutral',
+  size = hero ? 'hero' : compact ? 'compact' : 'default',
+  variant = 'glass',
 }: PanelProps) {
-  const headerPad = hero ? 'px-4 py-3' : compact ? 'px-3 py-1.5' : 'px-4 py-2.5'
-  const bodyPad = hero ? 'px-4 py-3' : compact ? 'px-3 py-2' : 'px-4 py-3'
-  const titleClass = hero
-    ? 'text-detail font-semibold text-ink-soft uppercase tracking-[0.16em] shrink-0'
-    : 'text-caption font-semibold text-muted uppercase tracking-[0.14em] shrink-0'
+  const headerPad =
+    size === 'hero'
+      ? 'px-4 py-3'
+      : size === 'compact'
+        ? 'px-3 py-1.5'
+        : 'px-4 py-2.5'
+  const bodyPad = size === 'compact' ? 'px-3 py-2' : 'px-4 py-3'
+  const titleClass =
+    size === 'hero'
+      ? 'text-detail font-semibold text-ink-soft uppercase tracking-[0.16em] shrink-0'
+      : 'text-caption font-semibold text-muted uppercase tracking-[0.14em] shrink-0'
+  const effectiveTone = variant === 'idle' ? 'idle' : tone
+  const shadow = ['ok', 'warn', 'bad', 'success', 'warning', 'danger'].includes(
+    effectiveTone,
+  )
+    ? ''
+    : 'shadow-panel'
 
   return (
     <section
-      className={`rounded-panel border bg-panel-gradient from-panel-raised/30 to-panel/50 backdrop-blur-panel shadow-panel flex flex-col min-h-0 transition-[border-color,box-shadow,opacity,padding] duration-300 ${TONE_CLASSES[tone]} ${className}`}
+      className={`rounded-panel border bg-panel-gradient from-panel-raised/30 to-panel/50 backdrop-blur-panel ${shadow} flex flex-col min-h-0 transition-[border-color,box-shadow,opacity,padding] duration-300 ${TONE_CLASSES[effectiveTone]} ${className}`}
     >
       <div
         className={`flex items-center justify-between gap-2 border-b border-overlay-light/[0.05] shrink-0 transition-[padding] duration-300 ${headerPad}`}

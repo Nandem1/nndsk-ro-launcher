@@ -1,21 +1,26 @@
+import type { Tone } from './types'
+
 interface ToggleSwitchProps {
   checked: boolean
   disabled?: boolean
   onChange: (checked: boolean) => void
-  tone?: 'emerald' | 'amber'
+  tone?: Tone
+}
+
+const ON_CLASSES: Record<Tone, string> = {
+  ok: 'bg-ok/80 border-ok-bright/50 shadow-glow-ok',
+  warn: 'bg-accent/80 border-accent-bright/50 shadow-glow-warn',
+  bad: 'bg-bad/10 border-bad/30 shadow-glow-bad',
+  info: 'bg-info/15 border-info/70',
+  neutral: 'bg-panel-raised border-line/80',
 }
 
 export function ToggleSwitch({
   checked,
   disabled = false,
   onChange,
-  tone = 'emerald',
+  tone = 'ok',
 }: ToggleSwitchProps) {
-  const onClass =
-    tone === 'emerald'
-      ? 'bg-ok/80 border-ok-bright/50 shadow-glow-ok'
-      : 'bg-accent/80 border-accent-bright/50 shadow-glow-warn'
-
   return (
     <button
       type="button"
@@ -24,7 +29,7 @@ export function ToggleSwitch({
       disabled={disabled}
       onClick={() => onChange(!checked)}
       className={`relative w-9 h-5 rounded-pill border transition-[background-color,border-color,box-shadow] duration-200 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed ${
-        checked ? onClass : 'bg-panel-raised border-line/80'
+        checked ? ON_CLASSES[tone] : 'bg-panel-raised border-line/80'
       }`}
     >
       <span

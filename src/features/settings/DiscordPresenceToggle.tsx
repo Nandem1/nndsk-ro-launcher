@@ -11,8 +11,8 @@ export function DiscordPresenceToggle() {
   return (
     <Panel
       title="Discord Rich Presence"
-      compact
-      tone={error && saving ? 'warning' : 'neutral'}
+      size="compact"
+      tone={error && saving ? 'warn' : 'neutral'}
       action={
         <ToggleSwitch
           checked={enabled}

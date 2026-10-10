@@ -15,16 +15,16 @@ import {
   type GearKeyField,
 } from './spammer.logic'
 
-type ChipTone = 'amber' | 'sky'
+type ChipTone = 'warn' | 'info'
 
 const CHIP_ACTIVE_CLASSES: Record<ChipTone, string> = {
-  amber: 'border-accent/70 bg-accent/15 text-accent-soft',
-  sky: 'border-info/70 bg-info/15 text-info-soft',
+  warn: 'border-accent/70 bg-accent/15 text-accent-soft',
+  info: 'border-info/70 bg-info/15 text-info-soft',
 }
 
 const GEAR_TONE_LABEL: Record<ChipTone, string> = {
-  amber: 'text-accent-bright/80',
-  sky: 'text-info-bright/80',
+  warn: 'text-accent-bright/80',
+  info: 'text-info-bright/80',
 }
 
 const GearKeySet = memo(function GearKeySet({
@@ -77,7 +77,7 @@ const GearKeySet = memo(function GearKeySet({
         ))}
         <div className="w-[68px] shrink-0">
           <DarkSelect
-            compact
+            size="sm"
             value=""
             placeholder="+ tecla"
             options={available}
@@ -150,7 +150,7 @@ export function GearSwitchEditor({
               checked={gear.enabled}
               disabled={disabled}
               onChange={(enabled) => patch({ enabled })}
-              tone="amber"
+              tone="warn"
             />
           </div>
 
@@ -162,8 +162,8 @@ export function GearSwitchEditor({
                 </span>
                 <div className="min-w-0 flex-1">
                   <DarkSelect
-                    compact
-                    keycap
+                    size="sm"
+                    variant="keycap"
                     value=""
                     placeholder={
                       availableRuleTriggers.length > 0
@@ -209,7 +209,7 @@ export function GearSwitchEditor({
                       </div>
                       <GearKeySet
                         label="ATK"
-                        tone="amber"
+                        tone="warn"
                         icon={
                           <Swords className="w-3 h-3 shrink-0" aria-hidden />
                         }
@@ -221,7 +221,7 @@ export function GearSwitchEditor({
                       />
                       <GearKeySet
                         label="DEF"
-                        tone="sky"
+                        tone="info"
                         icon={
                           <Shield className="w-3 h-3 shrink-0" aria-hidden />
                         }

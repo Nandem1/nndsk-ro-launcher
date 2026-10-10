@@ -29,18 +29,18 @@ function StatBar({
 }: {
   cur: number
   max: number
-  tone: 'red' | 'blue'
+  tone: 'bad' | 'info'
   flash?: boolean
 }) {
   const empty = max <= 0
   const pct = statPercent(cur, max)
   const gradient =
-    tone === 'red'
+    tone === 'bad'
       ? 'from-bad-strong to-bad-bright'
       : 'from-info-strong to-info-bright'
 
   const flashClass = flash
-    ? tone === 'red'
+    ? tone === 'bad'
       ? 'animate-stat-flash-red'
       : 'animate-stat-flash-blue'
     : ''
@@ -50,7 +50,7 @@ function StatBar({
       <div
         className={`flex justify-between text-caption ${empty ? 'text-line' : 'text-muted'}`}
       >
-        <span>{tone === 'red' ? 'HP' : 'SP'}</span>
+        <span>{tone === 'bad' ? 'HP' : 'SP'}</span>
         <span>
           {empty
             ? '— / —'
@@ -173,8 +173,7 @@ export function AutopotPanel() {
   return (
     <Panel
       title="AutoPot"
-      compact
-      hero={hero}
+      size={hero ? 'hero' : 'compact'}
       tone={tone}
       className="h-full"
       leading={
@@ -202,13 +201,13 @@ export function AutopotPanel() {
             checked={config.enabled && available && memoryReady}
             disabled={!available || !memoryReady || busy}
             onChange={(enabled) => void setEnabled(enabled)}
-            tone="emerald"
+            tone="ok"
           />
         </div>
 
         <div className="space-y-1.5 rounded-control bg-surface/40 border border-panel-raised/60 px-2.5 py-2">
-          <StatBar cur={hpCur} max={hpMax} tone="red" flash={flashHp} />
-          <StatBar cur={spCur} max={spMax} tone="blue" flash={flashSp} />
+          <StatBar cur={hpCur} max={hpMax} tone="bad" flash={flashHp} />
+          <StatBar cur={spCur} max={spMax} tone="info" flash={flashSp} />
         </div>
 
         <div className="flex items-center justify-between gap-2 rounded-control border border-accent/15 bg-accent/5 px-2.5 py-2">
@@ -225,7 +224,7 @@ export function AutopotPanel() {
             checked={config.proactiveMode}
             disabled={!server || busy}
             onChange={(proactiveMode) => void updateField({ proactiveMode })}
-            tone="amber"
+            tone="warn"
           />
         </div>
 
@@ -269,7 +268,7 @@ export function AutopotPanel() {
             </button>
           </div>
           <DarkSelect
-            compact
+            size="sm"
             value={
               hasMemoryOverride
                 ? DETECTED_PROFILE_VALUE
@@ -309,8 +308,8 @@ export function AutopotPanel() {
             </span>
             <div className="flex gap-1">
               <DarkSelect
-                compact
-                keycap
+                size="sm"
+                variant="keycap"
                 value={config.hpKey}
                 disabled={!server}
                 onChange={(hpKey) => void updateField({ hpKey })}
@@ -346,8 +345,8 @@ export function AutopotPanel() {
             </span>
             <div className="flex gap-1">
               <DarkSelect
-                compact
-                keycap
+                size="sm"
+                variant="keycap"
                 value={config.spKey}
                 disabled={!server}
                 onChange={(spKey) => void updateField({ spKey })}

@@ -206,8 +206,8 @@ export function AutobuffRulesEditor({
                   className="min-w-0 rounded-inline border border-transparent bg-transparent px-1.5 py-1 text-caption font-medium text-ink-dim outline-none transition-colors hover:bg-overlay-light/[0.025] focus:border-accent/25 focus:bg-surface/60 focus:ring-1 focus:ring-accent/10"
                 />
                 <DarkSelect
-                  compact
-                  keycap
+                  size="sm"
+                  variant="keycap"
                   value={rule.key}
                   disabled={disabled}
                   onChange={(key) => updateRule(rule.id, { key })}

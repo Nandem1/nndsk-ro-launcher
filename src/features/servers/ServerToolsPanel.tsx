@@ -28,7 +28,7 @@ export function ServerToolsPanel() {
     return (
       <Panel
         title="Herramientas"
-        compact
+        size="compact"
         className="shrink-0 animate-fade-rise"
       >
         <p className="text-detail text-line-strong text-center py-1">
@@ -44,7 +44,7 @@ export function ServerToolsPanel() {
   return (
     <Panel
       title="Herramientas"
-      compact
+      size="compact"
       className="shrink-0 animate-fade-rise"
       action={
         <button

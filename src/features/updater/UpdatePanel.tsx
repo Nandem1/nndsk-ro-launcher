@@ -24,7 +24,7 @@ export function UpdatePanel() {
   return (
     <Panel
       title="Actualizaciones"
-      compact
+      size="compact"
       tone={
         copy.dot === 'error'
           ? 'danger'

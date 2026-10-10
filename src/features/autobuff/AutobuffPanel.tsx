@@ -38,8 +38,7 @@ export function AutobuffPanel() {
   return (
     <Panel
       title="AutoBuff"
-      compact
-      hero={hero}
+      size={hero ? 'hero' : 'compact'}
       tone={tone}
       className="h-full w-full"
       leading={
@@ -72,7 +71,7 @@ export function AutobuffPanel() {
             }
             disabled={!available || !memoryReady || busy || !hasEnabledRule}
             onChange={(enabled) => void setEnabled(enabled)}
-            tone="emerald"
+            tone="ok"
           />
         </div>
 

@@ -7,6 +7,8 @@ import { runnerSelectionOptions } from '../../shared/resolveRunner'
 import type { ServerConfig } from '../../shared/types'
 import { Button, IconButton } from '../../shared/ui/Button'
 import { DarkSelect } from '../../shared/ui/DarkSelect'
+import { Input } from '../../shared/ui/Input'
+import { ModalShell, modalSurfaceClasses } from '../../shared/ui/ModalShell'
 import { useSettingsStore } from '../settings/settings.store'
 import {
   createServerConfigDraft,
@@ -52,16 +54,15 @@ function TextInput({
   monospace?: boolean
 }) {
   return (
-    <input
+    <Input
+      variant="config"
       autoFocus={autoFocus}
       type="text"
       value={value}
       onChange={(event) => onChange(event.target.value)}
       placeholder={placeholder}
       spellCheck={false}
-      className={`bg-surface/60 border border-line/80 rounded-control px-3 py-2.5 text-sm text-ink
-        placeholder:text-line-strong focus:outline-none focus:border-accent/60 focus:ring-1 focus:ring-accent/20
-        ${monospace ? 'font-mono text-label' : ''}`}
+      className={monospace ? 'font-mono text-label' : ''}
     />
   )
 }
@@ -237,8 +238,8 @@ export function ServerConfigModal({ mode, server, onSave, onClose }: Props) {
   const busy = busyKey !== null
 
   return (
-    <div
-      className="fixed inset-0 bg-overlay-dark/60 backdrop-blur-panel flex items-center justify-center z-50 p-4"
+    <ModalShell
+      layer="server"
       role="presentation"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget && !isBusy('save')) onClose()
@@ -248,8 +249,7 @@ export function ServerConfigModal({ mode, server, onSave, onClose }: Props) {
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="border border-overlay-light/[0.08] bg-panel-gradient from-panel-raised/95 to-panel/95 rounded-modal
-          w-[560px] max-w-full max-h-[92vh] flex flex-col shadow-panel shadow-modal animate-scale-in overflow-hidden"
+        className={`${modalSurfaceClasses('glass')} w-[560px] max-w-full max-h-[92vh]`}
       >
         <div className="flex items-start justify-between gap-3 px-6 pt-5 pb-4 border-b border-overlay-light/[0.06]">
           <div>
@@ -421,6 +421,6 @@ export function ServerConfigModal({ mode, server, onSave, onClose }: Props) {
           </div>
         </div>
       </div>
-    </div>
+    </ModalShell>
   )
 }

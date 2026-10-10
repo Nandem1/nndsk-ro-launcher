@@ -1,6 +1,9 @@
 import { useEffect, useId, useState } from 'react'
 import { SERVER_CONTRACT } from '../../shared/contracts'
 import type { LaunchValues } from '../../shared/types'
+import { Button } from '../../shared/ui/Button'
+import { Input } from '../../shared/ui/Input'
+import { ModalShell, modalSurfaceClasses } from '../../shared/ui/ModalShell'
 
 interface Props {
   serverName: string
@@ -46,8 +49,8 @@ export function LaunchFieldsModal({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-overlay-dark/70 p-4 backdrop-blur-panel"
+    <ModalShell
+      layer="launch"
       role="presentation"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onCancel()
@@ -58,7 +61,7 @@ export function LaunchFieldsModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="max-h-[90vh] w-[390px] overflow-y-auto rounded-modal border border-overlay-light/[0.08] bg-panel p-5 shadow-modal"
+        className={`max-h-[90vh] w-[390px] overflow-y-auto ${modalSurfaceClasses()}`}
       >
         <h3 id={titleId} className="text-base font-semibold text-ink">
           Iniciar {serverName}
@@ -74,7 +77,7 @@ export function LaunchFieldsModal({
               <span className="text-detail uppercase tracking-wider text-muted">
                 {field}
               </span>
-              <input
+              <Input
                 autoFocus={index === 0}
                 type={showValues ? 'text' : 'password'}
                 autoComplete="off"
@@ -86,7 +89,6 @@ export function LaunchFieldsModal({
                     [field]: event.target.value,
                   }))
                 }
-                className="rounded-control border border-line/80 bg-surface/70 px-3 py-2.5 text-sm text-ink outline-none focus:border-accent/60"
               />
             </label>
           ))}
@@ -107,25 +109,28 @@ export function LaunchFieldsModal({
         </div>
 
         <div className="mt-5 flex gap-2">
-          <button
+          <Button
+            variant="outline"
+            size="dialog"
             type="button"
             onClick={() => {
               setValues({})
               onCancel()
             }}
-            className="flex-1 rounded-panel border border-line py-2.5 text-sm text-ink-soft hover:text-ink"
           >
             Cancelar
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="solid"
+            size="dialog"
+            tone="warn"
             type="submit"
             disabled={!complete}
-            className="flex-1 rounded-panel bg-accent py-2.5 text-sm font-semibold text-surface disabled:opacity-40"
           >
             Continuar
-          </button>
+          </Button>
         </div>
       </form>
-    </div>
+    </ModalShell>
   )
 }

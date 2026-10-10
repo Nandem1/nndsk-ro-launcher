@@ -1,10 +1,20 @@
 import { Check } from 'lucide-react'
+import type { Tone } from './types'
 
 interface CheckboxProps {
   checked: boolean
   onChange: (checked: boolean) => void
   disabled?: boolean
   label: string
+  tone?: Tone
+}
+
+const CHECKED_CLASSES: Record<Tone, string> = {
+  warn: 'border-accent/55 bg-accent/12 text-accent-light shadow-check-warn',
+  ok: 'border-ok/30 bg-ok/10 text-ok-soft',
+  bad: 'border-bad/30 bg-bad/10 text-bad-soft',
+  info: 'border-info/70 bg-info/15 text-info-soft',
+  neutral: 'border-line/80 bg-surface/50 text-ink-dim',
 }
 
 export function Checkbox({
@@ -12,6 +22,7 @@ export function Checkbox({
   onChange,
   disabled = false,
   label,
+  tone = 'warn',
 }: CheckboxProps) {
   return (
     <button
@@ -26,7 +37,7 @@ export function Checkbox({
         focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 disabled:cursor-not-allowed disabled:opacity-40
         ${
           checked
-            ? 'border-accent/55 bg-accent/12 text-accent-light shadow-check-warn'
+            ? CHECKED_CLASSES[tone]
             : 'border-line/80 bg-surface/50 text-transparent hover:border-muted'
         }`}
     >
