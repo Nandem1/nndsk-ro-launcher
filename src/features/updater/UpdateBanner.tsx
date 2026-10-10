@@ -30,14 +30,14 @@ export function UpdateBanner() {
   const clientsActive = clientsBlockUpdate({ launchStatus, clients })
   const tone =
     kind === 'failed'
-      ? 'border-l-bad'
+      ? 'bg-bad/10'
       : kind === 'readyToRestart'
-        ? 'border-l-ok'
-        : 'border-l-warn'
+        ? 'bg-ok/10'
+        : 'bg-warn/[0.09]'
 
   return (
     <div
-      className={`mx-3 mt-3 flex shrink-0 items-center gap-3 border-l-[3px] ${tone} bg-panel px-3 py-2`}
+      className={`mx-3 mt-3 flex shrink-0 items-center gap-3 rounded-control ${tone} px-3 py-2`}
     >
       {kind === 'failed' ? (
         <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden />

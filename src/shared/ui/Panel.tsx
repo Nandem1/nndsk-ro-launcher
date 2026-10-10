@@ -17,15 +17,15 @@ export function resolveToolTone(
 }
 
 const TONE_CLASSES: Record<PanelTone, string> = {
-  neutral: 'border-t border-t-line-strong',
-  idle: 'border-t border-t-muted panel-idle',
-  success: 'border-t-2 border-t-ok',
-  warning: 'border-t-2 border-t-warn',
-  danger: 'border-t-2 border-t-bad',
-  ok: 'border-t-2 border-t-ok',
-  warn: 'border-t-2 border-t-warn',
-  bad: 'border-t-2 border-t-bad',
-  info: 'border-t-2 border-t-info',
+  neutral: '',
+  idle: 'panel-idle',
+  success: '',
+  warning: '',
+  danger: '',
+  ok: '',
+  warn: '',
+  bad: '',
+  info: '',
 }
 
 interface PanelProps {
@@ -53,20 +53,15 @@ export function Panel({
   size = hero ? 'hero' : compact ? 'compact' : 'default',
   variant = 'glass',
 }: PanelProps) {
-  const headerPad =
-    size === 'hero'
-      ? 'px-4 py-3'
-      : size === 'compact'
-        ? 'px-3 py-1.5'
-        : 'px-4 py-2.5'
-  const bodyPad = size === 'compact' ? 'px-3 py-2' : 'px-4 py-3'
+  const headerPad = 'px-[18px] pt-4 pb-2'
+  const bodyPad = 'px-[18px] pt-2 pb-4'
   const titleClass =
     'text-panel-title font-panel-title font-sans tracking-panel-title shrink-0'
   const effectiveTone = variant === 'idle' ? 'idle' : tone
 
   return (
     <section
-      className={`rounded-panel bg-panel flex flex-col min-h-0 transition-colors duration-150 ${TONE_CLASSES[effectiveTone]} ${className}`}
+      className={`rounded-panel border border-line-soft bg-panel flex flex-col min-h-0 transition-colors duration-120 ${TONE_CLASSES[effectiveTone]} ${size === 'hero' ? 'panel-hero' : ''} ${className}`}
     >
       <div
         className={`flex items-center justify-between gap-2 shrink-0 ${headerPad}`}

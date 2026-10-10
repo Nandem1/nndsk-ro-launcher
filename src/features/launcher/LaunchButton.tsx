@@ -83,7 +83,7 @@ export function LaunchButton() {
           </div>
           <div className="w-full bg-panel-raised rounded-pill h-1.5 overflow-hidden">
             <div
-              className="h-full bg-muted rounded-pill transition-colors duration-150"
+              className="h-full bg-muted rounded-pill transition-colors duration-120"
               style={{ width: `${setupProgress.percent}%` }}
             />
           </div>
@@ -91,6 +91,11 @@ export function LaunchButton() {
       )}
       <Button
         variant={variant}
+        className={
+          buildMode
+            ? 'button-primary bg-accent text-on-accent font-semibold'
+            : ''
+        }
         size="lg"
         block
         onClick={() => {

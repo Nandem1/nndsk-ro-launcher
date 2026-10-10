@@ -203,7 +203,7 @@ export function AutobuffRulesEditor({
                   onChange={(event) =>
                     updateRule(rule.id, { label: event.target.value })
                   }
-                  className="min-w-0 rounded-inline border border-line bg-field px-1.5 py-1 text-caption font-medium text-ink outline-none transition-colors hover:border-line-strong hover:bg-panel-raised focus:bg-field "
+                  className="min-w-0 rounded-control border border-line bg-field px-1.5 py-1 text-data font-medium text-ink outline-none transition-colors hover:border-line-strong hover:bg-panel-raised focus:bg-field "
                 />
                 <DarkSelect
                   size="sm"
@@ -229,7 +229,7 @@ export function AutobuffRulesEditor({
                         ),
                       })
                     }
-                    className="font-mono min-w-0 flex-1 rounded-inline border border-line bg-field px-1 py-1 text-right text-caption text-ink outline-none transition-colors hover:border-line-strong hover:bg-panel-raised focus:bg-field [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
+                    className="font-mono min-w-0 flex-1 rounded-control border border-line bg-field px-1 py-1 text-right text-data text-ink outline-none transition-colors hover:border-line-strong hover:bg-panel-raised focus:bg-field [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
                     aria-label={`Cooldown de ${rule.label} en ms`}
                   />
                   <span className="font-mono tabular-nums text-micro text-muted">
@@ -248,7 +248,7 @@ export function AutobuffRulesEditor({
                       priority: Math.max(0, Number(event.target.value) || 0),
                     })
                   }
-                  className="font-mono min-w-0 rounded-inline border border-line bg-field px-1 py-1 text-center text-caption text-ink outline-none transition-colors hover:border-line-strong hover:bg-panel-raised focus:bg-field [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
+                  className="font-mono min-w-0 rounded-control border border-line bg-field px-1 py-1 text-center text-data text-ink outline-none transition-colors hover:border-line-strong hover:bg-panel-raised focus:bg-field [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
                   aria-label={`Prioridad de ${rule.label}`}
                 />
                 <button

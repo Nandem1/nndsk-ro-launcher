@@ -20,17 +20,21 @@ export default {
         panel: 'var(--radius-panel)',
         modal: 'var(--radius-modal)',
         pill: 'var(--radius-pill)',
+        action: 'var(--radius-action)',
+        segmented: 'var(--radius-segmented)',
+        segment: 'var(--radius-segment)',
       },
       fontFamily: {
         sans: ['var(--font-sans)'],
         mono: ['var(--font-mono)'],
-        wordmark: ['var(--font-wordmark)'],
       },
       fontSize: {
         micro: 'var(--text-micro)',
         caption: 'var(--text-caption)',
         detail: 'var(--text-detail)',
         label: 'var(--text-label)',
+        data: 'var(--text-data)',
+        brand: 'var(--text-brand)',
         'panel-title': ['var(--text-panel-title)', { lineHeight: '1.25rem' }],
         ...Object.fromEntries(
           ['xs', 'sm', 'base', 'lg', 'xl'].map((size) => [
@@ -40,7 +44,11 @@ export default {
         ),
       },
       fontWeight: { 'panel-title': 'var(--weight-panel-title)' },
-      letterSpacing: { 'panel-title': 'var(--tracking-panel-title)' },
+      letterSpacing: {
+        'panel-title': 'var(--tracking-panel-title)',
+        brand: 'var(--tracking-brand)',
+      },
+      transitionDuration: { 120: '120ms' },
       keyframes: {
         'modal-fade': {
           from: { opacity: '0' },

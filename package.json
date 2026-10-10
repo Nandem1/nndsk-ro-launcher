@@ -23,7 +23,6 @@
     "version:bump": "node scripts/bump-version.mjs"
   },
   "dependencies": {
-    "@fontsource/barlow-condensed": "^5.3.0",
     "@fontsource/ibm-plex-mono": "^5.3.0",
     "@fontsource/ibm-plex-sans": "^5.3.0",
     "@tauri-apps/api": "^2",

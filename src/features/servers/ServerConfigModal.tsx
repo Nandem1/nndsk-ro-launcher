@@ -337,7 +337,7 @@ export function ServerConfigModal({ mode, server, onSave, onClose }: Props) {
                 }
               />
               {draft.strategy === 'patcher' && !draft.patcherPath && (
-                <span className="border-l-[3px] border-warn pl-3 text-caption text-muted">
+                <span className="notice-warn text-caption text-muted">
                   Esta estrategia requiere seleccionar un patcher.
                 </span>
               )}

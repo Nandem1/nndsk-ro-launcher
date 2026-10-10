@@ -88,7 +88,7 @@ export function AutobuffPanel() {
           {error && available ? (
             <span className="text-bad">{error}</span>
           ) : available && effectiveMemoryAccess && !memoryReady ? (
-            <span className="inline-block border-l-[3px] border-warn pl-3 text-muted">
+            <span className="inline-block notice-warn text-muted">
               {memoryAccessLabel(effectiveMemoryAccess)}
               <span className="text-muted">
                 {memoryAction ? ` ${memoryAction}` : ''}

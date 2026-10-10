@@ -65,20 +65,20 @@ export function LogPanelView({
             {errorLines.length > 0 && (
               <button
                 onClick={copyErrors}
-                className="text-caption text-bad hover:text-bad transition-colors uppercase tracking-wider"
+                className="text-caption text-bad hover:text-bad transition-colors normal-case tracking-normal"
               >
                 {copiedErrors ? '¡Copiado!' : `Errores (${errorLines.length})`}
               </button>
             )}
             <button
               onClick={copyAll}
-              className="text-caption text-muted hover:text-ink transition-colors uppercase tracking-wider"
+              className="text-caption text-muted hover:text-ink transition-colors normal-case tracking-normal"
             >
               {copiedAll ? '¡Copiado!' : 'Copiar'}
             </button>
             <button
               onClick={onClear}
-              className="text-caption text-muted hover:text-ink transition-colors uppercase tracking-wider"
+              className="text-caption text-muted hover:text-ink transition-colors normal-case tracking-normal"
             >
               Limpiar
             </button>

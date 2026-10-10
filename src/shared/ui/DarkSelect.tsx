@@ -222,7 +222,7 @@ export function DarkSelect({
                     tabIndex={index === activeIndex ? 0 : -1}
                     onMouseMove={() => setActiveIndex(index)}
                     onClick={() => chooseOption(index)}
-                    className={`w-full text-left transition-colors duration-150 truncate ${small ? 'px-2 py-1.5 text-detail' : 'px-3 py-2 text-sm'}
+                    className={`w-full text-left transition-colors duration-120 truncate ${small ? 'px-2 py-1.5 text-detail' : 'px-3 py-2 text-sm'}
                       ${
                         isSelected
                           ? tone
@@ -264,19 +264,15 @@ export function DarkSelect({
           }
         }}
         className={`idle-control w-full flex items-center justify-between border border-line bg-field text-left focus:outline-none hover:border-line-strong
-          transition-colors duration-150 cursor-pointer disabled:cursor-not-allowed
-          ${
-            variant === 'keycap'
-              ? 'font-mono tabular-nums font-medium text-ink'
-              : 'text-ink'
-          }
-          ${small ? 'gap-1 rounded-control-compact px-2 py-1 text-detail' : 'gap-2 rounded-control px-3 py-2 text-sm'}`}
+          transition-colors duration-120 cursor-pointer disabled:cursor-not-allowed
+          font-mono tabular-nums text-data text-ink ${variant === 'keycap' ? 'font-medium' : ''}
+          ${small ? 'gap-1 rounded-control px-2 py-1' : 'gap-2 rounded-control px-3 py-2'}`}
       >
         <span className="truncate">
           <DataText>{selected?.label ?? placeholder}</DataText>
         </span>
         <ChevronDown
-          className={`w-3.5 h-3.5 text-muted shrink-0 transition-colors duration-150 ${open ? 'rotate-180' : ''}`}
+          className={`w-3.5 h-3.5 text-muted shrink-0 transition-colors duration-120 ${open ? 'rotate-180' : ''}`}
           aria-hidden
         />
       </button>

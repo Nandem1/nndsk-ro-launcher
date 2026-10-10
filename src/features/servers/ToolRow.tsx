@@ -1,4 +1,5 @@
 import { StatusDot, type DotStatus } from '../../shared/ui/StatusDot'
+import { buttonClasses } from '../../shared/ui/Button'
 
 interface ToolRowProps {
   label: string
@@ -29,11 +30,10 @@ export function ToolRow({
   secondaryBusy,
   secondaryDanger,
 }: ToolRowProps) {
-  const actionClass =
-    'text-xs px-2.5 py-1 rounded-control-compact border border-line text-ink hover:border-line-strong hover:text-ink hover:bg-panel-raised focus-visible:outline focus-visible:outline-accent transition-colors shrink-0 idle-control disabled:cursor-not-allowed'
+  const actionClass = `${buttonClasses('secondary', 'xs')} shrink-0 disabled:cursor-not-allowed`
 
   const secondaryClass = secondaryDanger
-    ? `${actionClass} hover:border-bad/50 hover:text-bad hover:bg-panel-raised`
+    ? `${buttonClasses('danger', 'xs')} shrink-0 disabled:cursor-not-allowed`
     : actionClass
 
   return (

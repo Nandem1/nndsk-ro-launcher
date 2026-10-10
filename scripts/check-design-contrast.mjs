@@ -30,7 +30,7 @@ function luminance(rgb) {
     )
 }
 
-const pairs = ['surface', 'panel'].flatMap((background) =>
+const pairs = ['surface', 'panel', 'panel-raised'].flatMap((background) =>
   ['muted', 'ink', 'ok', 'bad', 'info', 'warn', 'accent'].map((foreground) => [
     foreground,
     background,
@@ -43,6 +43,7 @@ for (const surface of ['surface', 'panel', 'modal']) {
   pairs.push(['muted', surface, 3], ['ok', surface, 3])
 }
 pairs.push(['muted', 'field', 3], ['on-accent', 'ok', 3])
+pairs.push(['muted', 'track', 3], ['surface', 'ok', 3], ['ink', 'track', 3])
 // Idle text and disabled text/outer boundary. The internal line border is a
 // separator, not the visible control boundary (the muted outline supplies it).
 for (const surface of ['surface', 'panel', 'modal', 'field']) {
@@ -74,4 +75,39 @@ if (failed) {
     'Design contrast/neutrality failed: neutral RGB spread needs ≤6; text needs 4.5:1; switch boundaries and knobs need 3:1',
   )
   process.exitCode = 1
+}
+
+const blend = (foreground, background, alpha) =>
+  foreground.map(
+    (channel, index) => channel * alpha + background[index] * (1 - alpha),
+  )
+const ratio = (foreground, background) =>
+  (Math.max(luminance(foreground), luminance(background)) + 0.05) /
+  (Math.min(luminance(foreground), luminance(background)) + 0.05)
+for (const tone of ['bad', 'ok', 'info', 'warn']) {
+  for (const alpha of [0.1, 0.15]) {
+    const background = blend(channels[tone], channels.panel, alpha)
+    const foreground =
+      tone === 'bad' && alpha === 0.15 ? channels.ink : channels[tone]
+    const contrast = ratio(foreground, background)
+    console.log(`tonal ${tone}/${alpha}: ${contrast.toFixed(3)}:1`)
+    if (contrast < 4.5) process.exitCode = 1
+  }
+}
+const notice = blend(channels.warn, channels.panel, 0.09)
+const noticeContrast = ratio(channels.muted, notice)
+console.log(`notice muted/warn9% over panel: ${noticeContrast.toFixed(3)}:1`)
+if (noticeContrast < 4.5) process.exitCode = 1
+
+// Report the reference's quiet borders honestly; the runtime review enforces
+// the requested 3:1 control-boundary gate, separate from structural lint.
+for (const background of ['surface', 'panel', 'panel-raised']) {
+  for (const foreground of ['line-soft', 'line', 'outline', 'track'])
+    console.log(
+      `reference boundary ${foreground}/${background}: ${ratio(channels[foreground], channels[background]).toFixed(3)}:1`,
+    )
+  const focus = blend(channels.accent, channels[background], 0.5)
+  console.log(
+    `reference focus accent50%/${background}: ${ratio(focus, channels[background]).toFixed(3)}:1`,
+  )
 }

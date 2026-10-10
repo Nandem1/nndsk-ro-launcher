@@ -111,7 +111,7 @@ export function RunnerSelector() {
         </p>
       )}
       {server && serverRunner && (
-        <div className="mt-2 border-l-[3px] border-warn pl-3 py-1">
+        <div className="mt-2 notice-warn">
           <p className="text-caption leading-relaxed text-muted">
             Runner efectivo de {server.name}:{' '}
             <span className="text-muted font-mono tabular-nums">

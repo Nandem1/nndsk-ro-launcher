@@ -123,7 +123,15 @@ export function checkDesignRows(files) {
             path.basename(file) === 'LogPanelView.tsx' &&
             classes.includes('font-mono') &&
             classes.includes('overflow-y-auto')
-          if (!control && !logWell && /(?:^|\s)border(?:\s|$)/.test(classes)) {
+          const segmented =
+            classes.includes('rounded-segmented') &&
+            classes.includes('border-line-soft')
+          if (
+            !control &&
+            !logWell &&
+            !segmented &&
+            /(?:^|\s)border(?:\s|$)/.test(classes)
+          ) {
             const { line } = source.getLineAndCharacterOfPosition(
               node.getStart(source),
             )

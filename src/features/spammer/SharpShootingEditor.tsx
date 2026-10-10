@@ -86,10 +86,10 @@ export function SharpShootingEditor({
                         onClick={() =>
                           onChange(toggleShiftModeTrigger(shiftMode, key))
                         }
-                        className={`font-mono tabular-nums min-w-8 rounded-control-compact border px-2 py-1 text-caption font-semibold transition-colors idle-control ${
+                        className={`font-mono tabular-nums min-w-8 h-7 rounded-control-compact px-2 text-caption font-medium transition-colors duration-120 idle-control ${
                           selected
-                            ? 'border-accent bg-accent text-on-accent'
-                            : 'border-line bg-field text-muted hover:border-line-strong hover:text-ink'
+                            ? 'bg-accent text-on-accent'
+                            : 'bg-panel-raised text-muted hover:bg-line hover:text-ink'
                         }`}
                       >
                         {key}

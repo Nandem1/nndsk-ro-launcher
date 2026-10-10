@@ -5,7 +5,6 @@
 @import '@fontsource/ibm-plex-mono/latin-400.css';
 @import '@fontsource/ibm-plex-mono/latin-500.css';
 @import '@fontsource/ibm-plex-mono/latin-600.css';
-@import '@fontsource/barlow-condensed/latin-700.css';
 
 @tailwind base;
 @tailwind components;
@@ -20,6 +19,10 @@
     --c-modal: 18 19 21;
     --c-line: 38 40 44;
     --c-line-strong: 52 55 58;
+    --c-line-soft: 31 33 36;
+    --c-track: 42 44 49;
+    --c-track-fill: 107 111 118;
+    --c-outline: 74 78 85;
     --c-ink: 230 231 233;
     --c-muted: 139 143 150;
     --c-accent: 255 92 57;
@@ -31,12 +34,15 @@
     --c-special: 79 179 169;
     --c-overlay-dark: 0 0 0;
 
-    --radius-inline: 0;
-    --radius-control-compact: 0;
-    --radius-control: 0;
-    --radius-panel: 0;
-    --radius-modal: 0;
-    --radius-pill: 0;
+    --radius-inline: 6px;
+    --radius-control-compact: 7px;
+    --radius-control: 9px;
+    --radius-panel: 14px;
+    --radius-modal: 16px;
+    --radius-pill: 9999px;
+    --radius-action: 11px;
+    --radius-segmented: 11px;
+    --radius-segment: 8px;
 
     --text-micro: 11px;
     --text-caption: 11px;
@@ -48,9 +54,12 @@
     --text-lg: 18px;
     --text-xl: 18px;
     --text-panel-title: 15px;
+    --text-data: 12.5px;
+    --text-brand: 17px;
     --weight-panel-title: 600;
     --tracking-panel-title: 0;
-    --tracking-micro-label: 0.06em;
+    --tracking-micro-label: 0;
+    --tracking-brand: -0.01em;
     --leading-xs: 1rem;
     --leading-sm: 1.25rem;
     --leading-base: 1.5rem;
@@ -58,7 +67,6 @@
     --leading-xl: 1.75rem;
     --font-sans: 'IBM Plex Sans', sans-serif;
     --font-mono: 'IBM Plex Mono', monospace;
-    --font-wordmark: 'Barlow Condensed', sans-serif;
 
     --shadow-panel: none;
     --shadow-modal: none;
@@ -120,31 +128,30 @@
   input[type='checkbox'],
   input[type='radio'] {
     appearance: none;
-    border: 1px solid rgb(var(--c-line));
-    border-radius: var(--radius-control);
+    border: 1.5px solid rgb(var(--c-outline));
+    border-radius: var(--radius-pill);
     background-color: rgb(var(--c-field));
   }
 
   input[type='checkbox']:checked,
   input[type='radio']:checked {
     border-color: rgb(var(--c-accent));
-    background-color: rgb(var(--c-accent));
+    background-color: rgb(var(--c-field));
   }
 
   input[type='checkbox']:not(:checked):not(:disabled):hover,
   input[type='radio']:not(:checked):not(:disabled):hover {
-    border-color: rgb(var(--c-line-strong));
+    border-color: rgb(var(--c-muted));
   }
 
   input[type='checkbox']:checked::after {
     content: '';
     display: block;
-    width: 35%;
-    height: 65%;
-    margin: 0 auto;
-    border-right: 2px solid rgb(var(--c-on-accent));
-    border-bottom: 2px solid rgb(var(--c-on-accent));
-    transform: rotate(45deg);
+    width: 45%;
+    height: 45%;
+    margin: 27.5%;
+    border-radius: var(--radius-pill);
+    background-color: rgb(var(--c-accent));
   }
 
   input[type='radio']:checked::after {
@@ -153,12 +160,13 @@
     width: 45%;
     height: 45%;
     margin: 27.5%;
-    background-color: rgb(var(--c-on-accent));
+    border-radius: var(--radius-pill);
+    background-color: rgb(var(--c-accent));
   }
 
   input[type='checkbox']:focus-visible,
   input[type='radio']:focus-visible {
-    outline: 1px solid rgb(var(--c-accent));
+    outline: 2px solid rgb(var(--c-accent) / 0.5);
     outline-offset: 2px;
   }
 
@@ -170,44 +178,67 @@
 
   input[type='range']::-webkit-slider-runnable-track {
     height: 4px;
-    border: 1px solid rgb(var(--c-line-strong));
-    background: rgb(var(--c-line-strong));
+    border: 0;
+    border-radius: var(--radius-pill);
+    background-color: rgb(var(--c-track));
+    /* A same-color image paints a solid fill, not a decorative color ramp. */
+    background-image: linear-gradient(
+      rgb(var(--c-track-fill)),
+      rgb(var(--c-track-fill))
+    );
+    background-size: var(--range-progress, 0%) 100%;
+    background-repeat: no-repeat;
   }
 
   input[type='range']::-webkit-slider-thumb {
     -webkit-appearance: none;
-    width: 12px;
-    height: 12px;
+    width: 14px;
+    height: 14px;
     margin-top: -5px;
     border: 1px solid rgb(var(--c-ink));
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-pill);
     background: rgb(var(--c-ink));
   }
 
   input[type='range']::-moz-range-track {
     height: 4px;
-    border: 1px solid rgb(var(--c-line-strong));
-    background: rgb(var(--c-line-strong));
+    border: 0;
+    border-radius: var(--radius-pill);
+    background: rgb(var(--c-track));
   }
 
   input[type='range']::-moz-range-thumb {
-    width: 12px;
-    height: 12px;
+    width: 14px;
+    height: 14px;
     border: 1px solid rgb(var(--c-ink));
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-pill);
     background: rgb(var(--c-ink));
   }
 
+  input[type='range']::-moz-range-progress {
+    height: 4px;
+    border-radius: var(--radius-pill);
+    background: rgb(var(--c-track-fill));
+  }
+
   input[type='range']:focus-visible {
-    outline: 1px solid rgb(var(--c-accent));
+    outline: 2px solid rgb(var(--c-accent) / 0.5);
     outline-offset: 2px;
   }
 }
 
 @layer components {
+  .notice-warn {
+    @apply relative block rounded-control bg-warn/[0.09] pl-8 pr-3 py-3 text-muted;
+  }
+
+  .notice-warn::before {
+    content: '';
+    @apply absolute left-3.5 top-3.5 h-2 w-2 rounded-pill bg-warn;
+  }
+
   .micro-label {
-    @apply font-mono text-micro uppercase text-muted;
-    font-variant-numeric: tabular-nums;
+    @apply font-sans text-label font-medium normal-case text-muted;
     letter-spacing: var(--tracking-micro-label);
   }
 
@@ -260,8 +291,85 @@
 }
 
 @layer utilities {
+  .button-primary:not(:disabled) {
+    @apply bg-accent text-on-accent;
+  }
+
+  .button-primary:hover:not(:disabled) {
+    background-color: color-mix(
+      in srgb,
+      rgb(var(--c-accent)) 90%,
+      rgb(var(--c-ink))
+    );
+  }
+
+  .button-tonal-bad {
+    background-color: color-mix(
+      in srgb,
+      rgb(var(--c-bad)) 10%,
+      rgb(var(--c-panel))
+    );
+  }
+
+  .button-tonal-bad:hover:not(:disabled) {
+    @apply text-ink;
+    background-color: color-mix(
+      in srgb,
+      rgb(var(--c-bad)) 15%,
+      rgb(var(--c-panel))
+    );
+  }
+
+  .button-tonal-ok {
+    background-color: color-mix(
+      in srgb,
+      rgb(var(--c-ok)) 10%,
+      rgb(var(--c-panel))
+    );
+  }
+
+  .button-tonal-ok:hover:not(:disabled) {
+    background-color: color-mix(
+      in srgb,
+      rgb(var(--c-ok)) 15%,
+      rgb(var(--c-panel))
+    );
+  }
+
+  .button-tonal-info {
+    background-color: color-mix(
+      in srgb,
+      rgb(var(--c-info)) 10%,
+      rgb(var(--c-panel))
+    );
+  }
+
+  .button-tonal-info:hover:not(:disabled) {
+    background-color: color-mix(
+      in srgb,
+      rgb(var(--c-info)) 15%,
+      rgb(var(--c-panel))
+    );
+  }
+
+  .button-tonal-warn {
+    background-color: color-mix(
+      in srgb,
+      rgb(var(--c-warn)) 10%,
+      rgb(var(--c-panel))
+    );
+  }
+
+  .button-tonal-warn:hover:not(:disabled) {
+    background-color: color-mix(
+      in srgb,
+      rgb(var(--c-warn)) 15%,
+      rgb(var(--c-panel))
+    );
+  }
+
   :is(button, input, textarea, summary):focus-visible:not(:disabled) {
-    outline: 1px solid rgb(var(--c-accent));
+    outline: 2px solid rgb(var(--c-accent) / 0.5);
     outline-offset: 2px;
   }
 

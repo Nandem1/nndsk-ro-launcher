@@ -1,4 +1,4 @@
-import { Check } from 'lucide-react'
+import { Circle } from 'lucide-react'
 import type { Tone } from './types'
 
 interface CheckboxProps {
@@ -10,11 +10,11 @@ interface CheckboxProps {
 }
 
 const CHECKED_CLASSES: Record<Tone, string> = {
-  warn: 'border-warn/50 bg-field text-warn',
-  ok: 'border-ok/50 bg-field text-ok',
-  bad: 'border-bad/50 bg-field text-bad',
-  info: 'border-info/50 bg-field text-info',
-  neutral: 'border-line-strong bg-field text-ink',
+  warn: 'border-warn bg-field text-warn',
+  ok: 'border-ok bg-field text-ok',
+  bad: 'border-bad bg-field text-bad',
+  info: 'border-info bg-field text-info',
+  neutral: 'border-muted bg-field text-muted',
 }
 
 export function Checkbox({
@@ -33,17 +33,22 @@ export function Checkbox({
       title={label}
       disabled={disabled}
       onClick={() => onChange(!checked)}
-      className={`idle-control flex h-4 w-4 shrink-0 items-center justify-center rounded-inline border transition-colors duration-150
-        focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent disabled:cursor-not-allowed
+      className={`idle-control flex h-4 w-4 shrink-0 items-center justify-center rounded-pill border-[1.5px] transition-colors duration-120
+        focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent/50 disabled:cursor-not-allowed
         ${
           checked
             ? tone
               ? CHECKED_CLASSES[tone]
               : 'border-accent bg-field text-accent'
-            : 'border-line bg-field text-transparent hover:border-line-strong'
+            : 'border-outline bg-field text-transparent hover:border-muted'
         }`}
     >
-      <Check className="h-3 w-3" strokeWidth={3} aria-hidden />
+      <Circle
+        className="h-2 w-2"
+        strokeWidth={0}
+        fill="currentColor"
+        aria-hidden
+      />
     </button>
   )
 }

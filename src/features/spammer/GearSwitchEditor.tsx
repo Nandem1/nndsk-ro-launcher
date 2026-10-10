@@ -19,8 +19,8 @@ import {
 type ChipTone = 'selection' | 'info'
 
 const CHIP_ACTIVE_CLASSES: Record<ChipTone, string> = {
-  selection: 'border-accent bg-accent text-on-accent',
-  info: 'border-accent bg-accent text-on-accent',
+  selection: 'bg-accent text-on-accent',
+  info: 'bg-accent text-on-accent',
 }
 
 const GEAR_TONE_LABEL: Record<ChipTone, string> = {
@@ -67,7 +67,7 @@ const GearKeySet = memo(function GearKeySet({
             type="button"
             disabled={disabled}
             onClick={() => onToggle(key)}
-            className={`inline-flex items-center gap-0.5 rounded-control-compact font-mono border px-1.5 py-0.5 text-caption font-semibold transition-colors idle-control ${CHIP_ACTIVE_CLASSES[tone]}`}
+            className={`inline-flex h-7 items-center gap-0.5 rounded-control-compact font-mono px-1.5 text-caption font-medium transition-colors duration-120 idle-control ${CHIP_ACTIVE_CLASSES[tone]}`}
             aria-label={`Quitar tecla ${key}`}
           >
             {key}

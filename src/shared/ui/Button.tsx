@@ -7,29 +7,23 @@ export type ButtonVariant =
 export type ButtonSize = 'xs' | 'sm' | 'md' | 'lg' | 'dialog' | 'dialog-sm'
 
 const BASE_CLASSES =
-  'idle-control inline-flex items-center justify-center gap-1.5 rounded-control font-medium select-none transition-colors duration-150 focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent disabled:pointer-events-none'
+  'idle-control inline-flex items-center justify-center gap-1.5 rounded-control font-medium select-none transition-colors duration-120 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent/50 disabled:pointer-events-none'
 
 const VARIANT_CLASSES: Record<ButtonVariant, string> = {
-  primary:
-    'border border-accent bg-accent text-on-accent font-semibold hover:border-ink',
-  secondary:
-    'border border-line bg-transparent text-ink hover:border-line-strong hover:bg-panel-raised',
-  ghost:
-    'border border-transparent text-muted hover:text-ink hover:bg-panel-raised',
-  danger:
-    'border border-bad/50 bg-transparent text-bad hover:bg-panel-raised hover:border-bad',
-  success:
-    'border border-ok/50 bg-transparent text-ok hover:bg-panel-raised hover:border-ok',
+  primary: 'button-primary bg-accent text-on-accent font-semibold',
+  secondary: 'bg-panel-raised text-ink hover:bg-line',
+  ghost: 'bg-transparent text-muted hover:text-ink hover:bg-panel-raised',
+  danger: 'button-tonal-bad text-bad',
+  success: 'button-tonal-ok text-ok',
   solid: 'font-semibold',
-  outline:
-    'border border-line bg-transparent text-ink hover:border-line-strong hover:bg-panel-raised',
+  outline: 'bg-panel-raised text-ink hover:bg-line',
 }
 
 const PRIMARY_TONE_CLASSES: Record<Tone, string> = {
-  warn: 'border border-warn/50 bg-transparent text-warn hover:border-warn hover:bg-panel-raised',
+  warn: 'button-tonal-warn text-warn',
   ok: VARIANT_CLASSES.success,
   bad: VARIANT_CLASSES.danger,
-  info: 'border border-info/50 bg-transparent text-info hover:border-info hover:bg-panel-raised',
+  info: 'button-tonal-info text-info',
   neutral: VARIANT_CLASSES.secondary,
 }
 
@@ -50,12 +44,12 @@ function variantClasses(variant: ButtonVariant, tone?: Tone): string {
 }
 
 const SIZE_CLASSES: Record<ButtonSize, string> = {
-  xs: 'text-caption px-2 py-0.5',
-  sm: 'text-detail px-3 py-1.5',
-  md: 'text-sm px-4 py-2',
-  lg: 'text-sm font-semibold py-2.5 px-4 rounded-panel',
-  dialog: 'text-sm py-2.5',
-  'dialog-sm': 'text-xs py-2.5',
+  xs: 'text-xs px-3 py-1',
+  sm: 'text-sm px-3.5 py-2',
+  md: 'text-sm px-3.5 py-2',
+  lg: 'text-sm font-semibold p-[13px] rounded-action',
+  dialog: 'text-sm px-3.5 py-2',
+  'dialog-sm': 'text-xs px-3.5 py-2',
 }
 
 export function buttonClasses(
@@ -65,7 +59,7 @@ export function buttonClasses(
   tone?: Tone,
 ): string {
   const base = ['solid', 'outline'].includes(variant)
-    ? 'idle-control flex-1 rounded-panel transition-colors duration-150 focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent'
+    ? `${BASE_CLASSES} flex-1`
     : BASE_CLASSES
   return `${base} ${variantClasses(variant, tone)} ${SIZE_CLASSES[size]} ${block ? 'w-full' : ''}`
 }
@@ -101,7 +95,7 @@ const ICON_SIZE_CLASSES: Record<IconButtonSize, string> = {
   xs: 'w-5 h-5',
   sm: 'w-7 h-7',
   md: 'w-8 h-8',
-  lg: 'w-10 h-10 rounded-panel',
+  lg: 'w-10 h-10',
 }
 
 interface IconButtonProps extends ComponentPropsWithoutRef<'button'> {

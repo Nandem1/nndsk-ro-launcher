@@ -49,10 +49,10 @@ function StatBar({
             : `${cur.toLocaleString()} / ${max.toLocaleString()} (${pct}%)`}
         </span>
       </div>
-      <div className="h-2 overflow-hidden bg-panel-raised">
+      <div className="h-1.5 rounded-pill overflow-hidden bg-panel-raised">
         {!empty && (
           <div
-            className={`h-full ${fillClass} transition-colors duration-150`}
+            className={`h-full rounded-pill ${fillClass} transition-colors duration-120`}
             style={{ width: `${pct}%` }}
           />
         )}
@@ -192,7 +192,7 @@ export function AutopotPanel() {
         <StatBar cur={hpCur} max={hpMax} tone="bad" flash={flashHp} />
         <StatBar cur={spCur} max={spMax} tone="info" flash={flashSp} />
 
-        <div className="flex items-center justify-between gap-2 border-t border-line py-2">
+        <div className="flex items-center justify-between gap-2 py-2">
           <div className="min-w-0">
             <p className="text-detail font-medium text-ink">Modo proactivo</p>
             <p className="text-caption leading-snug text-muted">
@@ -231,7 +231,7 @@ export function AutopotPanel() {
           </span>
         </div>
 
-        <div className="space-y-1 border-t border-line pt-2">
+        <div className="space-y-1 pt-2">
           <div className="flex items-center justify-between gap-2">
             <span className="micro-label">Perfil de memoria</span>
             <button
@@ -307,7 +307,7 @@ export function AutopotPanel() {
                         DEFAULT_AUTOPOT_CONFIG.hpPercent,
                     })
                   }
-                  className="font-mono input-no-spinner w-full rounded-control-compact border border-line bg-field py-1 pl-1.5 pr-4 text-center text-detail text-ink outline-none transition-colors hover:border-line-strong idle-control"
+                  className="font-mono input-no-spinner w-full rounded-control border border-line bg-field py-1 pl-1.5 pr-4 text-center text-data text-ink outline-none transition-colors hover:border-line-strong idle-control"
                 />
                 <span className="font-mono tabular-nums pointer-events-none absolute inset-y-0 right-1.5 flex items-center text-micro text-muted">
                   %
@@ -343,7 +343,7 @@ export function AutopotPanel() {
                         DEFAULT_AUTOPOT_CONFIG.spPercent,
                     })
                   }
-                  className="font-mono input-no-spinner w-full rounded-control-compact border border-line bg-field py-1 pl-1.5 pr-4 text-center text-detail text-ink outline-none transition-colors hover:border-line-strong idle-control"
+                  className="font-mono input-no-spinner w-full rounded-control border border-line bg-field py-1 pl-1.5 pr-4 text-center text-data text-ink outline-none transition-colors hover:border-line-strong idle-control"
                 />
                 <span className="font-mono tabular-nums pointer-events-none absolute inset-y-0 right-1.5 flex items-center text-micro text-muted">
                   %
@@ -357,7 +357,7 @@ export function AutopotPanel() {
           {error && available ? (
             <span className="text-bad">{error}</span>
           ) : available && effectiveMemoryAccess && !memoryReady ? (
-            <span className="inline-block border-l-[3px] border-warn pl-3 text-muted">
+            <span className="inline-block notice-warn text-muted">
               {memoryAccessLabel(effectiveMemoryAccess)}
               <span className="text-muted">
                 {memoryAction ? ` ${memoryAction}` : ''}

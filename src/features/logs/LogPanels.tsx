@@ -21,7 +21,7 @@ function LogTab({
     <button
       type="button"
       onClick={onClick}
-      className={`px-2 py-0.5 border-b-2 text-caption font-semibold uppercase tracking-wider transition-colors inline-flex items-center gap-1 focus-visible:outline focus-visible:outline-accent ${
+      className={`px-2 py-0.5 border-b-2 text-caption font-semibold normal-case tracking-normal transition-colors inline-flex items-center gap-1 focus-visible:outline focus-visible:outline-accent ${
         active
           ? 'text-ink border-accent'
           : 'text-muted hover:text-ink border-transparent'

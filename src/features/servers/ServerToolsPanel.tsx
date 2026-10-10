@@ -75,7 +75,7 @@ export function ServerToolsPanel() {
           />
           <ClientDiagnostics status={status} />
           {!!status.dgvoodoo.issues.length && (
-            <div className="mt-2 border-l-[3px] border-warn pl-3 py-1">
+            <div className="mt-2 notice-warn">
               {status.dgvoodoo.issues.map((issue) => (
                 <p key={issue} className="text-caption leading-snug text-muted">
                   <DataText>{issue}</DataText>
@@ -106,7 +106,7 @@ function ClientDiagnostics({ status }: { status: ServerToolsStatus }) {
   }
 
   return (
-    <div className="mt-2 border-t border-line py-2">
+    <div className="mt-2 py-2">
       <p className="text-caption text-muted font-mono tabular-nums">
         Cliente {diagnostics.architecture ?? 'PE'}
         {diagnostics.graphicsApis.length
@@ -114,7 +114,7 @@ function ClientDiagnostics({ status }: { status: ServerToolsStatus }) {
           : ''}
       </p>
       {!!diagnostics.warnings.length && (
-        <div className="mt-2 border-l-[3px] border-warn pl-3 space-y-1">
+        <div className="mt-2 notice-warn space-y-1">
           {diagnostics.warnings.map((warning) => (
             <p key={warning} className="text-caption leading-snug text-muted">
               <DataText>{warning}</DataText>
@@ -182,7 +182,7 @@ function CompactToolCard({
   const btnClass = buttonClasses('secondary', 'xs')
 
   return (
-    <div className="border-l border-line first:border-l-0 px-2.5 py-2 flex flex-col gap-1.5 min-w-0">
+    <div className="px-2.5 py-2 flex flex-col gap-1.5 min-w-0">
       <div className="flex flex-wrap items-center gap-1.5 min-w-0">
         <StatusDot status={dotOk ? 'ok' : 'neutral'} />
         <span className="text-detail text-ink font-medium shrink-0">

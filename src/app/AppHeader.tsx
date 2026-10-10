@@ -64,9 +64,9 @@ export function AppHeader() {
   const ingame = useUiModeStore((s) => s.mode === 'ingame')
 
   return (
-    <header className="shrink-0 flex items-end justify-between px-4 py-2.5 border-b border-line bg-surface ">
+    <header className="h-16 shrink-0 flex items-center justify-between px-4 bg-surface">
       <div className="min-w-0 flex-1" data-tauri-drag-region>
-        <h1 className="text-xl font-wordmark font-bold tracking-tight">
+        <h1 className="text-brand font-sans font-semibold tracking-brand">
           <span className="text-accent">RO</span>
           <span className="text-ink">-Launcher</span>
         </h1>
@@ -77,7 +77,7 @@ export function AppHeader() {
         {ingame ? (
           <IngameStatusChip />
         ) : (
-          <p className="text-detail text-muted tracking-wide">
+          <p className="text-detail text-muted font-mono">
             Developed by: <span className="text-muted font-medium">nndsk</span>
           </p>
         )}

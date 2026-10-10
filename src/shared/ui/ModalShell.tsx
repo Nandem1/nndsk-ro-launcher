@@ -28,6 +28,6 @@ export function ModalShell({
 
 export function modalSurfaceClasses(variant: 'plain' | 'glass' = 'plain') {
   return variant === 'glass'
-    ? 'border border-line-strong bg-modal rounded-modal flex flex-col overflow-hidden'
-    : 'rounded-modal border border-line-strong bg-modal p-5'
+    ? 'border border-line-soft bg-modal rounded-modal flex flex-col overflow-hidden'
+    : 'rounded-modal border border-line-soft bg-modal p-5'
 }

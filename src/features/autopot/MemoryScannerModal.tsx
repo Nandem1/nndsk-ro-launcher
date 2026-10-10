@@ -484,7 +484,7 @@ export function MemoryScannerModal({
         ) : null}
 
         {busy && (
-          <p className="mt-3 border-l-[3px] border-warn pl-3 text-detail text-muted animate-pulse-dot">
+          <p className="mt-3 notice-warn text-detail text-muted animate-pulse-dot">
             {busyLabel}
           </p>
         )}

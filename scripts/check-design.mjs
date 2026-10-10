@@ -11,12 +11,16 @@ const forbidden = [
   /\b(?:bg|text|border(?:-[trblxyse])?|ring(?:-offset)?|from|via|to|divide|placeholder|decoration|fill|stroke|outline|accent)-(?:white|black)\b/g,
   /\btext-\[(?:\d+(?:\.\d+)?|\.\d+)px\]/gi,
   /(?<![\w-])rounded-(?:none|sm|md|lg|xl|2xl|3xl|full)(?![\w-])/g,
+  /\brounded-\[[^\]]+\]/g,
   /(?<![\w-])shadow-(?:sm|md|lg|xl|2xl|inner|glass|glow-(?:amber|emerald|red)|\[[^\]]+\])(?![\w-])/g,
   /\b(?:bg-(?:panel|progress)-gradient|bg-gradient-[\w-]+|backdrop\x2dblur(?:-[\w-]+)?|shadow-(?:glow|dot)-[\w-]+|overlay\x2dlight|tracking-\[[^\]]+\])(?![\w-])/g,
   /\b(?:ink-(?:soft|dim|bright)|accent-(?:ink|soft|light|bright|strong)|ok-(?:ink|soft|bright)|bad-(?:ink|soft|bright|strong)|info-(?:soft|bright|strong)|special-(?:ink|soft))(?![\w-])/g,
   /\b(?:stagger\x2dchildren|animate-(?:fade-rise|scale-in|rail-expand|rail-collapse|stat-flash-red|stat-flash-blue)|transition-(?:all|transform|opacity)|duration-(?:200|300|400|500))\b/g,
   /\baccent\x2daccent\b/g,
   /\bopacity\x2d\d+\b/g,
+  /\bfont\x2dwordmark\b/g,
+  /\buppercase\s+tracking-(?:wide|wider|widest)\b/g,
+  /\bborder-t-(?:ok|warn|bad|info)\b/g,
 ]
 
 function files(target) {

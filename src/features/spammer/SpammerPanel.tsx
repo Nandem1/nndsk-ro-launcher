@@ -63,7 +63,7 @@ export function SpammerPanel() {
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
             <p
-              className={`font-mono tabular-nums text-sm font-semibold truncate ${
+              className={`${available && status.armed ? 'font-mono tabular-nums' : 'font-sans'} text-sm font-semibold truncate ${
                 status.spamming ? 'text-ok' : 'text-ink'
               }`}
             >

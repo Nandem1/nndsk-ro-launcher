@@ -78,10 +78,10 @@ export function ServerList() {
           {servers.map((server) => (
             <div
               key={server.id}
-              className={`flex items-center gap-1 px-2 border-l-[3px] transition-colors group
-                ${selectedId === server.id ? 'border-l-accent' : 'hover:bg-panel-raised border-l-transparent'}`}
+              className={`flex min-h-10 items-center gap-2.5 px-3 rounded-control transition-colors duration-120 group
+                ${selectedId === server.id ? 'bg-panel-raised' : 'hover:bg-panel-raised'}`}
             >
-              <label className="min-w-0 flex-1 flex items-center gap-3 py-2.5 cursor-pointer">
+              <label className="min-w-0 flex-1 flex items-center gap-2.5 py-1 cursor-pointer">
                 <Input
                   variant="inline"
                   type="radio"
@@ -89,10 +89,10 @@ export function ServerList() {
                   value={server.id}
                   checked={selectedId === server.id}
                   onChange={() => selectServer(server.id)}
-                  className="w-3.5 h-3.5 shrink-0"
+                  className="w-4 h-4 shrink-0"
                 />
                 <span
-                  className={`text-sm text-ink flex-1 min-w-0 break-words ${selectedId === server.id ? 'font-medium' : ''}`}
+                  className={`text-sm leading-4 text-ink flex-1 min-w-0 break-words ${selectedId === server.id ? 'font-medium' : ''}`}
                 >
                   {server.name}
                 </span>

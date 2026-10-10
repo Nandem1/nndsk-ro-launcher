@@ -13,7 +13,7 @@ export function ToolViewTabs() {
   const setToolView = useUiModeStore((s) => s.setToolView)
 
   return (
-    <div className="shrink-0 flex gap-1">
+    <div className="shrink-0 flex gap-1 rounded-segmented border border-line-soft bg-panel p-[3px]">
       {TABS.map(({ view, label }) => {
         const active = toolView === view
         return (
@@ -22,10 +22,10 @@ export function ToolViewTabs() {
             type="button"
             onClick={() => setToolView(view)}
             aria-pressed={active}
-            className={`flex-1 flex items-center justify-center gap-1.5 border-b-2 px-2 py-1.5 text-detail font-medium transition-colors focus-visible:outline focus-visible:outline-accent ${
+            className={`flex-1 flex items-center justify-center gap-1.5 rounded-segment px-2 py-1.5 text-data font-sans font-medium transition-colors duration-120 ${
               active
-                ? 'text-ink border-accent'
-                : 'border-transparent text-muted hover:text-ink'
+                ? 'bg-line text-ink'
+                : 'text-muted hover:bg-panel-raised hover:text-ink'
             }`}
           >
             {label}

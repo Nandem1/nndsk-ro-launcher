@@ -21,6 +21,7 @@ let disclosureCheck = null
 let railCheck = null
 let controlCheck = null
 const diagnosticChecks = []
+const contrastFailures = []
 const browser = await chromium.launch({ executablePath, headless: true })
 const page = await browser.newPage({ viewport: { width, height } })
 await page.route('**/favicon.ico', (route) =>
@@ -353,7 +354,7 @@ const capture = async (name) => {
   )
   // Keep detailed diagnostics outside the repository.
   fs.writeFileSync(
-    `/tmp/ro-graphite-${baseline ? 'before' : 'after'}-${width}x${height}-${name}.json`,
+    `/tmp/ro-soft-${baseline ? 'before' : 'after'}-${width}x${height}-${name}.json`,
     JSON.stringify(styles, null, 2),
   )
   await page.screenshot({
@@ -442,9 +443,12 @@ async function verifyQuietControls() {
           outline: css.outlineColor,
           outlineWidth: css.outlineWidth,
           shadow: css.boxShadow,
+          background: css.backgroundColor,
+          borderWidth: css.borderTopWidth,
           line: rgb('line'),
           strong: rgb('line-strong'),
-          accent: rgb('accent'),
+          raised: rgb('panel-raised'),
+          accent: `rgba(${root.getPropertyValue('--c-accent').trim().split(/\s+/).join(', ')}, 0.5)`,
         }
       })
     const resting = await read()
@@ -460,9 +464,12 @@ async function verifyQuietControls() {
     await page.keyboard.press('Shift+Tab')
     const focus = await read()
     if (
-      resting.border !== resting.line ||
-      hover.border !== hover.strong ||
-      focus.outlineWidth !== '1px' ||
+      (['input', 'select'].includes(name)
+        ? resting.border !== resting.line || hover.border !== hover.strong
+        : resting.background !== resting.raised ||
+          hover.background !== resting.line ||
+          resting.borderWidth !== '0px') ||
+      focus.outlineWidth !== '2px' ||
       focus.outline !== focus.accent ||
       focus.shadow !== 'none'
     )
@@ -512,6 +519,7 @@ async function verifyDiagnosticTones(fault = false) {
         warn: rgb('warn'),
         bad: rgb('bad'),
         ok: rgb('ok'),
+        soft: rgb('line-soft'),
       }
     })
   const tones = [
@@ -525,8 +533,8 @@ async function verifyDiagnosticTones(fault = false) {
   ]
   if (
     readings.rows.some((row, index) => row.color !== readings[tones[index]]) ||
-    readings.panel !== readings[fault ? 'bad' : 'warn'] ||
-    readings.width !== '2px'
+    readings.panel !== readings.soft ||
+    readings.width !== '1px'
   )
     throw new Error(`Diagnostic colors failed: ${JSON.stringify(readings)}`)
   if (
@@ -674,7 +682,6 @@ async function verifyFonts() {
     const expected = [
       ...[400, 500, 600, 700].map((weight) => `${weight} 13px "IBM Plex Sans"`),
       ...[400, 500, 600].map((weight) => `${weight} 12px "IBM Plex Mono"`),
-      '700 18px "Barlow Condensed"',
     ]
     for (const spec of expected) {
       const loaded = await document.fonts.load(spec, 'Ragnarok áéíóú ñ 123')
@@ -697,7 +704,7 @@ async function verifyFonts() {
   if (
     !actual.ui.includes('IBM Plex Sans') ||
     !actual.data.includes('IBM Plex Mono') ||
-    !actual.wordmark.includes('Barlow Condensed')
+    !actual.wordmark.includes('IBM Plex Sans')
   )
     throw new Error('Wrong rendered font families')
   return { faces: fonts, actual }
@@ -772,7 +779,11 @@ async function verifySwitchContrast(state) {
         track: css.backgroundColor,
         knob: knob.backgroundColor,
         boundaryContrast: contrast(
-          parseFloat(css.outlineWidth) ? css.outlineColor : css.borderTopColor,
+          css.outlineStyle !== 'none' && parseFloat(css.outlineWidth)
+            ? css.outlineColor
+            : parseFloat(css.borderTopWidth) && css.borderTopStyle !== 'none'
+              ? css.borderTopColor
+              : css.backgroundColor,
           panel.backgroundColor,
         ),
         knobContrast: contrast(knob.backgroundColor, css.backgroundColor),
@@ -789,7 +800,7 @@ async function verifySwitchContrast(state) {
         reading.knobContrast < 3,
     )
   )
-    throw new Error(`Switch contrast failed: ${JSON.stringify(readings)}`)
+    contrastFailures.push({ kind: 'switch-boundary', state, readings })
   switchContrast.push({ state, readings })
 }
 
@@ -797,7 +808,14 @@ async function auditStateContrast() {
   const result = await page.evaluate(() => {
     const rgba = (value) => {
       const channels = value.match(/[\d.]+/g).map(Number)
-      return [...channels.slice(0, 3), channels[3] ?? 1]
+      return [
+        ...channels
+          .slice(0, 3)
+          .map((channel) =>
+            value.startsWith('color(srgb') ? channel * 255 : channel,
+          ),
+        channels[3] ?? 1,
+      ]
     }
     const blend = (foreground, background) =>
       foreground
@@ -876,9 +894,10 @@ async function auditStateContrast() {
         const css = getComputedStyle(element)
         const bg = background(element)
         const outside = background(element.parentElement)
-        const boundary = parseFloat(css.outlineWidth)
-          ? css.outlineColor
-          : css.borderTopColor
+        const boundary =
+          css.outlineStyle !== 'none' && parseFloat(css.outlineWidth)
+            ? css.outlineColor
+            : css.borderTopColor
         return {
           tag: element.tagName,
           type: element.type,
@@ -901,10 +920,57 @@ async function auditStateContrast() {
           boundaryInsideContrast: contrast(blend(rgba(boundary), bg), bg),
         }
       })
-    return { idle, disabled, idleBorders }
+    const enabled = [
+      ...document.querySelectorAll(
+        'button:not(:disabled), input:not(:disabled), textarea:not(:disabled), summary',
+      ),
+    ]
+      .filter((element) => element.getBoundingClientRect().height)
+      .map((element) => {
+        const css = getComputedStyle(element)
+        const bg = background(element)
+        const outside = background(element.parentElement)
+        const hasText = !!(
+          element.textContent.trim() ||
+          element.value ||
+          element.getAttribute('placeholder')
+        )
+        const paintedIcon =
+          element.querySelector('svg') &&
+          !element.matches('[role="checkbox"][aria-checked="false"]')
+        const isField = element.matches(
+          'input:not([type="range"]):not([type="radio"]):not([type="checkbox"]), textarea, [aria-haspopup="listbox"]',
+        )
+        const isChoice = element.matches(
+          'input[type="radio"], input[type="checkbox"], [role="checkbox"]',
+        )
+        const border = rgba(css.borderTopColor)
+        return {
+          label:
+            element.getAttribute('aria-label') ??
+            element.textContent.trim().slice(0, 65) ??
+            element.type,
+          textContrast: contrast(blend(rgba(css.color), bg), bg),
+          textMinimum: hasText ? 4.5 : paintedIcon ? 3 : 0,
+          opacity: opacity(element),
+          borderContrast:
+            isField || isChoice
+              ? contrast(blend(border, outside), outside)
+              : null,
+        }
+      })
+    const notices = [...document.querySelectorAll('.notice-warn')].map(
+      (element) => ({
+        text: element.textContent.trim().slice(0, 65),
+        textContrast: contrast(
+          blend(rgba(getComputedStyle(element).color), background(element)),
+          background(element),
+        ),
+      }),
+    )
+    return { idle, disabled, idleBorders, enabled, notices }
   })
   if (
-    result.idleBorders.some((reading) => reading.contrast < 3) ||
     result.idle.some(
       (reading) => reading.opacity !== 1 || reading.textContrast < 4.5,
     ) ||
@@ -917,6 +983,26 @@ async function auditStateContrast() {
     )
   )
     throw new Error(`Idle/disabled contrast failed: ${JSON.stringify(result)}`)
+  const textFailures = result.enabled.filter(
+    (reading) =>
+      reading.opacity !== 1 || reading.textContrast < reading.textMinimum,
+  )
+  if (
+    textFailures.length ||
+    result.notices.some((reading) => reading.textContrast < 4.5)
+  )
+    throw new Error(
+      `Rendered text/tonal contrast failed: ${JSON.stringify({ textFailures, notices: result.notices })}`,
+    )
+  const borders = result.enabled.filter(
+    (reading) => reading.borderContrast !== null && reading.borderContrast < 3,
+  )
+  if (borders.length)
+    contrastFailures.push({
+      kind: 'field-choice-boundary',
+      scene: checks.at(-1).scene,
+      readings: borders,
+    })
   return result
 }
 
@@ -1170,9 +1256,60 @@ await page.goto(`http://127.0.0.1:${port}/?fixture=empty`)
 await page.getByText('Sin servidores — agrega uno con +').waitFor()
 await capture('prep-empty')
 if (!baseline) await verifySwitchContrast('off')
+// The approved HTML is unchanged. Load the same local font faces rather than
+// its example CDN, then capture only its first (preparation) board.
+if (width === 1440 && height === 900 && !baseline) {
+  const reference = await browser.newPage({ viewport: { width, height } })
+  await reference.route('https://fonts.googleapis.com/**', (route) =>
+    route.fulfill({ body: '', contentType: 'text/css' }),
+  )
+  await reference.goto(
+    `file://${path.resolve('docs/design-reference/refined.html')}`,
+  )
+  const faces = []
+  for (const [family, directory, weights] of [
+    ['IBM Plex Sans', 'ibm-plex-sans', [400, 500, 600]],
+    ['IBM Plex Mono', 'ibm-plex-mono', [400, 500]],
+  ]) {
+    for (const weight of weights) {
+      const data = fs
+        .readFileSync(
+          `node_modules/@fontsource/${directory}/files/${directory}-latin-${weight}-normal.woff2`,
+        )
+        .toString('base64')
+      faces.push(
+        `@font-face{font-family:${JSON.stringify(family)};font-weight:${weight};src:url(data:font/woff2;base64,${data}) format("woff2");}`,
+      )
+    }
+  }
+  await reference.addStyleTag({ content: faces.join('\n') })
+  await reference.evaluate(() => document.fonts.ready)
+  const refImage = await reference
+    .locator('body > div')
+    .first()
+    .screenshot({ path: path.join(output, 'reference-1440x900.png') })
+  const appImage = fs.readFileSync(
+    path.join(output, 'prep-pending-1440x900.png'),
+  )
+  const comparison = await browser.newPage({
+    viewport: { width: width * 2, height },
+  })
+  await comparison.setContent(
+    `<body style="margin:0;display:flex"><img width="1440" height="900" src="data:image/png;base64,${refImage.toString('base64')}"><img width="1440" height="900" src="data:image/png;base64,${appImage.toString('base64')}"></body>`,
+  )
+  await comparison
+    .locator('img')
+    .evaluateAll((images) => Promise.all(images.map((image) => image.decode())))
+  await comparison.screenshot({
+    path: path.join(output, 'reference-vs-app-1440x900.png'),
+  })
+  await reference.close()
+  await comparison.close()
+}
 console.log('Console/page errors:', errors)
 console.log('Layout checks:', checks)
 console.log('Loaded fonts:', fonts)
+console.log('Contrast failures:', contrastFailures)
 fs.writeFileSync(
   path.join(output, `review-${width}x${height}.json`),
   JSON.stringify(
@@ -1190,6 +1327,7 @@ fs.writeFileSync(
       railCheck,
       controlCheck,
       diagnosticChecks,
+      contrastFailures,
     },
     null,
     2,
@@ -1197,6 +1335,7 @@ fs.writeFileSync(
 )
 await browser.close()
 if (
+  contrastFailures.length ||
   errors.length ||
   checks.some(
     (check) =>

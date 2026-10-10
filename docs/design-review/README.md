@@ -1,139 +1,141 @@
-# Revisión de unslop-graphite
+# Revisión de unslop-soft
 
-Build de producción, Chromium local, CSP real de Tauri e IPC simulado. Base:
-`f3bcbad` (`rework/unslop-refine`). No se usaron datos ni clientes reales.
-Dirección: grafito silencioso, superficies neutras, separadores entre grupos,
-sin iconos decorativos ni nuevos efectos. Layout, textos y acciones se conservan.
+Base `cf702f8`, desde unslop-graphite. Build de producción, Chromium local,
+CSP real e IPC simulado. Referencia: [refined.html](../design-reference/refined.html),
+abierta a 1440×900 y leída completa, sin modificar el archivo aportado.
 
-| Escena | 1440×900 (defecto) | 1280×820 (mínimo) |
+**Estado: implementación preparada; cierre bloqueado por contraste de contornos.**
+El boceto pide límites que no alcanzan 3:1. No se ha rebajado ese requisito
+ni añadido contornos activos fuera del boceto sin autorización.
+Las comprobaciones de render/layout pasan; review:design devuelve 1 por
+contrastFailures (switches, campos y radios), no por consola o recortes.
+
+## Comparación
+
+[Referencia y aplicación lado a lado](reference-vs-app-1440x900.png):
+izquierda boceto, derecha preparación con runtime pendiente.
+Cada mitad es 1440×900; el PNG combinado mide 2880×900.
+[Referencia sola](reference-1440x900.png). Las fuentes de esa captura se sirven
+desde los mismos paquetes locales de Plex, no desde el CDN del HTML.
+
+Diferencias que quedan:
+
+- Contenido real: cinco nombres largos de servidores, siete diagnósticos, avisos
+  completos con hash/FileVersion, detalles de runner y acciones de dgVoodoo.
+- Estados reales: Abrir/Config no disponibles antes de preparar; conservan
+  disabled y su contorno accesible existente. La referencia ilustra botones activos.
+- AutoPot contiene Encontrar, selección de perfil y controles HP/SP completos;
+  Spammer conserva Shift/Gear Switch y distribución ergonómica de teclas.
+- Se conservan el scroll único del rail, los scrolls de herramientas y las
+  acciones inferiores fijas. El boceto simplifica esas cantidades de contenido.
+- Se conserva el padding superior existente de main (12px), el tamaño flexible
+  de cuerpos y Logs de 176/196px; el boceto ilustra Logs de 130px y otra cantidad
+  de contenido. No se copió su layout ni se ocultaron secciones.
+- Idle sigue muted sin opacidad. Los controles disabled conservan un límite
+  muted, necesario para el contraste ya validado. No cambia su disponibilidad.
+- El hover danger usa ink sobre el tono al 15% para alcanzar contraste;
+  los tonos se mezclan contra panel, evitando variaciones por el contenedor.
+
+## Capturas
+
+| Escena | 1440×900 | 1280×820 |
 | --- | --- | --- |
 | Preparación | [prep](prep-1440x900.png) | [prep](prep-1280x820.png) |
 | En juego | [ingame](ingame-1440x900.png) | [ingame](ingame-1280x820.png) |
 | Servidor | [server](server-1440x900.png) | [server](server-1280x820.png) |
 | Escáner | [scanner](scanner-1440x900.png) | [scanner](scanner-1280x820.png) |
 | Herramientas activas | [active](active-1440x900.png) | [active](active-1280x820.png) |
-| Editores abiertos | [active-editors](active-editors-1440x900.png) | [active-editors](active-editors-1280x820.png) |
-| Buffs con dos reglas | [buffs](buffs-1440x900.png) | [buffs](buffs-1280x820.png) |
-| Preparación realista, grupo cerrado | [realistic](prep-realistic-1440x900.png) | [realistic](prep-realistic-1280x820.png) |
-| Realista, scroll inferior y grupo cerrado | [scrolled](prep-realistic-scrolled-1440x900.png) | [scrolled](prep-realistic-scrolled-1280x820.png) |
+| Editores abiertos | [editors](active-editors-1440x900.png) | [editors](active-editors-1280x820.png) |
+| Buffs | [buffs](buffs-1440x900.png) | [buffs](buffs-1280x820.png) |
+| Preparación realista | [realistic](prep-realistic-1440x900.png) | [realistic](prep-realistic-1280x820.png) |
+| Realista, scroll inferior | [scrolled](prep-realistic-scrolled-1440x900.png) | [scrolled](prep-realistic-scrolled-1280x820.png) |
 | Realista, grupo abierto | [open](prep-realistic-open-1440x900.png) | [open](prep-realistic-open-1280x820.png) |
-| Realista, grupo abierto y scroll inferior | [open-scrolled](prep-realistic-open-scrolled-1440x900.png) | [open-scrolled](prep-realistic-open-scrolled-1280x820.png) |
-| Preparación sin entorno, runtime pendiente | [pending](prep-pending-1440x900.png) | [pending](prep-pending-1280x820.png) |
-| Runtime pendiente, diagnósticos visibles | [pending-scrolled](prep-pending-scrolled-1440x900.png) | [pending-scrolled](prep-pending-scrolled-1280x820.png) |
-| Sin servidor: controles deshabilitados | [empty](prep-empty-1440x900.png) | [empty](prep-empty-1280x820.png) |
+| Realista, abierto/scroll | [open-scrolled](prep-realistic-open-scrolled-1440x900.png) | [open-scrolled](prep-realistic-open-scrolled-1280x820.png) |
+| Runtime pendiente | [pending](prep-pending-1440x900.png) | [pending](prep-pending-1280x820.png) |
+| Pendiente, diagnósticos visibles | [pending-scrolled](prep-pending-scrolled-1440x900.png) | [pending-scrolled](prep-pending-scrolled-1280x820.png) |
+| Sin servidor | [empty](prep-empty-1440x900.png) | [empty](prep-empty-1280x820.png) |
 
-28 capturas nuevas/actualizadas. Informes [1440×900](review-1440x900.json) y
-[1280×820](review-1280x820.json): cero errores de consola, desbordes, texto
-recortado y cajas interiores. Los scrolls previstos no cuentan como recortes:
-conservan el contenido completo. Las capturas 1100×800 y su informe pertenecen
-al polish anterior, antes de fijar el nuevo mínimo; se conservan como historial.
+28 capturas actualizadas y dos nuevas de referencia/comparación.
+[Informe 1440×900](review-1440x900.json), [1280×820](review-1280x820.json):
+14 escenas por tamaño, cero errores de consola, overflow, recortes permanentes
+y cajas anidadas. El contenido desplazado conserva acceso completo mediante sus
+scrolls previstos. Fotos/informe 1100×800 quedan como historia del polish.
 
-Revisión visual: rail fijo de 300px (64px en juego); contenido ocupa todo el ancho
-disponible. Entre mínimo/defecto, Logs crece 176→196px y los cuerpos de herramientas
-ganan 60px en preparación estándar/en juego, sin max-width ni centrado artificial.
-La escena realista conserva cinco servidores, Setup.exe, HoneyRO Patcher.exe,
-dgVoodoo conf OK, avisos anti-cheat/Gepard y cuatro líneas largas de logs.
-La columna izquierda conserva un único scroll y acciones inferiores fijas.
-La nueva escena incorpora runner nndsk-ro-proton 0.1.0-dev.2 y los hints exactos
-solicitados; runner/compatibilidad/entorno/DXVK warn, audio/permisos/uinput ok.
-El panel es warn. Un error explícito de runner se prueba sin captura adicional:
-fila/panel bad aunque el hint siga diciendo pendiente. Se conserva la acción
-Preparar entorno habilitada y no se ofrece Jugar hasta estar listo, igual que antes.
+Fuentes: siete caras locales de Plex, todas loaded/HTTP 200; Barlow no se carga.
+Foco por teclado de 2px accent/50%, sin sombra; teclas/secundarios sin borde,
+campos line→line-strong al hover. Disclosure abierto/cerrado, 13 acciones y
+disponibilidad intactas. Selector por puntero/teclado y reposicionado al resize;
+scroll único del rail, acciones fijas y reduced-motion verificados.
+Runtime pendiente: cuatro puntos warn y tres ok; error de runner permanece bad,
+mismo texto/hint y acciones. El borde de panel permanece line-soft/1px en ambos.
 
-## Líneas e iconos
+## Contraste compuesto
 
-Elementos DOM con clases de ancho `border-t`/`border-b` y borde resuelto >0
-dentro de paneles; no incluye su borde superior exterior ni bordes completos de
-controles. Incluye filas del scroll, no solo el fragmento del viewport. Medidos
-antes y después con el mismo arnés; ambos tamaños dan los mismos conteos:
-
-| Escena | Antes → después |
-| --- | --- |
-| prep | 30 → 10 |
-| server | 30 → 10 |
-| ingame | 15 → 7 |
-| scanner | 15 → 7 |
-| active | 15 → 7 |
-| active-editors | 18 → 7 |
-| buffs | 7 → 3 |
-| prep-realistic | 34 → 10 |
-| prep-realistic-scrolled | 34 → 10 |
-| prep-realistic-open | 34 → 10 |
-| prep-realistic-open-scrolled | 34 → 10 |
-| prep-pending | 35 → 10 |
-| prep-pending-scrolled | 35 → 10 |
-| prep-empty | 28 → 9 |
-
-9 colocaciones de iconos retiradas (3 títulos, 2 pestañas, 2 disclosures y 2
-etiquetas ATK/DEF). Adornos de título/pestañas/disclosure renderizados: combate
-6→0, Buffs 3→0. Se conservan iconos funcionales y sus nombres accesibles.
-La regla de pestañas de ancho completo desaparece; el subrayado de 2px no toca
-los paneles. Avisos/selección de servidor conservan barras de 3px.
-
-Avanzado comienza con el grupo Benchmarks A/B cerrado. Se verificaron apertura,
-cierre, orden y disponibilidad de las 13 acciones de observaciones/benchmarks.
-DarkSelect conserva rol combobox del selector sustituido; selección por puntero
-y teclado, menú dentro del viewport y reposicionado al redimensionar.
-Las fuentes locales cargan sus ocho caras con HTTP 200 y `document.fonts`;
-familias computadas: Plex Sans para UI, Plex Mono tabular para datos, Barlow para marca.
-
-## Neutralidad y contraste
-
-Máximo RGB menos mínimo RGB, umbral ≤6:
-
-| Token | Canales | Diferencia |
-| --- | --- | --- |
-| surface | 14 15 17 | 3 |
-| panel | 21 22 24 | 3 |
-| panel-raised | 28 29 32 | 4 |
-| field | 10 11 12 | 2 |
-| modal | 18 19 21 | 3 |
-| line | 38 40 44 | 6 |
-| line-strong | 52 55 58 | 6 |
-
-Único ajuste: line-strong #34373C→#34373A (azul −2; diferencia 8→6).
-Los siete colores de acción/estado no cambian. WCAG sRGB, sin redondeos intermedios:
-
-| Texto | Surface | Panel |
-| --- | --- | --- |
-| muted | 5.906:1 | 5.576:1 |
-| ink | 15.498:1 | 14.633:1 |
-| warn | 8.706:1 | 8.220:1 |
-| ok | 7.594:1 | 7.170:1 |
-| bad | 5.426:1 | 5.123:1 |
-| info | 6.478:1 | 6.117:1 |
-| accent | 6.248:1 | 5.899:1 |
-
-on-accent/accent: **6.126:1**. Todos ≥4.5:1.
-Contraste compuesto, con opacidad efectiva 1:
+WCAG sRGB, alfa compuesto sobre el fondo real; sin redondeos intermedios.
 
 | Par | Ratio |
 | --- | --- |
-| Idle: título, texto y borde superior / panel | 5.576:1 |
-| Disabled: texto y perilla / field | 6.066:1 |
-| Disabled: límite exterior / panel | 5.576:1 |
-| Disabled: límite exterior / surface | 5.906:1 |
-| Disabled: límite exterior / modal | 5.725:1 |
-| Borde interno line / field (no es el límite accesible) | 1.334:1 |
+| muted / surface / panel / panel-raised | 5.906 / 5.576 / 5.190:1 |
+| ink / surface / panel / panel-raised | 15.498 / 14.633 / 13.621:1 |
+| Mínimo de colores de estado / esas superficies (bad/raised) | 4.769:1 |
+| on-accent / accent | 6.126:1 |
+| muted / aviso warn9% sobre panel | 4.824:1 |
+| Idle, mínimo medido (incluido control raised) | 5.190:1 |
+| Disabled, texto / field | 6.066:1 |
+| Disabled, límite exterior / panel | 5.576:1 |
+| Perilla muted / track | 4.303:1 |
+| Switch encendido, superficie / ok | 7.594:1 |
+| Thumb ink / track | 11.291:1 |
+| Tonal bad / 10% / hover ink al 15% | 4.595 / 12.280:1 |
+| Tonal ok / 10% / hover 15% | 6.157 / 5.616:1 |
+| Tonal info / 10% / hover 15% | 5.342 / 4.925:1 |
+| Tonal warn / 10% / hover 15% | 6.979 / 6.313:1 |
 
-Se mantiene el borde line solicitado y se añade outline muted de 1px, porque
-line solo no alcanza 3:1. El límite visible supera 3:1 por ambos lados; el texto
-supera 4.5:1. El arnés rechaza opacidad heredada y mide todos los controles disabled
-renderizados, también con el grupo abierto y sin servidor. Switches habilitados
-conservan ambos estados legibles. Reduced-motion sigue verificado.
-Switch habilitado: borde ok/panel 7.170:1; perilla on-accent/ok 7.447:1.
-Cuatro controles (input, tecla inactiva, secondary, select) se prueban por
-reposo/hover/teclado: line→line-strong, foco accent de 1px, box-shadow none.
-Scrollbar de 6px, pista transparente, pulgar line-strong.
+Texto informativo y botones tonales pasan ≥4.5:1; perillas y pulgares pasan ≥3:1.
+Idle/disabled mantienen opacidad efectiva 1.
 
-Guardia: siguen cero paletas crudas, opacity-* y inputs/selects nativos en
-features. Se añade neutralidad, contraste de ink y rechazo de Lucide/SVG
-decorativo en Panel.leading. Fixtures inválidos de paleta e icono fallan con
-código 1; un IconButton con nombre pasa.
-[Auditoría de accent/warn](color-usage.md): 25→19 y 12→12 en app/features;
-seis focos centralizados, sin perder accesibilidad.
+Los bordes de referencia **no pasan 3:1**:
 
-Repetir:
+| Borde/pista | Surface | Panel | Panel-raised |
+| --- | --- | --- | --- |
+| line (campo) | 1.299 | 1.226 | 1.142 |
+| outline (radio/checkbox) | 2.294 | 2.166 | 2.016 |
+| track (switch apagado) | 1.373 | 1.296 | 1.206 |
+| accent50% (foco) | 2.344 | 2.326 | 2.276 |
+| line-soft (decorativo, no control) | 1.188 | 1.122 | 1.044 |
+
+Este es el bloqueo real para el cierre: mantener exactamente el boceto/colores
+y pedir 3:1 para todos esos límites son condiciones incompatibles.
+La guardia estructural y de texto pasa, pero el arnés de contornos devuelve 1.
+Se corrigió una falsa medición anterior: outline-width puede ser distinto de
+cero con outline-style:none; ahora solo cuenta un contorno realmente dibujado.
+CSS color(srgb) de los rellenos tonales se convierte correctamente a canales
+0–255 antes de medir. Los JSON conservan todos los fallos, no los ocultan.
+
+## Gramática y auditoría
+
+Líneas interiores border-t/border-b, sin contar panel exterior/controles;
+ambos tamaños dan los mismos conteos respecto a graphite:
+
+| Escenas | Antes→después |
+| --- | --- |
+| prep, server, todas realistas/pending | 10→6 |
+| ingame, scanner, active, active-editors | 7→4 |
+| buffs | 3→3 |
+| prep-empty | 9→6 |
+
+Las cinco filas largas de servidor miden 40px en la fixture; nombres más largos
+pueden crecer para conservar su texto. Cero bordes superiores de tono,
+barras laterales de aviso/selección, etiquetas uppercase/tracking o radios 0.
+[Acento y advertencias por archivo](color-usage.md).
+
+Pasaron lint, format:check, 201 tests/38 archivos, tsc/build, check:design y
+Rust fmt/clippy/tests/build. Siete pruebas Rust ignoradas por prerrequisitos
+existentes. Fixtures de paleta, marca retirada, etiqueta uppercase, borde de
+tono y radio arbitrario devuelven 1; segmentado válido devuelve 0.
+No cambian src-tauri, stores, lógica de dominio, IPC, textos ni roles.
+
+Repetir con el build de producción:
 
 ```sh
 npm run build
@@ -142,11 +144,10 @@ npm run review:design -- 5175 1440 900
 npm run review:design -- 5175 1280 820
 ```
 
-`RO_DESIGN_CHROMIUM` permite otro Chromium instalado y `RO_DESIGN_REVIEW_OUTPUT`
-un destino temporal. Los volcados DOM detallados quedan en `/tmp`, no en el repo.
+RO_DESIGN_CHROMIUM y RO_DESIGN_REVIEW_OUTPUT permiten otro ejecutable/destino.
+Volcados detallados quedan en /tmp. Las ejecuciones actuales devuelven 1 por
+los límites de control arriba documentados.
 
-Pendiente manual: `npm run tauri:dev` con clientes reales; redimensionado de la
-ventana fija sin decoraciones en Hyprland; reproducir el texto fantasma
-en WebKit. Hay WebKitGTK 2.52.6, pero no Xvfb/xvfb-run. No se aplicaron parches
-de compositing. Chromium/IPC simulado no valida esas condiciones de escritorio.
-No se modificó la configuración de Hyprland ni el tamaño/resizable de la ventana.
+Pendiente manual: tauri:dev con clientes reales; apariencia en WebKit con
+Hyprland y comprobación del texto fantasma. Chromium/IPC simulado no sustituye
+esas pruebas. No se tocó Hyprland ni se añadieron parches de compositing.

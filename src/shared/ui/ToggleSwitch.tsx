@@ -19,13 +19,13 @@ export function ToggleSwitch({
       aria-checked={checked}
       disabled={disabled}
       onClick={() => onChange(!checked)}
-      className={`idle-control relative w-[34px] h-[18px] rounded-pill border transition-colors duration-150 shrink-0 disabled:cursor-not-allowed ${
-        checked ? 'bg-ok border-ok' : 'bg-field border-muted'
+      className={`idle-control relative w-9 h-5 rounded-pill transition-colors duration-120 shrink-0 disabled:cursor-not-allowed ${
+        checked ? 'bg-ok' : 'bg-track'
       }`}
     >
       <span
-        className={`absolute top-px w-3.5 h-3.5 rounded-pill transition-colors duration-150 ${
-          checked ? 'left-[17px] bg-on-accent' : 'left-px bg-muted'
+        className={`absolute top-0.5 w-4 h-4 rounded-pill transition-colors duration-120 ${
+          checked ? 'left-[18px] bg-surface' : 'left-0.5 bg-muted'
         }`}
       />
     </button>
