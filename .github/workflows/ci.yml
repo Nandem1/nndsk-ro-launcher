@@ -40,6 +40,7 @@ jobs:
 
       - run: npm ci
       - run: node scripts/check-release-invariants.mjs
+      - run: npm run check:design
       - run: npm test
       - run: npm run build
       - run: npm run lint

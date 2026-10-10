@@ -74,9 +74,61 @@ value today; `warn` is an explicit alias so they can diverge later.
 Current animations and timing remain defined in the theme and stylesheet without
 changing duration, transforms, keyframes or reduced-motion behavior.
 
+## Primitives
+
+All color variants consume tokens and use `Tone = ok | warn | bad | info | neutral`.
+Only existing visual strengths are exposed; the rework can update their maps in
+`src/shared/ui/`. Features own content, dimensions and event handlers.
+
+| Primitive | Variants / sizes / tones |
+| --- | --- |
+| Button / IconButton | primary, secondary, ghost; danger/success compatibility aliases; tone for primary; xs/sm/md/lg; `buttonClasses` has the same API |
+| Button dialog actions | solid/outline; dialog/dialog-sm; tone for solid; preserves original native action behavior |
+| Panel | glass/idle; default/compact/hero; semantic tones; legacy idle/success/warning/danger and compact/hero aliases retained |
+| StatusDot | tone and pulse; legacy status=ok/warning/error/neutral retained; original fixed 8px dot |
+| ToggleSwitch | tone (default ok); original fixed pill geometry and checked/disabled behavior |
+| Checkbox | tone (default warn); original fixed 16px box and checked/disabled behavior |
+| DarkSelect | default/keycap; sm/md; tone (default warn) for selected options; legacy compact/keycap aliases retained |
+| ModalShell + modalSurfaceClasses | layers server/launch/scanner; surfaces plain/glass; caller retains dialog/form, widths, scroll and close logic |
+| Input | modal/config; native input props/ref; caller retains spinner, disabled and monospace details |
+
+Extraction evidence: the overlay structure occurs in ServerConfigModal,
+LaunchFieldsModal and MemoryScannerModal; identical modal inputs occur at five JSX
+sites, and the config input is a sixth site with a distinct existing variant.
+These fields span three domains. Dialog buttons reuse Button's solid/outline variants.
+Rows, tabs and progress bars differ in structure or have fewer than three identical
+occurrences, so no additional primitive is introduced for them.
+
+`scripts/design-utility-order.mjs` preserves Tailwind v3's original utility cascade
+using the migration catalog and Tailwind's ordering API. This matters when a feature
+adds a color to an existing Button, or combines text sizes or shadows. Renaming
+classes alone changes alphabetical precedence even with identical declarations.
+Keep this adapter through the rework; any later Tailwind upgrade must rerun CSS
+and rendered-state comparisons. Shadow-color utilities are disabled because
+shadows already own their colors and `shadow-panel` otherwise matches both plugins.
+
 ## Changing a theme
 
-Change variables in `:root` (or override the same variables under a theme selector)
+Change variables in `:root` (or override them under `:root[data-theme="..."]`)
 and the shared primitive variants. Colors are RGB channels, not hex strings, so
 `bg-panel/50`, hover/focus variants and other opacity modifiers keep working.
 No rework values, new fonts or new theme behavior are applied by this refactor.
+
+## Guard and verification
+
+`npm run check:design` scans frontend source, scripts and build config. The migration
+catalog is the only exemption: it must remember original utility names. The guard
+rejects palette references, raw white/black overlays, pixel text sizes, legacy radii
+and raw shadows, including state variants. It runs in the existing quality CI.
+To check a fixture independently, use `npm run check:design -- /tmp/fixture.tsx`.
+
+```sh
+node scripts/migrate-design.mjs --check
+npx tailwindcss --postcss -i src/index.css -o /tmp/ro-design-current.css
+node scripts/design-css.mjs compare /tmp/ro-design-baseline.css /tmp/ro-design-current.css /tmp/ro-design-class-map.json
+```
+
+The original CSS remains outside the repo; see [the baseline](design-baseline.md)
+for capture commands. For a fresh migration, `node scripts/migrate-design.mjs --map
+/tmp/ro-design-class-map.json` emits the selector renaming evidence while retaining
+variants and opacity. A second run makes zero edits.

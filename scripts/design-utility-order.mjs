@@ -7,7 +7,7 @@ const escape = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const aliases = Object.entries(utilityTokens).map(([oldName, name]) => [name, oldName])
   .sort(([a], [b]) => b.length - a.length)
 const colors = Object.fromEntries(Object.entries(colorTokens).map(([oldName, name]) => [name, oldName]))
-colors.warn = 'amber-500'
+colors.warn = colors.accent
 const colorPattern = new RegExp(`(?<![\\w-])((?:bg|text|border(?:-[trblxyse])?|ring(?:-offset)?|accent|from|via|to|divide|placeholder|decoration|fill|stroke|outline)-)(${Object.keys(colors).sort((a, b) => b.length - a.length).map(escape).join('|')})(?=/|$)`, 'g')
 
 function legacyName(candidate) {
