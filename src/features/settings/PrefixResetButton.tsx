@@ -7,6 +7,7 @@ import { useSelectedServer } from '../servers/useSelectedServer'
 import { useServersStore } from '../servers/servers.store'
 import { useSettingsStore } from './settings.store'
 import { useCurrentAdvancedStatus } from './useSelectedRuntimeStatus'
+import { useEnvironmentStore } from '../environment/environment.store'
 
 export function PrefixResetButton() {
   const { setStatus, setProgress, addGameLog, runTask, isBusy } =
@@ -16,9 +17,11 @@ export function PrefixResetButton() {
   const advancedStatus = useCurrentAdvancedStatus()
   const loadDepsStatus = useSettingsStore((s) => s.loadDepsStatus)
   const server = useSelectedServer()
+  const openHelp = useEnvironmentStore((state) => state.openHelp)
   const activeClients = useLauncherStore((s) => s.clients.length)
   const canReset = advancedStatus?.canReset ?? false
   const canSetup = advancedStatus?.canSetup ?? false
+  const needsHelp = !!advancedStatus?.environment && !canReset && !canSetup
   const prefixPath = advancedStatus?.prefixPath ?? 'el entorno seleccionado'
 
   const handleReset = async () => {
@@ -105,14 +108,18 @@ export function PrefixResetButton() {
       variant="secondary"
       size="sm"
       block
-      onClick={handleReset}
+      onClick={() => {
+        if (needsHelp && server)
+          openHelp(runtimeStatusKey(server, selectedRunner))
+        else void handleReset()
+      }}
       disabled={
         isBusy ||
         activeClients > 0 ||
         savingRunner ||
         !server ||
         !advancedStatus ||
-        (!canReset && !canSetup)
+        (!canReset && !canSetup && !needsHelp)
       }
     >
       {activeClients > 0
@@ -123,7 +130,9 @@ export function PrefixResetButton() {
             ? 'Rearmar entorno'
             : canSetup
               ? 'Reparar entorno'
-              : 'Entorno no reparable'}
+              : needsHelp
+                ? 'Revisar requisitos'
+                : 'Entorno no reparable'}
     </Button>
   )
 }

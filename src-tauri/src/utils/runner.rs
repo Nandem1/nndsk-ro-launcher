@@ -829,7 +829,7 @@ fn sync_mode_from_tkg_config(config: Option<&str>) -> WineSyncMode {
     }
 }
 
-fn effective_wine_winetricks_path() -> Option<PathBuf> {
+pub(crate) fn effective_wine_winetricks_path() -> Option<PathBuf> {
     preferred_wine_winetricks_path(&managed_proton_path(), winetricks_path())
 }
 

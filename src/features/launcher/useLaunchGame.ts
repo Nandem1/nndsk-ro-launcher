@@ -11,6 +11,7 @@ import { useServersStore } from '../servers/servers.store'
 import { clearSettledLaunchFeedback, useLauncherStore } from './launcher.store'
 import { useLauncherTask } from './useLauncherTask'
 import { refreshGameClients } from './refreshGameClients'
+import { preparationFailure } from '../environment/environment.presentation'
 
 let fallbackClientSequence = 0
 
@@ -101,7 +102,8 @@ export function useLaunchGame(server: ServerConfig | null) {
     if (!deps.readyToLaunch) {
       if (!deps.canSetup) {
         throw new Error(
-          deps.runnerWarning ??
+          preparationFailure(deps.environment) ??
+            deps.runnerWarning ??
             deps.prefixWarning ??
             'El entorno no está listo y no puede repararse automáticamente',
         )

@@ -7,7 +7,7 @@ import { DataText } from '../../shared/ui/DataText'
 import { open, save } from '@tauri-apps/plugin-dialog'
 import { audioStatusLabel } from '../../shared/audio'
 import { api } from '../../shared/api'
-import { resolveRunner } from '../../shared/resolveRunner'
+import { resolveRunner, runtimeStatusKey } from '../../shared/resolveRunner'
 import { Panel } from '../../shared/ui/Panel'
 import { StatusDot, type DotStatus } from '../../shared/ui/StatusDot'
 import { useSelectedServer } from '../servers/useSelectedServer'
@@ -31,6 +31,8 @@ import {
 } from './advanced.presentation'
 import { useCurrentAdvancedStatus } from './useSelectedRuntimeStatus'
 import { useSettingsStore } from './settings.store'
+import { useEnvironmentStore } from '../environment/environment.store'
+import { environmentSummary } from '../environment/environment.presentation'
 
 function StatusLine({
   dotStatus,
@@ -82,6 +84,7 @@ export function AdvancedSettings() {
   const runners = useSettingsStore((state) => state.runners)
   const selectedRunner = useSettingsStore((state) => state.selectedRunner)
   const server = useSelectedServer()
+  const openHelp = useEnvironmentStore((state) => state.openHelp)
   const clients = useLauncherStore((state) => state.clients)
   const runningClientId =
     clients.find(
@@ -413,6 +416,18 @@ export function AdvancedSettings() {
               hint={line.hint}
             />
           ))}
+        {server && advancedStatus.environment?.schemaVersion === 1 && (
+          <Button
+            variant="ghost"
+            size="xs"
+            block
+            onClick={() => openHelp(runtimeStatusKey(server, selectedRunner))}
+          >
+            {advancedStatus.environment.issues.length > 0
+              ? `${environmentSummary(advancedStatus.environment)} · Ver diagnóstico`
+              : 'Ver diagnóstico del entorno'}
+          </Button>
+        )}
         <details
           open={reviewOpen}
           onToggle={(event) => setReviewOpen(event.currentTarget.open)}

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Hammer, Play, RotateCcw } from 'lucide-react'
 import { requiredLaunchFields } from '../../shared/contracts'
-import { launchConfigKey } from '../../shared/resolveRunner'
+import { launchConfigKey, runtimeStatusKey } from '../../shared/resolveRunner'
 import { Button, type ButtonVariant } from '../../shared/ui/Button'
 import { useLaunchGame } from './useLaunchGame'
 import { useSelectedServer } from '../servers/useSelectedServer'
@@ -12,6 +12,8 @@ import {
 } from '../settings/useSelectedRuntimeStatus'
 import { LaunchFieldsModal } from './LaunchFieldsModal'
 import { useLauncherStore } from './launcher.store'
+import { EnvironmentHelp } from '../environment/EnvironmentHelp'
+import { useEnvironmentStore } from '../environment/environment.store'
 
 export function LaunchButton() {
   const server = useSelectedServer()
@@ -19,6 +21,8 @@ export function LaunchButton() {
   const savingRunner = useSettingsStore((s) => s.savingRunner)
   const selectedRunner = useSettingsStore((s) => s.selectedRunner)
   const advancedStatus = useCurrentAdvancedStatus()
+  const openHelp = useEnvironmentStore((state) => state.openHelp)
+  const environmentBlocked = advancedStatus?.environment?.launch === 'blocked'
   const depsError = useCurrentRuntimeStatusError()
   const {
     status,
@@ -47,9 +51,11 @@ export function LaunchButton() {
       : depsError
         ? 'Comprobar entorno'
         : buildMode
-          ? advancedStatus?.canSetup === false
-            ? 'Revisar entorno'
-            : 'Preparar entorno'
+          ? environmentBlocked
+            ? 'Resolver requisitos'
+            : advancedStatus?.canSetup === false
+              ? 'Revisar entorno'
+              : 'Preparar entorno'
           : existingClients > 0
             ? 'Abrir otro cliente'
             : 'Jugar',
@@ -100,6 +106,10 @@ export function LaunchButton() {
         block
         onClick={() => {
           void (async () => {
+            if (environmentBlocked) {
+              openHelp(runtimeStatusKey(server, selectedRunner))
+              return
+            }
             if (!advancedStatus?.readyToLaunch) {
               await handlePrepareEnvironment()
               return
@@ -125,6 +135,10 @@ export function LaunchButton() {
         {icon}
         {labels[status]}
       </Button>
+      <EnvironmentHelp
+        busy={isBusy || savingRunner}
+        onPrepare={() => void handlePrepareEnvironment()}
+      />
       {depsError && status !== 'error' && (
         <p className="text-bad text-detail text-center px-2 leading-relaxed">
           {depsError}

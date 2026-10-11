@@ -4,6 +4,7 @@ use tauri::AppHandle;
 
 use crate::models::dependency::{DependencyStatus, RuntimeCheck, RuntimeCheckSeverity};
 use crate::models::server::ServerConfig;
+use crate::tools::environment::{self, host};
 use crate::tools::prefix::{DxvkProvision, MANAGED_DXVK_COMPONENT};
 use crate::tools::runners::{
     is_managed_wine716_path, managed_dxvk_ready, managed_proton_id_for_path, managed_proton_path,
@@ -35,28 +36,27 @@ pub async fn check_dependencies(
     server: Option<ServerConfig>,
     runner: Option<String>,
 ) -> Result<DependencyStatus, String> {
-    let proton = super::host::selection_uses_proton(
+    let proton = host::selection_uses_proton(
         server.as_ref().and_then(|server| server.runner.as_deref()),
         runner.as_deref(),
     );
-    let mut checks = super::host::host_checks(proton, false).await;
-    let wine716 = super::host::selection_uses_managed_wine716(
+    // Observe preparation tools even for a healthy prefix, but scope their
+    // absence to prepare/rebuild. They must never become launch dependencies.
+    let mut checks = host::host_checks(proton, true).await;
+    let wine716 = host::selection_uses_managed_wine716(
         server.as_ref().and_then(|server| server.runner.as_deref()),
         runner.as_deref(),
     );
-    checks.extend(super::host::selected_wine716_loader_check(wine716));
+    checks.extend(host::selected_wine716_loader_check(wine716));
     let mut status = check_runtime_dependencies(app, server, runner)
         .await
         .map_err(|error| {
-            super::host::host_blocker(&checks)
+            host::host_blocker(&checks)
                 .map(|host| format!("{host}\nDiagnóstico secundario: {error}"))
                 .unwrap_or(error)
         })?;
-    if !proton && !status.ready_to_launch {
-        checks = super::host::host_checks(false, true).await;
-        checks.extend(super::host::selected_wine716_loader_check(wine716));
-    }
-    super::host::apply_host_checks(&mut status, checks);
+    host::apply_host_checks(&mut status, checks);
+    status.environment = Some(environment::assess(&status));
     Ok(status)
 }
 
@@ -476,6 +476,7 @@ async fn check_runtime_dependencies(
             && runner_vkd3d_ok
             && ensure_managed_reset_allowed(&ctx.location).is_ok(),
         checks,
+        environment: None,
         runtime_plan,
         compatibility: compatibility_status,
     })
@@ -632,6 +633,7 @@ fn managed_runtime_pending(
                 remediation: None,
             },
         ],
+        environment: None,
         runtime_plan: None,
         compatibility: if runtime_compat_enabled() {
             let game_dir = server.and_then(|server| Path::new(&server.executable_path).parent());

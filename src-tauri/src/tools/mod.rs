@@ -17,6 +17,7 @@ pub(crate) mod artifacts;
 pub mod autobuff;
 pub mod autopot;
 pub mod deps;
+pub(crate) mod environment;
 mod game_pid;
 pub mod input;
 pub mod launcher;

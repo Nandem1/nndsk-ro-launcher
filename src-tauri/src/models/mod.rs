@@ -2,6 +2,7 @@ pub mod autobuff;
 pub mod autopot;
 pub mod benchmark;
 pub mod dependency;
+pub mod environment;
 pub mod game_client;
 pub mod launch;
 pub mod memory;

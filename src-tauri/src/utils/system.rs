@@ -72,14 +72,11 @@ fn preferred_or_path(preferred: &Path, name: &str) -> Option<PathBuf> {
 }
 
 pub(crate) fn executable_in_path(name: &str) -> Option<PathBuf> {
-    let mut directories: Vec<PathBuf> = sanitized_external_path()
+    // Child tools use this same sanitized PATH. Supplemental search directories
+    // would make preflight succeed for a tool that Winetricks cannot actually find.
+    let directories: Vec<PathBuf> = sanitized_external_path()
         .map(|value| std::env::split_paths(&value).collect())
         .unwrap_or_default();
-    directories.push(PathBuf::from("/usr/local/bin"));
-    if let Some(home) = std::env::var_os("HOME") {
-        directories.push(PathBuf::from(home).join(".local/bin"));
-    }
-
     directories
         .into_iter()
         .map(|directory| directory.join(name))

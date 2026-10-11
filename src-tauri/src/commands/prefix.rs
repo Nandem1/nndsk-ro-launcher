@@ -6,7 +6,7 @@ use crate::models::server::ServerConfig;
 use crate::state::{GameProcessHandle, GameState};
 use crate::tools::prefix;
 use crate::tools::runner_sessions::RunnerSessionRegistry;
-use crate::tools::runners::ensure_selected_runtime;
+use crate::tools::runners::ensure_selected_runtime_for_preparation;
 use crate::tools::runtime::{
     observe_legacy_runtime, resolve_operational_plan, runtime_graphics_plan_enabled,
     runtime_shadow_enabled, DgVoodooObservation, DgVoodooState, LegacyRuntimeInput,
@@ -44,7 +44,7 @@ async fn setup_prefix_owned(
     server: Option<ServerConfig>,
     runner: Option<String>,
 ) -> Result<(), String> {
-    ensure_selected_runtime(
+    ensure_selected_runtime_for_preparation(
         &app,
         server.as_ref().and_then(|server| server.runner.as_deref()),
         runner.as_deref(),
@@ -159,7 +159,7 @@ async fn reset_prefix_owned(
     server: Option<ServerConfig>,
     runner: Option<String>,
 ) -> Result<(), String> {
-    ensure_selected_runtime(
+    ensure_selected_runtime_for_preparation(
         &app,
         server.as_ref().and_then(|server| server.runner.as_deref()),
         runner.as_deref(),

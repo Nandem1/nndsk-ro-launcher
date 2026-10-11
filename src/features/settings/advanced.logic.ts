@@ -133,6 +133,7 @@ export function advancedStatusFromDeps(
     canSetup: deps.canSetup,
     canReset: deps.canReset,
     checks: deps.checks,
+    environment: deps.environment,
     runtimePlan: deps.runtimePlan,
     compatibility: deps.compatibility,
   }
@@ -143,6 +144,7 @@ export function advancedHasIssue(status: AdvancedDepsStatus): boolean {
     status.compatibility != null &&
     status.compatibility.assessment.kind !== 'validated'
   return (
+    (status.environment?.issues.length ?? 0) > 0 ||
     compatibilityIssue ||
     resolveDotStatus(status.runnerOk, status.runnerWarning) !== 'ok' ||
     resolveAudioDotStatus(status.audioOk, status.audioWarning) !== 'ok' ||

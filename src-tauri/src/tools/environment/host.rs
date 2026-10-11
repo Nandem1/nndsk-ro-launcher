@@ -1,6 +1,6 @@
-//! Preflight of concrete host capabilities, not distribution/package detection.
+//! Preflight of concrete host capabilities; package guidance lives separately.
 use crate::models::dependency::{DependencyStatus, RuntimeCheck, RuntimeCheckSeverity};
-use crate::utils::{executable_in_path, sanitize_appimage_env, winetricks_path};
+use crate::utils::{executable_in_path, sanitize_appimage_env};
 use std::path::Path;
 use std::time::Duration;
 
@@ -100,8 +100,8 @@ pub(crate) async fn host_checks(proton: bool, provisioning: bool) -> Vec<Runtime
         for tool in ["cabextract", "unzip"] {
             if executable_in_path(tool).is_none() {
                 checks.push(check(&format!("host-{tool}"), RuntimeCheckSeverity::Error,
-                    &format!("El provisioning de Wine necesita {tool} en PATH"),
-                    &format!("Instala {tool} en el host. Proton incluye su propio proveedor; Wine portable no incluye el container")));
+                    &format!("Falta {tool} para instalar los componentes de Wine"),
+                    &format!("Instala {tool} con el administrador de paquetes del sistema y vuelve a comprobar el entorno")));
             }
         }
         if executable_in_path("curl").is_none() && executable_in_path("wget").is_none() {
@@ -112,17 +112,10 @@ pub(crate) async fn host_checks(proton: bool, provisioning: bool) -> Vec<Runtime
                 "Instala curl o wget en el host",
             ));
         }
-        if winetricks_path().is_none()
-            && !crate::utils::is_executable_file(
-                &crate::tools::runners::managed_proton_path()
-                    .parent()
-                    .unwrap()
-                    .join("protonfixes/winetricks"),
-            )
-        {
+        if crate::utils::effective_wine_winetricks_path().is_none() {
             checks.push(check("host-winetricks", RuntimeCheckSeverity::Error,
                 "Wine 7.16 no tiene un script winetricks disponible",
-                "Instala winetricks en el host o prepara primero nndsk-ro-proton, que incluye el script. No se descargará Proton como dependencia oculta del fallback"));
+                "Instala winetricks con el administrador de paquetes del sistema y vuelve a comprobar el entorno"));
         }
     }
     checks
@@ -155,21 +148,29 @@ async fn probe_python(python: Option<std::path::PathBuf>) -> Result<(bool, bool)
 }
 
 pub(crate) fn host_blocker(checks: &[RuntimeCheck]) -> Option<String> {
-    checks
+    let errors: Vec<_> = checks
         .iter()
-        .find(|check| check.severity == RuntimeCheckSeverity::Error)
+        .filter(|check| check.severity == RuntimeCheckSeverity::Error)
         .map(|check| match &check.remediation {
             Some(remediation) => format!("{}: {}. {remediation}", check.id, check.message),
             None => format!("{}: {}", check.id, check.message),
         })
+        .collect();
+    (!errors.is_empty()).then(|| errors.join("\n"))
 }
 
-pub(super) fn apply_host_checks(status: &mut DependencyStatus, mut checks: Vec<RuntimeCheck>) {
-    if let Some(error) = host_blocker(&checks) {
-        status.ready_to_launch = false;
+pub(crate) fn apply_host_checks(status: &mut DependencyStatus, mut checks: Vec<RuntimeCheck>) {
+    if checks
+        .iter()
+        .any(|check| check.severity == RuntimeCheckSeverity::Error)
+    {
         status.can_setup = false;
-        status.runner_ok = false;
-        status.runner_warning = Some(error);
+        status.can_reset = false;
+        if checks.iter().any(|check| {
+            check.severity == RuntimeCheckSeverity::Error && !super::preparation_only(&check.id)
+        }) {
+            status.ready_to_launch = false;
+        }
     }
     checks.append(&mut status.checks);
     status.checks = checks;
@@ -200,6 +201,97 @@ mod tests {
         ));
         assert!(selection_uses_proton(Some("  "), Some("/primary/proton")));
         assert!(selection_uses_proton(None, None));
+    }
+
+    #[tokio::test]
+    async fn isolated_host_fixture() {
+        let Ok(mode) = std::env::var("RO_ENVIRONMENT_HOST_FIXTURE") else {
+            return;
+        };
+        let checks = host_checks(false, true).await;
+        for code in ["host-cabextract", "host-unzip", "host-downloader"] {
+            assert_eq!(
+                checks.iter().any(|check| check.id == code),
+                mode == "missing",
+                "{code}"
+            );
+        }
+        assert!(host_checks(false, false)
+            .await
+            .iter()
+            .all(|check| !super::super::preparation_only(&check.id)));
+        if mode == "missing" {
+            let blocker = host_blocker(&checks).unwrap();
+            assert!(
+                blocker.contains("host-cabextract")
+                    && blocker.contains("host-unzip")
+                    && blocker.contains("host-downloader")
+            );
+            assert!(super::super::preflight_preparation(
+                Some("/fixture/bin/wine"),
+                Some("/fixture/proton")
+            )
+            .await
+            .is_err());
+        }
+    }
+
+    #[test]
+    fn clean_host_checks_use_the_child_path_and_ignore_appimage_or_extra_directories() {
+        use std::os::unix::fs::PermissionsExt;
+        let root =
+            std::env::temp_dir().join(format!("ro-environment-path-{}", uuid::Uuid::new_v4()));
+        let home = root.join("home");
+        let appdir = root.join("appimage");
+        let external = root.join("external-bin");
+        for directory in [
+            home.join(".local/bin"),
+            appdir.join("usr/bin"),
+            external.clone(),
+        ] {
+            std::fs::create_dir_all(&directory).unwrap();
+        }
+        for directory in [home.join(".local/bin"), appdir.join("usr/bin")] {
+            for tool in ["cabextract", "unzip", "curl"] {
+                let path = directory.join(tool);
+                std::fs::write(&path, "#!/bin/sh\nexit 0\n").unwrap();
+                std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+            }
+        }
+        let run = |mode: &str| {
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "tools::environment::host::tests::isolated_host_fixture",
+                    "--nocapture",
+                ])
+                .env("RO_ENVIRONMENT_HOST_FIXTURE", mode)
+                .env("HOME", &home)
+                .env("XDG_DATA_HOME", home.join(".local/share"))
+                .env("XDG_CONFIG_HOME", home.join(".config"))
+                .env("APPDIR", &appdir)
+                .env(
+                    "PATH",
+                    std::env::join_paths([appdir.join("usr/bin"), external.clone()]).unwrap(),
+                )
+                .env("DISPLAY", ":fixture")
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert!(String::from_utf8_lossy(&output.stdout).contains("1 passed"));
+        };
+        run("missing");
+        for tool in ["cabextract", "unzip", "curl"] {
+            let path = external.join(tool);
+            std::fs::write(&path, "#!/bin/sh\nexit 0\n").unwrap();
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        run("available");
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

@@ -8,8 +8,9 @@ pub use managed::{
     MANAGED_RUNNER_ID, MANAGED_RUNNER_LABEL,
 };
 pub(crate) use managed::{
-    ensure_selected_runtime, is_managed_wine716_path, managed_proton_id_for_path,
-    managed_proton_path_for_id, managed_proton_ready, managed_runtime_ready_for_id,
-    managed_wine716_path, managed_wine716_ready, LEGACY_MANAGED_RUNNER_ID, LOCAL_MANAGED_RUNNER_ID,
-    MANAGED_DXVK_ID, MANAGED_WINE716_ID, MANAGED_WINE716_LABEL, UMU_ID,
+    ensure_selected_runtime, ensure_selected_runtime_for_preparation, is_managed_wine716_path,
+    managed_proton_id_for_path, managed_proton_path_for_id, managed_proton_ready,
+    managed_runtime_ready_for_id, managed_wine716_path, managed_wine716_ready,
+    LEGACY_MANAGED_RUNNER_ID, LOCAL_MANAGED_RUNNER_ID, MANAGED_DXVK_ID, MANAGED_WINE716_ID,
+    MANAGED_WINE716_LABEL, UMU_ID,
 };

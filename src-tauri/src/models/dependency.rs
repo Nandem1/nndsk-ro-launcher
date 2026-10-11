@@ -88,6 +88,8 @@ pub struct DependencyStatus {
     pub can_reset: bool,
     pub checks: Vec<RuntimeCheck>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub environment: Option<super::environment::EnvironmentAssessment>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub runtime_plan: Option<RuntimePlanSummary>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub compatibility: Option<CompatibilityStatus>,

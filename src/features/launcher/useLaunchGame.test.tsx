@@ -23,6 +23,8 @@ import { deferred } from '../../test/deferred'
 import { LaunchButton } from './LaunchButton'
 import { useSelectedRuntimeStatus } from '../settings/useSelectedRuntimeStatus'
 import { MANAGED_RUNTIME_ID } from '../../shared/constants'
+import { missingTools } from '../environment/environment.fixtures'
+import { useEnvironmentStore } from '../environment/environment.store'
 
 const {
   checkMock,
@@ -101,6 +103,7 @@ function Launcher() {
 
 describe('useLaunchGame', () => {
   beforeEach(() => {
+    useEnvironmentStore.getState().closeHelp()
     checkMock.mockReset().mockResolvedValue(readyStatus())
     runtimeClients = []
     launchMock.mockReset().mockImplementation(async (clientId: string) => {
@@ -149,6 +152,97 @@ describe('useLaunchGame', () => {
   })
 
   afterEach(cleanup)
+
+  it('opens actionable requirements without launching or starting setup and recovers after recheck', async () => {
+    checkMock.mockResolvedValue({
+      ...readyStatus(),
+      readyToLaunch: false,
+      canSetup: false,
+      canReset: false,
+      environment: missingTools,
+    })
+    render(<Launcher />)
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Resolver requisitos' }),
+    )
+    expect(
+      screen.getByRole('dialog', { name: 'Diagnóstico de SakuraRO' }),
+    ).toBeTruthy()
+    expect(setupMock).not.toHaveBeenCalled()
+    expect(launchMock).not.toHaveBeenCalled()
+    expect(useLauncherStore.getState().status).toBe('idle')
+    checkMock.mockResolvedValue({
+      ...readyStatus(),
+      readyToLaunch: false,
+      environment: {
+        ...missingTools,
+        launch: 'needsPreparation',
+        preparationAvailable: true,
+        rebuildAvailable: true,
+        issues: [],
+        actions: [{ kind: 'recheck' }, { kind: 'prepare' }],
+      },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Volver a comprobar' }))
+    expect(await screen.findByText('Listo para preparar')).toBeTruthy()
+    expect(setupMock).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar' }))
+    expect(
+      screen.getByRole('button', { name: 'Preparar entorno' }),
+    ).toBeTruthy()
+  })
+
+  it('discards environment help when the effective server configuration changes', async () => {
+    checkMock.mockResolvedValue({
+      ...readyStatus(),
+      readyToLaunch: false,
+      canSetup: false,
+      canReset: false,
+      environment: missingTools,
+    })
+    render(<Launcher />)
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Resolver requisitos' }),
+    )
+    await act(async () => {
+      useSettingsStore.setState({ selectedRunner: '/another/proton' })
+    })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(useEnvironmentStore.getState().helpContext).toBeNull()
+  })
+
+  it('preserves the previous launch failure if environment recheck fails', async () => {
+    checkMock.mockResolvedValue({
+      ...readyStatus(),
+      readyToLaunch: false,
+      canSetup: false,
+      canReset: false,
+      environment: missingTools,
+    })
+    render(<Launcher />)
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Resolver requisitos' }),
+    )
+    await act(async () => {
+      useLauncherStore.setState({
+        status: 'error',
+        error: 'La preparación anterior no pudo completarse',
+      })
+    })
+    checkMock.mockRejectedValueOnce(
+      new Error('No se pudo inspeccionar el runner'),
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Volver a comprobar' }))
+    expect(
+      await screen.findByText('No se pudo inspeccionar el runner'),
+    ).toBeTruthy()
+    expect(useLauncherStore.getState().error).toBe(
+      'La preparación anterior no pudo completarse',
+    )
+    expect(useLauncherStore.getState().status).toBe('error')
+    expect(setupMock).not.toHaveBeenCalled()
+    expect(launchMock).not.toHaveBeenCalled()
+  })
 
   it('finishes setup without launching and launches only on the next request', async () => {
     checkMock.mockResolvedValueOnce({ ...readyStatus(), readyToLaunch: false })

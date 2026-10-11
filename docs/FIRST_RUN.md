@@ -128,6 +128,11 @@ the new bounded capture is not claimed for that disabled-supervisor path.
 
 ## Host capabilities and providers
 
+El diagnóstico estructurado y sus acciones de ayuda se describen en
+[ENVIRONMENT_PREPARATION.md](ENVIRONMENT_PREPARATION.md). Los requisitos de instalación
+de Wine se muestran también en entornos ya preparados, pero afectan sólo a preparar/rearmar;
+no marcan el runner como corrupto ni bloquean por sí solos el juego.
+
 Detect capabilities before suggesting packages. Suggestions never execute privileged
 installation or change host security. A=managed/bundled, B=host, C=accidental dependency,
 D=optional feature. Passing a preflight is not equivalent to playing a game.

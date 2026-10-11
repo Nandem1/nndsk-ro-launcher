@@ -110,18 +110,47 @@ pub(crate) async fn ensure_selected_runtime(
     server_runner: Option<&str>,
     default_runner: Option<&str>,
 ) -> Result<(), String> {
-    let mut checks = crate::tools::deps::host::host_checks(
-        crate::tools::deps::host::selection_uses_proton(server_runner, default_runner),
+    let mut checks = crate::tools::environment::host::host_checks(
+        crate::tools::environment::host::selection_uses_proton(server_runner, default_runner),
         false,
     )
     .await;
-    checks.extend(crate::tools::deps::host::selected_wine716_loader_check(
-        crate::tools::deps::host::selection_uses_managed_wine716(server_runner, default_runner),
-    ));
-    if let Some(error) = crate::tools::deps::host::host_blocker(&checks) {
+    checks.extend(
+        crate::tools::environment::host::selected_wine716_loader_check(
+            crate::tools::environment::host::selection_uses_managed_wine716(
+                server_runner,
+                default_runner,
+            ),
+        ),
+    );
+    if let Some(error) = crate::tools::environment::host::host_blocker(&checks) {
         return Err(error);
     }
-    match selected_runtime_requirement(server_runner, default_runner) {
+    ensure_runtime_requirement(
+        app,
+        selected_runtime_requirement(server_runner, default_runner),
+    )
+    .await
+}
+
+pub(crate) async fn ensure_selected_runtime_for_preparation(
+    app: &AppHandle,
+    server_runner: Option<&str>,
+    default_runner: Option<&str>,
+) -> Result<(), String> {
+    crate::tools::environment::preflight_preparation(server_runner, default_runner).await?;
+    ensure_runtime_requirement(
+        app,
+        selected_runtime_requirement(server_runner, default_runner),
+    )
+    .await
+}
+
+async fn ensure_runtime_requirement(
+    app: &AppHandle,
+    requirement: RuntimeRequirement,
+) -> Result<(), String> {
+    match requirement {
         RuntimeRequirement::Managed(id) => ensure_runtime_for_id(app, Some(id)).await,
         RuntimeRequirement::ManagedWine716 => ensure_wine716(app).await,
         RuntimeRequirement::UmuOnly => ensure_runtime_for_id(app, None).await,

@@ -4,6 +4,8 @@ La documentación se divide por autoridad, no por la fase en que se implementó:
 
 - [`RO_RUNTIME_ARCHITECTURE_PLAN.md`](RO_RUNTIME_ARCHITECTURE_PLAN.md): arquitectura y operación
   vigente del runtime.
+- [`ENVIRONMENT_PREPARATION.md`](ENVIRONMENT_PREPARATION.md): diagnóstico por capacidades,
+  asistencia al usuario y evolución de la preparación del entorno.
 - [`PTRACE_SESSION_SUPERVISOR_PLAN.md`](PTRACE_SESSION_SUPERVISOR_PLAN.md): contrato detallado de
   `ro-sessiond`, memoria y lifecycle supervisado.
 - [`features/DISCORD_RICH_PRESENCE_PLAN.md`](features/DISCORD_RICH_PRESENCE_PLAN.md): diseño de la

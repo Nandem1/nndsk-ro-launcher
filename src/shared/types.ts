@@ -276,6 +276,7 @@ export interface DependencyStatus {
   canSetup: boolean
   canReset: boolean
   checks: RuntimeCheck[]
+  environment?: EnvironmentAssessment | null
   runtimePlan?: RuntimePlanSummary | null
   compatibility?: CompatibilityStatus | null
 }
@@ -321,6 +322,42 @@ export interface RuntimeCheck {
   remediation: string | null
 }
 
+export type EnvironmentDomain =
+  | 'system'
+  | 'tools'
+  | 'runner'
+  | 'prefix'
+  | 'graphics'
+  | 'feature'
+  | 'compatibility'
+
+export type EnvironmentIntent = 'launch' | 'prepare' | 'rebuild' | 'feature'
+
+export interface EnvironmentIssue {
+  code: string
+  domain: EnvironmentDomain
+  severity: RuntimeCheckSeverity
+  affects: EnvironmentIntent[]
+  title: string
+  message: string
+  remediation: string | null
+}
+
+export type EnvironmentAction =
+  | { kind: 'recheck' }
+  | { kind: 'prepare' }
+  | { kind: 'hostGuide'; family: 'arch' | 'other'; packages: string[] }
+
+export interface EnvironmentAssessment {
+  schemaVersion: 1
+  provider: 'protonTools' | 'wineHostTools'
+  launch: 'ready' | 'needsPreparation' | 'blocked'
+  preparationAvailable: boolean
+  rebuildAvailable: boolean
+  issues: EnvironmentIssue[]
+  actions: EnvironmentAction[]
+}
+
 export type AudioStatus = Pick<
   DependencyStatus,
   'audioOk' | 'audioDriver' | 'audioStack' | 'audioWarning'
@@ -360,6 +397,7 @@ export type AdvancedDepsStatus = Pick<
   | 'canSetup'
   | 'canReset'
   | 'checks'
+  | 'environment'
   | 'runtimePlan'
   | 'compatibility'
 >
