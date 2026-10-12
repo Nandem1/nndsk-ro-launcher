@@ -21,6 +21,10 @@ use commands::{
         list_runtime_benchmarks, set_runtime_benchmark_visual_check, start_runtime_benchmark_run,
     },
     deps::check_dependencies,
+    installations::{
+        cancel_installation, confirm_installation, create_installation, list_installations,
+        scan_installation_candidates, start_installation,
+    },
     launcher::{launch_game, list_game_clients, stop_all_games, stop_game},
     observations::{
         delete_runtime_observations, export_runtime_observations, list_runtime_observations,
@@ -78,6 +82,7 @@ pub fn run() {
             presence: PresenceHandle::new(memory.clone()),
             sessions: tools::runner_sessions::RunnerSessionRegistry::new(),
             memory,
+            installations: tools::installations::InstallationManager::default(),
         })
         .manage(ServerRepository::default())
         .manage(SettingsRepository)
@@ -93,6 +98,12 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             show_main_window,
+            list_installations,
+            create_installation,
+            start_installation,
+            cancel_installation,
+            scan_installation_candidates,
+            confirm_installation,
             check_dependencies,
             launch_game,
             list_game_clients,

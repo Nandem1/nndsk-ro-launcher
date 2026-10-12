@@ -4,6 +4,7 @@ pub mod benchmark;
 pub mod dependency;
 pub mod environment;
 pub mod game_client;
+pub mod installation;
 pub mod launch;
 pub mod memory;
 pub mod observation;

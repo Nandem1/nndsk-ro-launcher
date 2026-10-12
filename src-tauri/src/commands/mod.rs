@@ -6,6 +6,7 @@ pub mod autobuff;
 pub mod autopot;
 pub mod benchmarks;
 pub mod deps;
+pub mod installations;
 pub mod launcher;
 pub mod observations;
 pub mod prefix;

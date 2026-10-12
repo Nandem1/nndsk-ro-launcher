@@ -10,6 +10,7 @@ use tauri::AppHandle;
 
 use super::descriptor::{
     catalog_descriptor, ArtifactDescriptor, LOCAL_MANAGED_RUNNER_ID, MANAGED_RUNNER_ID,
+    PREVIOUS_MANAGED_RUNNER_ID,
 };
 use super::{
     artifact_cache_state_at, extract, fetch, install, runtime_dir, unique_suffix,
@@ -41,14 +42,16 @@ fn known_runtime_descriptor(path: &Path) -> Result<ArtifactDescriptor, String> {
             "El runtime debe ser un archivo regular, no un enlace, dispositivo ni FIFO".to_string(),
         );
     }
-    [MANAGED_RUNNER_ID, LOCAL_MANAGED_RUNNER_ID]
-        .into_iter()
-        .filter_map(catalog_descriptor)
-        .find(|descriptor| descriptor.expected_size == metadata.len())
-        .copied()
-        .ok_or_else(|| {
-            "El tamaño no coincide con un paquete conocido de nndsk-ro-proton".to_string()
-        })
+    [
+        MANAGED_RUNNER_ID,
+        PREVIOUS_MANAGED_RUNNER_ID,
+        LOCAL_MANAGED_RUNNER_ID,
+    ]
+    .into_iter()
+    .filter_map(catalog_descriptor)
+    .find(|descriptor| descriptor.expected_size == metadata.len())
+    .copied()
+    .ok_or_else(|| "El tamaño no coincide con un paquete conocido de nndsk-ro-proton".to_string())
 }
 
 fn import_archive_at(
@@ -578,6 +581,17 @@ mod tests {
                 ArtifactCacheState::Ready
             );
             assert!(installed.join("proton").is_file());
+            let marker = std::fs::read(installed.join(MARKER_FILE)).unwrap();
+            let identity = std::fs::read(installed.join("nndsk-runtime.json")).unwrap();
+            assert_eq!(
+                import_archive_at(&descriptor, &source, &root).unwrap(),
+                *installed
+            );
+            assert_eq!(std::fs::read(installed.join(MARKER_FILE)).unwrap(), marker);
+            assert_eq!(
+                std::fs::read(installed.join("nndsk-runtime.json")).unwrap(),
+                identity
+            );
             assert!(!std::fs::read_dir(&root).unwrap().any(|entry| entry
                 .unwrap()
                 .file_name()

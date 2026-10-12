@@ -435,6 +435,7 @@ pub(crate) enum InvocationTarget {
     MaintenancePatcher,
     OpenSetup,
     GraphicsControlPanel,
+    Installer,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -459,16 +460,17 @@ impl BaseRecipeStep {
 }
 
 impl InvocationTarget {
-    pub(super) const ALL: [Self; 5] = [
+    pub(super) const ALL: [Self; 6] = [
         Self::Game,
         Self::LaunchPatcher,
         Self::MaintenancePatcher,
         Self::OpenSetup,
         Self::GraphicsControlPanel,
+        Self::Installer,
     ];
 
     pub(super) fn receives_overlay(self) -> bool {
-        !matches!(self, Self::MaintenancePatcher)
+        !matches!(self, Self::MaintenancePatcher | Self::Installer)
     }
 }
 

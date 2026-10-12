@@ -1,11 +1,13 @@
 # First-run contract and acceptance
 
 This change is based on `baf3272aa7db850d924aa3b3348311a218fd129b` (`v0.2.0`).
-The default remains nndsk-ro-proton `0.1.0-dev.2`; Wine 7.16 Staging/TkG amd64 is
+The default at this investigation was nndsk-ro-proton `0.1.0-dev.2`; Wine 7.16 Staging/TkG amd64 is
 the separate per-server fallback. Runtime/client patches and graphics configuration
 are unchanged. The original investigation made no release/tag/version change.
 The fixes are prepared for the separately authorized `v0.2.1` patch release;
 clean-host acceptance is still pending and is not implied by cutting a release.
+The current catalog is recorded separately in [nndsk-ro-proton integration](NNDSK_RO_PROTON.md);
+the historical runtime/version evidence below is not relabelled when that catalog changes.
 
 ## Confirmed defects and fixes
 

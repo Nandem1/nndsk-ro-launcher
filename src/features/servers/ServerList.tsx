@@ -5,7 +5,11 @@ import { AddServerModal } from './AddServerModal'
 import { EditServerModal } from './EditServerModal'
 import { useServersStore } from './servers.store'
 import { Panel } from '../../shared/ui/Panel'
-import { IconButton } from '../../shared/ui/Button'
+import { Button, IconButton } from '../../shared/ui/Button'
+import { InstallationWizard } from '../installations/InstallationWizard'
+import { useInstallationTracking } from '../installations/useInstallationTracking'
+import { INSTALLATION_LABELS } from '../installations/installations.logic'
+import { useInstallationsStore } from '../installations/installations.store'
 import type { ServerConfig } from '../../shared/types'
 
 export function ServerList() {
@@ -21,6 +25,9 @@ export function ServerList() {
   } = useServersStore()
   const [showAdd, setShowAdd] = useState(false)
   const [editingServer, setEditingServer] = useState<ServerConfig | null>(null)
+  const [installationId, setInstallationId] = useState<string | null>(null)
+  const installations = useInstallationTracking()
+  const installationError = useInstallationsStore((state) => state.error)
 
   const handleOpenAdd = () => {
     clearError()
@@ -120,9 +127,41 @@ export function ServerList() {
             </div>
           ))}
         </div>
+        {installations.length > 0 && (
+          <div className="mt-3 flex flex-col gap-2 border-t border-line pt-3">
+            {installations.map((draft) => (
+              <Button
+                key={draft.id}
+                size="sm"
+                onClick={() => setInstallationId(draft.id)}
+              >
+                Retomar {draft.name} · {INSTALLATION_LABELS[draft.status]}
+              </Button>
+            ))}
+          </div>
+        )}
+        {installationError && (
+          <div className="mt-2 flex flex-col gap-1">
+            <p role="alert" className="text-caption text-bad">
+              Instalaciones: {installationError}
+            </p>
+            <Button
+              size="sm"
+              onClick={() => void useInstallationsStore.getState().load()}
+            >
+              Reintentar instalaciones
+            </Button>
+          </div>
+        )}
       </Panel>
 
       {showAdd && <AddServerModal onClose={() => setShowAdd(false)} />}
+      {installationId && (
+        <InstallationWizard
+          installationId={installationId}
+          onClose={() => setInstallationId(null)}
+        />
+      )}
       {editingServer && (
         <EditServerModal
           server={editingServer}

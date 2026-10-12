@@ -24,45 +24,48 @@ static ROLLBACK_LOG_ONCE: Once = Once::new();
 /// Called while an exclusive prefix guard is held: no other launcher program can enter.
 /// Wine services may persist, but a tool or its handoff child keeps ownership until it exits.
 pub(crate) async fn wait_for_prefix_programs(prefix: &str, supervisor: Option<ProcessIdentity>) {
-    loop {
-        let mut identities = find_prefix_processes(prefix);
-        // A handoff child may clear WINEPREFIX. The subreaper remains its stable ancestor.
-        if let Some(supervisor) = supervisor.filter(verify_process_identity) {
-            if let Ok(entries) = std::fs::read_dir("/proc") {
-                for entry in entries.flatten() {
-                    let Some(pid) = entry
-                        .file_name()
-                        .to_str()
-                        .and_then(|name| name.parse().ok())
-                    else {
-                        continue;
-                    };
-                    if pid == supervisor.pid {
-                        continue;
-                    }
-                    let Some(identity) = capture_process_identity(pid) else {
-                        continue;
-                    };
-                    if is_descendant_of(pid, supervisor.pid)
-                        && verify_process_identity(&supervisor)
-                        && verify_process_identity(&identity)
-                    {
-                        identities.push(identity);
-                    }
+    while prefix_has_active_programs(prefix, supervisor) {
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
+}
+
+pub(crate) fn prefix_has_active_programs(
+    prefix: &str,
+    supervisor: Option<ProcessIdentity>,
+) -> bool {
+    let mut identities = find_prefix_processes(prefix);
+    // A handoff child may clear WINEPREFIX. The subreaper remains its stable ancestor.
+    if let Some(supervisor) = supervisor.filter(verify_process_identity) {
+        if let Ok(entries) = std::fs::read_dir("/proc") {
+            for entry in entries.flatten() {
+                let Some(pid) = entry
+                    .file_name()
+                    .to_str()
+                    .and_then(|name| name.parse().ok())
+                else {
+                    continue;
+                };
+                if pid == supervisor.pid {
+                    continue;
+                }
+                let Some(identity) = capture_process_identity(pid) else {
+                    continue;
+                };
+                if is_descendant_of(pid, supervisor.pid)
+                    && verify_process_identity(&supervisor)
+                    && verify_process_identity(&identity)
+                {
+                    identities.push(identity);
                 }
             }
         }
-        let active = identities.into_iter().any(|identity| {
-            identity.pid != std::process::id()
-                && verify_process_identity(&identity)
-                && !is_prefix_leftover_process(identity.pid)
-                && verify_process_identity(&identity)
-        });
-        if !active {
-            return;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     }
+    identities.into_iter().any(|identity| {
+        identity.pid != std::process::id()
+            && verify_process_identity(&identity)
+            && !is_prefix_leftover_process(identity.pid)
+            && verify_process_identity(&identity)
+    })
 }
 
 pub struct RunnerOperation {

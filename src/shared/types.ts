@@ -243,10 +243,49 @@ export interface ServerConfig {
   winePrefix?: string | null
   prefixMode?: PrefixMode | null
   runner?: string | null
+  installation?: InstallationBinding | null
   launch?: LaunchConfig
   autopot?: AutopotConfig
   spammer?: SpammerConfig
   autobuff?: AutobuffConfig
+}
+
+export interface InstallationBinding {
+  installationId: string
+  prefixPath: string
+  prefixFingerprint: string
+}
+
+export type InstallationStatus =
+  | 'pending'
+  | 'preparing'
+  | 'running'
+  | 'stopping'
+  | 'awaitingClient'
+  | 'failed'
+  | 'interrupted'
+  | 'completed'
+
+export interface InstallationDraft {
+  id: string
+  serverId: string
+  name: string
+  installerPath: string
+  destinationPath: string | null
+  runner: string
+  requireWebview2: boolean
+  status: InstallationStatus
+  binding: InstallationBinding | null
+  exitCode: number | null
+  message: string | null
+}
+
+export interface CreateInstallation {
+  name: string
+  installerPath: string
+  destinationPath?: string | null
+  runner: string
+  requireWebview2: boolean
 }
 
 export interface DependencyStatus {

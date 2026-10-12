@@ -143,6 +143,12 @@ pub async fn reset_prefix(
     runner: Option<String>,
     operation_id: Option<String>,
 ) -> Result<(), String> {
+    if server
+        .as_ref()
+        .is_some_and(|server| server.installation.is_some())
+    {
+        return Err("Este servidor conserva una instalación de juego. La reconstrucción está bloqueada para proteger sus archivos y configuración; usa la reparación de componentes".into());
+    }
     let game = state.game.clone();
     let sessions = state.sessions.clone();
     prefix::run_prefix_operation(

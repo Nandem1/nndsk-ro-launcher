@@ -12,6 +12,7 @@ pub const MANAGED_RUNNER_ID: &str = artifacts::MANAGED_RUNNER_ID;
 pub const MANAGED_RUNNER_LABEL: &str = artifacts::MANAGED_RUNNER_LABEL;
 pub(crate) const LEGACY_MANAGED_RUNNER_ID: &str = artifacts::LEGACY_MANAGED_RUNNER_ID;
 pub(crate) const LOCAL_MANAGED_RUNNER_ID: &str = artifacts::LOCAL_MANAGED_RUNNER_ID;
+pub(crate) const PREVIOUS_MANAGED_RUNNER_ID: &str = artifacts::PREVIOUS_MANAGED_RUNNER_ID;
 pub(crate) const MANAGED_DXVK_ID: &str = artifacts::MANAGED_DXVK_ID;
 pub(crate) const UMU_ID: &str = artifacts::UMU_ID;
 pub(crate) const MANAGED_WINE716_ID: &str = artifacts::MANAGED_WINE716_ID;
@@ -47,6 +48,7 @@ pub(crate) fn managed_wine716_ready() -> bool {
 pub(crate) fn managed_proton_path_for_id(id: &str) -> Option<PathBuf> {
     [
         MANAGED_RUNNER_ID,
+        PREVIOUS_MANAGED_RUNNER_ID,
         LOCAL_MANAGED_RUNNER_ID,
         LEGACY_MANAGED_RUNNER_ID,
     ]
@@ -60,6 +62,7 @@ pub(crate) fn managed_proton_id_for_path(path: &Path) -> Option<&'static str> {
         |path: &Path| std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
     [
         MANAGED_RUNNER_ID,
+        PREVIOUS_MANAGED_RUNNER_ID,
         LOCAL_MANAGED_RUNNER_ID,
         LEGACY_MANAGED_RUNNER_ID,
     ]
@@ -322,6 +325,35 @@ mod tests {
                 Some(managed_proton_path().to_str().unwrap())
             ),
             RuntimeRequirement::Managed(LOCAL_MANAGED_RUNNER_ID)
+        );
+    }
+
+    #[test]
+    fn installer_release_keeps_the_previous_public_runner_selection() {
+        let previous = managed_proton_path_for_id(PREVIOUS_MANAGED_RUNNER_ID).unwrap();
+        let current = managed_proton_path();
+        assert_ne!(previous, current);
+        assert_eq!(
+            managed_proton_id_for_path(&previous),
+            Some(PREVIOUS_MANAGED_RUNNER_ID)
+        );
+        assert_eq!(
+            selected_runtime_requirement(None, Some(previous.to_str().unwrap())),
+            RuntimeRequirement::Managed(PREVIOUS_MANAGED_RUNNER_ID),
+        );
+        assert_eq!(
+            selected_runtime_requirement(
+                Some(previous.to_str().unwrap()),
+                Some(current.to_str().unwrap())
+            ),
+            RuntimeRequirement::Managed(PREVIOUS_MANAGED_RUNNER_ID),
+        );
+        assert_eq!(
+            selected_runtime_requirement(
+                Some(current.to_str().unwrap()),
+                Some(previous.to_str().unwrap())
+            ),
+            RuntimeRequirement::Managed(MANAGED_RUNNER_ID),
         );
     }
 

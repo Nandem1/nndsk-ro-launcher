@@ -26,6 +26,8 @@ import type {
   ToolKind,
   UninstallDgVoodooResult,
   UpdateSnapshot,
+  CreateInstallation,
+  InstallationDraft,
 } from './types'
 import {
   validateAppSettings,
@@ -38,6 +40,26 @@ function assertValid(error: string | null): void {
 }
 
 export const api = {
+  listInstallations: () => invoke<InstallationDraft[]>('list_installations'),
+  createInstallation: (input: CreateInstallation) =>
+    invoke<InstallationDraft>('create_installation', { input }),
+  startInstallation: (id: string) =>
+    invoke<InstallationDraft>('start_installation', { id }),
+  cancelInstallation: (id: string) =>
+    invoke<InstallationDraft>('cancel_installation', { id }),
+  scanInstallationCandidates: (id: string) =>
+    invoke<string[]>('scan_installation_candidates', { id }),
+  confirmInstallation: (
+    id: string,
+    executablePath: string,
+    patcherPath: string | null,
+  ) =>
+    invoke<ServerConfig>('confirm_installation', {
+      id,
+      executablePath,
+      patcherPath,
+    }),
+
   checkDependencies: (
     server: ServerConfig | null,
     runner: string | null = null,

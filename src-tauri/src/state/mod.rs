@@ -39,6 +39,7 @@ pub struct GameState {
     pub presence: PresenceHandle,
     pub sessions: RunnerSessionRegistry,
     pub memory: MemorySessionRegistry,
+    pub installations: crate::tools::installations::InstallationManager,
 }
 
 pub struct ServerRepository {
@@ -56,6 +57,43 @@ impl Default for ServerRepository {
 }
 
 impl ServerRepository {
+    pub fn insert_installed(
+        &self,
+        server: ServerConfig,
+        notices: &StorageNotices,
+    ) -> Result<ServerConfig, String> {
+        if server.installation.is_none() {
+            return Err("El servidor no tiene una instalación verificada".into());
+        }
+        server.validate_executable_available()?;
+        let _guard = self
+            .lock
+            .lock()
+            .map_err(|_| "El repositorio de servidores está bloqueado")?;
+        let loaded = load_json_recovering(&self.path, |servers: &Vec<ServerConfig>| {
+            validate_servers(servers)
+        })?;
+        notices.record_status(
+            loaded.status,
+            StorageNoticeSource::Servers,
+            "La configuración de servidores fue migrada al formato actual",
+            "Se recuperaron los servidores desde el backup; el archivo dañado fue preservado",
+        )?;
+        let mut servers = loaded.value;
+        if let Some(existing) = servers.iter().find(|existing| existing.id == server.id) {
+            if existing.installation == server.installation {
+                return Ok(existing.clone());
+            }
+            return Err(
+                "El identificador ya pertenece a otro servidor; se conservó su configuración"
+                    .into(),
+            );
+        }
+        servers.push(server.clone());
+        crate::utils::write_json(&self.path, &servers)?;
+        Ok(server)
+    }
+
     pub fn list(&self, notices: &StorageNotices) -> Result<Vec<ServerConfig>, String> {
         let _guard = self
             .lock
@@ -241,6 +279,42 @@ mod tests {
         assert_eq!(drained.len(), 1);
         assert_eq!(drained[0].kind, StorageNoticeKind::Migrated);
         assert!(notices.take().unwrap().is_empty());
+    }
+
+    #[test]
+    fn installation_confirmation_is_idempotent_and_preserves_existing_edits() {
+        let path = test_path("installation");
+        let root = path.parent().unwrap();
+        let exe = root.join("client.exe");
+        fs::write(&exe, b"fixture").unwrap();
+        let mut installed = server("installed-test");
+        installed.executable_path = exe.to_string_lossy().into();
+        installed.runner = Some("/managed/proton".into());
+        installed.installation = Some(crate::models::installation::InstallationBinding {
+            installation_id: uuid::Uuid::new_v4().to_string(),
+            prefix_path: root.join("prefix").to_string_lossy().into(),
+            prefix_fingerprint: "a".repeat(64),
+        });
+        let repository = repository(path.clone());
+        let notices = StorageNotices::default();
+        repository
+            .insert_installed(installed.clone(), &notices)
+            .unwrap();
+        let mut edited = installed.clone();
+        edited.name = "User edit".into();
+        repository.save(&[edited]).unwrap();
+        assert_eq!(
+            repository
+                .insert_installed(installed.clone(), &notices)
+                .unwrap()
+                .name,
+            "User edit"
+        );
+        assert_eq!(repository.list(&notices).unwrap().len(), 1);
+        installed.installation.as_mut().unwrap().installation_id = uuid::Uuid::new_v4().to_string();
+        assert!(repository.insert_installed(installed, &notices).is_err());
+        assert_eq!(repository.list(&notices).unwrap()[0].name, "User edit");
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

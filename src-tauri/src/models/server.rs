@@ -23,6 +23,8 @@ pub struct ServerConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prefix_mode: Option<PrefixMode>,
     pub runner: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub installation: Option<super::installation::InstallationBinding>,
     #[serde(default, skip_serializing_if = "LaunchConfig::is_default")]
     pub launch: LaunchConfig,
     #[serde(default)]
@@ -38,6 +40,16 @@ impl ServerConfig {
         validate_required("El identificador del servidor", &self.id, 128)?;
         validate_required("El nombre del servidor", &self.name, 80)?;
         validate_exe_path("El ejecutable del cliente", &self.executable_path)?;
+        if let Some(installation) = &self.installation {
+            installation.validate()?;
+            if self
+                .runner
+                .as_deref()
+                .is_none_or(|runner| runner.trim().is_empty())
+            {
+                return Err("Un servidor instalado debe conservar su runner".into());
+            }
+        }
 
         if let Some(patcher_path) = &self.patcher_path {
             validate_exe_path("El patcher", patcher_path)?;
@@ -179,6 +191,7 @@ mod tests {
             wine_prefix: None,
             prefix_mode: None,
             runner: None,
+            installation: None,
             launch: Default::default(),
             autopot: Default::default(),
             spammer: Default::default(),

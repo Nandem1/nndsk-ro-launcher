@@ -5,8 +5,8 @@ import { resolveRunnerAfterLoad } from './settings.logic'
 
 const proton: RunnerInfo = {
   id: MANAGED_RUNTIME_ID,
-  name: 'nndsk-ro-proton 0.1.0-dev.2',
-  path: '/home/user/.local/share/ro-launcher/runtime/nndsk-ro-proton-0.1.0-dev.2/proton',
+  name: 'nndsk-ro-proton 0.1.0-dev.3',
+  path: '/home/user/.local/share/ro-launcher/runtime/nndsk-ro-proton-0.1.0-dev.3/proton',
 }
 
 const runners = [proton]
@@ -19,7 +19,7 @@ describe('resolveRunnerAfterLoad', () => {
       persist: false,
     })
   })
-  it('no migra una selección dev.1 al paquete público dev.2', () => {
+  it('no migra una selección dev.1 al paquete público dev.3', () => {
     const preserved: RunnerInfo = {
       id: 'nndsk-ro-proton-0.1.0-dev.1',
       name: 'nndsk-ro-proton 0.1.0-dev.1 · local anterior',
@@ -32,6 +32,17 @@ describe('resolveRunnerAfterLoad', () => {
       },
     )
     expect(resolveRunnerAfterLoad('', [preserved, proton])).toEqual({
+      path: proton.path,
+      persist: true,
+    })
+  })
+  it('conserva dev.2 aunque dev.3 sea la única versión ofrecida', () => {
+    const previous = '/runtime/nndsk-ro-proton-0.1.0-dev.2/proton'
+    expect(resolveRunnerAfterLoad(previous, runners)).toEqual({
+      path: previous,
+      persist: false,
+    })
+    expect(resolveRunnerAfterLoad('', runners)).toEqual({
       path: proton.path,
       persist: true,
     })

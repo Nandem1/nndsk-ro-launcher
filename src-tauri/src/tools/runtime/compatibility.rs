@@ -5,7 +5,7 @@ use crate::models::dependency::{
 use crate::tools::prefix::MANAGED_DXVK_COMPONENT;
 use crate::tools::runners::{
     managed_proton_id_for_path, LEGACY_MANAGED_RUNNER_ID, LOCAL_MANAGED_RUNNER_ID,
-    MANAGED_RUNNER_ID,
+    PREVIOUS_MANAGED_RUNNER_ID,
 };
 use crate::tools::server_tools::{
     GepardInspection, GepardRunnerProfile, GEPARD_HONEY_SHA256, GEPARD_SAKURA_SHA256,
@@ -248,7 +248,9 @@ pub(crate) fn observed_runtime_spec(
             return None;
         }
         return match path_id {
-            MANAGED_RUNNER_ID | LOCAL_MANAGED_RUNNER_ID => {
+            // dev.2 was a notice-only revision of the validated dev.1 code.
+            // dev.3 changes ncrypt; installer acceptance is not game/Gepard evidence.
+            PREVIOUS_MANAGED_RUNNER_ID | LOCAL_MANAGED_RUNNER_ID => {
                 Some(CompatibilityRuntimeSpec::ManagedNndskRoProton)
             }
             LEGACY_MANAGED_RUNNER_ID => Some(CompatibilityRuntimeSpec::ManagedProtonCachyos11),
@@ -654,8 +656,8 @@ mod tests {
     }
 
     #[test]
-    fn honey_hash_managed_proton_validated() {
-        let proton_path = managed_proton_path();
+    fn honey_hash_previous_managed_proton_keeps_its_validation() {
+        let proton_path = managed_proton_path_for_id(PREVIOUS_MANAGED_RUNNER_ID).unwrap();
         let runner = ResolvedRunner::test_proton(
             proton_path.clone(),
             proton_path.parent().unwrap().to_path_buf(),
@@ -689,6 +691,33 @@ mod tests {
             .unwrap()
             .message
             .contains("Validated nndsk-ro-proton"));
+    }
+
+    #[test]
+    fn installer_revision_does_not_inherit_historical_game_validation() {
+        let proton_path = managed_proton_path();
+        let runner = ResolvedRunner::test_proton(
+            proton_path.clone(),
+            proton_path.parent().unwrap().to_path_buf(),
+            PathBuf::from("/usr/bin/umu-run"),
+        );
+        let probe = probe_runner(&runner);
+        let plan = resolve_plan(&runner, false, &probe);
+        let snapshot = assess_compatibility(
+            &SubjectObservation::Hash {
+                sha256_lowercase: GEPARD_HONEY_SHA256.into(),
+            },
+            Some(&AssessedRuntime {
+                plan: &plan,
+                probe: &probe,
+            }),
+        );
+        assert_eq!(snapshot.assessment, CompatibilityAssessment::Unknown);
+        assert_eq!(plan.runner().resolved().runner_path(), proton_path);
+        assert!(!gepard_runtime_check(&snapshot)
+            .unwrap()
+            .message
+            .contains("Validated"));
     }
 
     #[test]

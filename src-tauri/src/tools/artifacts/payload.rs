@@ -4,7 +4,8 @@ use std::path::{Component, Path};
 use serde::Deserialize;
 
 use super::descriptor::{
-    ArtifactDescriptor, ExpectedDigest, PayloadValidatorId, NNDSK_RUNTIME_SOURCE_COMMIT,
+    ArtifactDescriptor, ExpectedDigest, PayloadValidatorId, NNDSK_DEV3_SOURCE_COMMIT,
+    NNDSK_RUNTIME_SOURCE_COMMIT,
 };
 
 pub(crate) const DXVK_DLLS: [&str; 5] = [
@@ -29,7 +30,18 @@ pub(crate) fn payload_ready(descriptor: &ArtifactDescriptor, root: &Path) -> boo
                         let path = root.join(entrypoint);
                         regular_path_inside_root(root, &path) && is_executable(&path)
                     })
-                && nndsk_manifest_ready(root, &NNDSK_MODULES, descriptor.version)
+                && match descriptor.version {
+                    "0.1.0-dev.1" | "0.1.0-dev.2" => {
+                        nndsk_manifest_ready(root, &NNDSK_MODULES, &[], descriptor.version)
+                    }
+                    "0.1.0-dev.3" => nndsk_manifest_ready(
+                        root,
+                        &NNDSK_DEV3_MODULES,
+                        &NNDSK_DEV3_ASSETS,
+                        descriptor.version,
+                    ),
+                    _ => false,
+                }
         }
     }
 }
@@ -136,6 +148,47 @@ const NNDSK_MODULES: [ModuleIdentity; 6] = [
     },
 ];
 
+// dev.3 keeps the four crypt32/ntdll modules byte-identical to dev.1/dev.2.
+const NNDSK_DEV3_MODULES: [ModuleIdentity; 6] = [
+    NNDSK_MODULES[0],
+    NNDSK_MODULES[1],
+    ModuleIdentity {
+        path: "files/lib/wine/i386-windows/ncrypt.dll",
+        sha256: "558510b5b41efe47c324eccb03eb759f8c43f7d2cbcc8c3d215eb6b9ba1fd829",
+        size: 155_648,
+        mode: 0o555,
+    },
+    NNDSK_MODULES[3],
+    NNDSK_MODULES[4],
+    ModuleIdentity {
+        path: "files/lib/wine/x86_64-windows/ncrypt.dll",
+        sha256: "53605884bfca9676d098bf35077461ee8f2e663b694f68374e0bdde60d57855d",
+        size: 180_224,
+        mode: 0o555,
+    },
+];
+
+const NNDSK_DEV3_ASSETS: [ModuleIdentity; 3] = [
+    ModuleIdentity {
+        path: "proton",
+        sha256: "8a2f685fdfdc8753cc1a9503e141f893cb907c18a561f2d5ee33c3aa1c9abd71",
+        size: 112_641,
+        mode: 0o755,
+    },
+    ModuleIdentity {
+        path: "nndsk_volume_aliases.py",
+        sha256: "5174a32911482fa7ac5335bebfed83e1c94e80dffca9db46ce3b0d26d85635f3",
+        size: 2_669,
+        mode: 0o644,
+    },
+    ModuleIdentity {
+        path: "files/share/nndsk/c-volume-query.exe",
+        sha256: "8b6132e7a7af5bac3d71a1712b007bc605c9b52bc4361a29a1811197b66b908e",
+        size: 2_560,
+        mode: 0o555,
+    },
+];
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct NndskManifest {
@@ -148,6 +201,8 @@ struct NndskManifest {
     architectures: Vec<String>,
     entrypoints: BTreeMap<String, String>,
     modified_modules: BTreeMap<String, ManifestModule>,
+    #[serde(default)]
+    compatibility_assets: BTreeMap<String, ManifestModule>,
     upstream: ManifestUpstream,
 }
 
@@ -170,8 +225,19 @@ struct ManifestSource {
     repository: String,
 }
 
-fn nndsk_manifest_ready(root: &Path, modules: &[ModuleIdentity], expected_version: &str) -> bool {
+fn nndsk_manifest_ready(
+    root: &Path,
+    modules: &[ModuleIdentity],
+    assets: &[ModuleIdentity],
+    expected_version: &str,
+) -> bool {
     use std::os::unix::fs::PermissionsExt;
+
+    let (source_commit, revision) = match expected_version {
+        "0.1.0-dev.1" | "0.1.0-dev.2" => (NNDSK_RUNTIME_SOURCE_COMMIT, 1),
+        "0.1.0-dev.3" => (NNDSK_DEV3_SOURCE_COMMIT, 2),
+        _ => return false,
+    };
 
     let manifest_path = root.join("nndsk-runtime.json");
     if !regular_path_inside_root(root, &manifest_path)
@@ -197,8 +263,8 @@ fn nndsk_manifest_ready(root: &Path, modules: &[ModuleIdentity], expected_versio
     if manifest.schema_version != 1
         || manifest.runtime_id != "nndsk-ro-proton"
         || manifest.version != expected_version
-        || manifest.source_commit != NNDSK_RUNTIME_SOURCE_COMMIT
-        || manifest.patchset_revision != 1
+        || manifest.source_commit != source_commit
+        || manifest.patchset_revision != revision
         || !manifest.requires_verified_dos_launch_path
         || architectures != expected_architectures
         || manifest.architectures.len() != expected_architectures.len()
@@ -208,28 +274,37 @@ fn nndsk_manifest_ready(root: &Path, modules: &[ModuleIdentity], expected_versio
         || manifest.upstream.wine.commit != "b5f2dc7b5906ef864f83df8fef94c9f539eaad2d"
         || manifest.upstream.wine.repository != "https://github.com/CachyOS/wine-cachyos.git"
         || manifest.modified_modules.len() != modules.len()
+        || manifest.compatibility_assets.len() != assets.len()
     {
         return false;
     }
-    modules.iter().all(|expected| {
-        let Some(record) = manifest.modified_modules.get(expected.path) else {
-            return false;
-        };
-        if record.sha256 != expected.sha256
-            || record.size != expected.size
-            || record.mode != expected.mode
-        {
-            return false;
-        }
-        let path = root.join(expected.path);
-        regular_path_inside_root(root, &path)
-            && path.metadata().is_ok_and(|metadata| {
-                metadata.len() == expected.size
-                    && metadata.permissions().mode() & 0o777 == expected.mode
-            })
-            && super::fetch::digest_file(&path, ExpectedDigest::Sha256(expected.sha256))
-                .is_ok_and(|digest| digest == expected.sha256)
-    })
+    modules
+        .iter()
+        .map(|module| (&manifest.modified_modules, module))
+        .chain(
+            assets
+                .iter()
+                .map(|asset| (&manifest.compatibility_assets, asset)),
+        )
+        .all(|(records, expected)| {
+            let Some(record) = records.get(expected.path) else {
+                return false;
+            };
+            if record.sha256 != expected.sha256
+                || record.size != expected.size
+                || record.mode != expected.mode
+            {
+                return false;
+            }
+            let path = root.join(expected.path);
+            regular_path_inside_root(root, &path)
+                && path.metadata().is_ok_and(|metadata| {
+                    metadata.len() == expected.size
+                        && metadata.permissions().mode() & 0o7777 == expected.mode
+                })
+                && super::fetch::digest_file(&path, ExpectedDigest::Sha256(expected.sha256))
+                    .is_ok_and(|digest| digest == expected.sha256)
+        })
 }
 
 fn regular_path_inside_root(root: &Path, path: &Path) -> bool {
@@ -488,7 +563,7 @@ mod tests {
             .unwrap();
         }
         fn ready(&self) -> bool {
-            nndsk_manifest_ready(&self.root, &self.modules, "0.1.0-dev.1")
+            nndsk_manifest_ready(&self.root, &self.modules, &[], "0.1.0-dev.1")
         }
     }
 
@@ -523,6 +598,7 @@ mod tests {
         assert!(!nndsk_manifest_ready(
             &fixture.root,
             &fixture.modules,
+            &[],
             "0.1.0-dev.2"
         ));
         fixture.manifest["version"] = "0.1.0-dev.2".into();
@@ -530,6 +606,7 @@ mod tests {
         assert!(nndsk_manifest_ready(
             &fixture.root,
             &fixture.modules,
+            &[],
             "0.1.0-dev.2"
         ));
         assert!(!fixture.ready());
@@ -539,6 +616,7 @@ mod tests {
         assert!(!nndsk_manifest_ready(
             &fixture.root,
             &fixture.modules,
+            &[],
             "0.1.0-dev.2"
         ));
     }
@@ -561,6 +639,104 @@ mod tests {
         std::fs::rename(parent, &renamed).unwrap();
         std::os::unix::fs::symlink(&renamed, parent).unwrap();
         assert!(!fixture.ready());
+    }
+
+    #[test]
+    fn installer_revision_keeps_crypt32_ntdll_and_replaces_only_ncrypt() {
+        for index in [0, 1, 3, 4] {
+            assert_eq!(
+                NNDSK_MODULES[index].sha256,
+                NNDSK_DEV3_MODULES[index].sha256
+            );
+            assert_eq!(NNDSK_MODULES[index].size, NNDSK_DEV3_MODULES[index].size);
+        }
+        for index in [2, 5] {
+            assert_eq!(NNDSK_MODULES[index].path, NNDSK_DEV3_MODULES[index].path);
+            assert_ne!(
+                NNDSK_MODULES[index].sha256,
+                NNDSK_DEV3_MODULES[index].sha256
+            );
+        }
+    }
+
+    #[test]
+    fn installer_revision_binds_new_source_revision_and_exact_compatibility_assets() {
+        use sha2::{Digest, Sha256};
+        let mut fixture = ManifestFixture::new();
+        fixture.manifest["version"] = "0.1.0-dev.3".into();
+        let digest = Box::leak(format!("{:x}", Sha256::digest(b"asset")).into_boxed_str());
+        let assets: Vec<_> = NNDSK_DEV3_ASSETS
+            .iter()
+            .map(|asset| ModuleIdentity {
+                path: asset.path,
+                sha256: digest,
+                size: 5,
+                mode: asset.mode,
+            })
+            .collect();
+        let mut records = serde_json::Map::new();
+        for asset in &assets {
+            let path = fixture.root.join(asset.path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, b"asset").unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(asset.mode)).unwrap();
+            records.insert(
+                asset.path.into(),
+                serde_json::json!({"sha256": asset.sha256, "size": asset.size, "mode": asset.mode}),
+            );
+        }
+        fixture.manifest["compatibilityAssets"] = records.clone().into();
+        fixture.save();
+        let ready = |fixture: &ManifestFixture| {
+            nndsk_manifest_ready(&fixture.root, &fixture.modules, &assets, "0.1.0-dev.3")
+        };
+        // Relabelling an old source/revision is insufficient, even with the helper files.
+        assert!(!ready(&fixture));
+        fixture.manifest["sourceCommit"] = NNDSK_DEV3_SOURCE_COMMIT.into();
+        fixture.save();
+        assert!(!ready(&fixture));
+        fixture.manifest["patchsetRevision"] = 2.into();
+        fixture.save();
+        assert!(ready(&fixture));
+        assert!(!nndsk_manifest_ready(
+            &fixture.root,
+            &fixture.modules,
+            &assets,
+            "0.1.0-dev.99"
+        ));
+
+        for asset in &assets {
+            fixture.manifest["compatibilityAssets"]
+                .as_object_mut()
+                .unwrap()
+                .remove(asset.path);
+            fixture.save();
+            assert!(!ready(&fixture));
+            fixture.manifest["compatibilityAssets"] = records.clone().into();
+            fixture.save();
+            let path = fixture.root.join(asset.path);
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(asset.mode | 0o4000))
+                .unwrap();
+            assert!(!ready(&fixture));
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+            std::fs::write(&path, b"other").unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(asset.mode)).unwrap();
+            assert!(!ready(&fixture));
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+            std::fs::write(&path, b"asset").unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(asset.mode)).unwrap();
+            let saved = path.with_extension("preserved");
+            std::fs::rename(&path, &saved).unwrap();
+            std::os::unix::fs::symlink(&saved, &path).unwrap();
+            assert!(!ready(&fixture));
+            std::fs::remove_file(&path).unwrap();
+            std::fs::rename(&saved, &path).unwrap();
+            assert!(ready(&fixture));
+        }
+        fixture.manifest["compatibilityAssets"]["unexpected.py"] =
+            serde_json::json!({"sha256": digest, "size": 5, "mode": 420});
+        fixture.save();
+        assert!(!ready(&fixture));
     }
 
     #[test]

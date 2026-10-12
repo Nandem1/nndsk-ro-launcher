@@ -20,6 +20,7 @@ pub mod deps;
 pub(crate) mod environment;
 mod game_pid;
 pub mod input;
+pub mod installations;
 pub mod launcher;
 pub mod memory_sessions;
 pub mod prefix;

@@ -43,7 +43,7 @@ pub(crate) use encode::server_path_token16;
 pub(crate) use environment::GraphicsEnvironmentError;
 pub(crate) use host_gpu::probe_host_gpu;
 pub(crate) use identity::{
-    prefix_v3_write_enabled, resolve_prefix_binding,
+    prefix_v3_write_enabled, resolve_installation_prefix_binding, resolve_prefix_binding,
     resolve_prefix_binding_for_managed_descriptor_id, PrefixBinding, PrefixIdentityStatus,
 };
 pub(crate) use inspection::inspect_subject;

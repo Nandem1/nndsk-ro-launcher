@@ -25,6 +25,7 @@ interface Props {
   server?: ServerConfig
   onSave: (fields: ServerConfigFields) => Promise<void>
   onClose: () => void
+  onInstall?: () => void
 }
 
 const STRATEGY_OPTIONS = [
@@ -150,7 +151,13 @@ function ArgEditor({
   )
 }
 
-export function ServerConfigModal({ mode, server, onSave, onClose }: Props) {
+export function ServerConfigModal({
+  mode,
+  server,
+  onSave,
+  onClose,
+  onInstall,
+}: Props) {
   const titleId = useId()
   const formId = useId()
   const [draft, setDraft] = useState<ServerConfigDraft>(() =>
@@ -272,7 +279,14 @@ export function ServerConfigModal({ mode, server, onSave, onClose }: Props) {
           className="min-h-0 overflow-y-auto px-6 py-4 flex flex-col gap-5"
         >
           <section className="flex flex-col gap-3">
-            <h4 className="text-detail font-sans text-muted">Cliente</h4>
+            <div className="flex items-center justify-between gap-3">
+              <h4 className="text-detail font-sans text-muted">Cliente</h4>
+              {mode === 'add' && onInstall && (
+                <Button size="sm" onClick={onInstall} disabled={busy}>
+                  Tengo un instalador
+                </Button>
+              )}
+            </div>
             <label className="flex flex-col gap-1.5">
               <FieldLabel>Nombre</FieldLabel>
               <TextInput
@@ -318,7 +332,14 @@ export function ServerConfigModal({ mode, server, onSave, onClose }: Props) {
                 value={draft.runner}
                 options={runnerOptions}
                 onChange={(value) => setField('runner', value)}
+                disabled={!!server?.installation}
               />
+              {server?.installation && (
+                <p className="text-caption leading-relaxed text-muted">
+                  Este cliente conserva el entorno de su instalación. Para usar
+                  otro runner, realiza una instalación nueva.
+                </p>
+              )}
               <p className="text-caption leading-relaxed text-muted">
                 Al fijar uno, el launcher usa un prefix distinto para cada
                 runner. El entorno anterior no se modifica.

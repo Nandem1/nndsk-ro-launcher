@@ -12,5 +12,5 @@ pub(crate) use managed::{
     managed_proton_id_for_path, managed_proton_path_for_id, managed_proton_ready,
     managed_runtime_ready_for_id, managed_wine716_path, managed_wine716_ready,
     LEGACY_MANAGED_RUNNER_ID, LOCAL_MANAGED_RUNNER_ID, MANAGED_DXVK_ID, MANAGED_WINE716_ID,
-    MANAGED_WINE716_LABEL, UMU_ID,
+    MANAGED_WINE716_LABEL, PREVIOUS_MANAGED_RUNNER_ID, UMU_ID,
 };

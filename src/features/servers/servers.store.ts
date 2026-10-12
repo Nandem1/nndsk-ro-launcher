@@ -21,6 +21,11 @@ interface ServersState {
   loadServers: () => Promise<boolean>
   selectServer: (id: string) => void
   addServer: (server: ServerConfig) => Promise<void>
+  registerInstallation: (
+    id: string,
+    executablePath: string,
+    patcherPath: string | null,
+  ) => Promise<void>
   removeServer: (id: string) => Promise<void>
   updateServer: (
     id: string,
@@ -31,8 +36,27 @@ interface ServersState {
   getSelected: () => ServerConfig | null
 }
 
-const persistence = new LatestSnapshotWriter<ServerConfig[]>((servers) =>
-  api.saveServers(servers),
+let diskTail: Promise<void> | null = null
+
+/** Confirmation and snapshot writes share one queue. A stale write cannot remove a
+ * server inserted by the backend, even if the modal disappears during confirmation. */
+function serializeDiskOperation<T>(operation: () => Promise<T>): Promise<T> {
+  const work = diskTail ? diskTail.then(operation) : operation()
+  const settled = work.then(
+    () => {},
+    () => {},
+  )
+  diskTail = settled
+  void settled.then(() => {
+    if (diskTail === settled) diskTail = null
+  })
+  return work
+}
+
+const persistence = new LatestSnapshotWriter<ServerConfig[]>(() =>
+  serializeDiskOperation(() =>
+    api.saveServers(useServersStore.getState().servers),
+  ),
 )
 let loadGeneration = 0
 let editGeneration = 0
@@ -79,6 +103,50 @@ export const useServersStore = create<ServersState>((set, get) => ({
   },
 
   selectServer: (id) => set({ selectedId: id }),
+
+  registerInstallation: async (id, executablePath, patcherPath) => {
+    // Drain earlier snapshot writes before the backend inserts the completed server.
+    await persistence.write(get().servers)
+    await serializeDiskOperation(async () => {
+      let server: ServerConfig
+      try {
+        server = await api.confirmInstallation(id, executablePath, patcherPath)
+      } catch (error) {
+        // The backend saves the server before completing the draft. Recover that
+        // durable insert before queued local edits can overwrite the server file.
+        const recovered = await runSafely(() => api.listServers())
+        const installed = recovered.ok
+          ? recovered.value.find(
+              (item) => item.installation?.installationId === id,
+            )
+          : undefined
+        if (
+          installed &&
+          !get().servers.some((item) => item.id === installed.id)
+        ) {
+          ++editGeneration
+          set((state) => ({ servers: [...state.servers, installed] }))
+        }
+        throw error
+      }
+      ++editGeneration
+      set((state) => ({
+        servers: state.servers.some((item) => item.id === server.id)
+          ? state.servers.map((item) => {
+              if (item.id !== server.id) return item
+              return item.installation?.installationId ===
+                server.installation?.installationId
+                ? item
+                : server
+            })
+          : [...state.servers, server],
+        selectedId: server.id,
+        error: null,
+      }))
+    })
+    // Merge edits made while confirmation was in flight into the newest snapshot.
+    await persistence.write(get().servers)
+  },
 
   addServer: async (server) => {
     const generation = ++editGeneration

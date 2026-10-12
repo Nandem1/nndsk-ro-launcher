@@ -5,7 +5,10 @@ use tokio::process::Command;
 
 use crate::models::server::ServerConfig;
 use crate::tools::runners::{managed_proton_path, managed_umu_path};
-use crate::tools::runtime::{probe_runner, resolve_prefix_binding, PrefixBinding, RunnerProbe};
+use crate::tools::runtime::{
+    probe_runner, resolve_installation_prefix_binding, resolve_prefix_binding, PrefixBinding,
+    RunnerProbe,
+};
 use crate::utils::{
     apply_prefix_env, ensure_custom_setup_allowed, ensure_managed_path_safe, find_umu_run,
     inspect_prefix, is_executable_file, manifest_matches_runner, manifest_matches_stored_location,
@@ -982,6 +985,9 @@ pub async fn resolve_server_wine_context_with_runner(
     let resolved = resolve_effective_runner(selected_runner).await?;
     let probe = probe_runner(&resolved);
     let identity = resolve_prefix_binding(server, &resolved, &probe, resolved.is_wine_7_16())?;
+    if let Some(binding) = server.and_then(|server| server.installation.as_ref()) {
+        validate_installation_context(binding, &identity)?;
+    }
     let location = identity.location.clone();
     Ok(WineContext {
         prefix: location.path.clone(),
@@ -990,6 +996,37 @@ pub async fn resolve_server_wine_context_with_runner(
         identity,
         probe,
     })
+}
+
+pub async fn resolve_installation_wine_context(
+    server_id: &str,
+    runner: &str,
+) -> Result<WineContext, String> {
+    let resolved = resolve_effective_runner(Some(runner.to_string())).await?;
+    let probe = probe_runner(&resolved);
+    let identity = resolve_installation_prefix_binding(server_id, &resolved, &probe)?;
+    let location = identity.location.clone();
+    Ok(WineContext {
+        prefix: location.path.clone(),
+        location,
+        resolved,
+        identity,
+        probe,
+    })
+}
+
+pub(crate) fn validate_installation_context(
+    binding: &crate::models::installation::InstallationBinding,
+    identity: &PrefixBinding,
+) -> Result<(), String> {
+    let canonical =
+        |path: &str| std::fs::canonicalize(path).unwrap_or_else(|_| PathBuf::from(path));
+    if canonical(&binding.prefix_path) != canonical(&identity.location.path)
+        || binding.prefix_fingerprint != identity.desired_fingerprint.digest.hex_digest()
+    {
+        return Err("Este cliente requiere el entorno donde fue instalado. Conserva su runner; otro entorno necesita una instalación nueva".into());
+    }
+    Ok(())
 }
 
 fn select_effective_runner(

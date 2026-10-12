@@ -293,6 +293,7 @@ await page.addInitScript(() => {
     load_settings: { defaultRunner: runner.path, richPresenceEnabled: false },
     list_runners: [runner],
     list_game_clients: [],
+    list_installations: [],
     list_client_profiles: [],
     take_storage_notices: [],
     list_runtime_observations: [],

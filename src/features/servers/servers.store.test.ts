@@ -112,4 +112,78 @@ describe('servers store', () => {
     await read
     expect(useServersStore.getState().servers[0].name).toBe('New')
   })
+
+  it('merges edits made while an installation is registered without duplicating its server', async () => {
+    const pending = deferred<ServerConfig>()
+    const installed = {
+      ...server,
+      id: 'installed-1',
+      name: 'Installed',
+      installation: {
+        installationId: 'install-1',
+        prefixPath: '/prefix/installed',
+        prefixFingerprint: 'a'.repeat(64),
+      },
+    }
+    const save = vi.spyOn(api, 'saveServers').mockResolvedValue()
+    const confirm = vi
+      .spyOn(api, 'confirmInstallation')
+      .mockReturnValue(pending.promise)
+    const registration = useServersStore
+      .getState()
+      .registerInstallation('install-1', installed.executablePath, null)
+    await vi.waitFor(() => expect(confirm).toHaveBeenCalledOnce())
+    const edit = useServersStore
+      .getState()
+      .updateServer(server.id, { name: 'Edited during installation' })
+    // No snapshot may race the backend's insert while confirmation is pending.
+    expect(save).toHaveBeenCalledTimes(1)
+    pending.resolve(installed)
+    await Promise.all([registration, edit])
+    expect(useServersStore.getState().servers).toEqual([
+      { ...server, name: 'Edited during installation' },
+      installed,
+    ])
+    await useServersStore
+      .getState()
+      .updateServer(installed.id, { name: 'Customized' })
+    await useServersStore
+      .getState()
+      .registerInstallation('install-1', installed.executablePath, null)
+    expect(useServersStore.getState().servers).toHaveLength(2)
+    expect(useServersStore.getState().servers[1].name).toBe('Customized')
+    expect(save.mock.lastCall?.[0]).toEqual(useServersStore.getState().servers)
+  })
+
+  it('preserves a durable installation insert if completing its draft fails', async () => {
+    const pending = deferred<ServerConfig>()
+    const installed: ServerConfig = {
+      ...server,
+      id: 'installed-partial',
+      installation: {
+        installationId: 'install-partial',
+        prefixPath: '/prefix/partial',
+        prefixFingerprint: 'b'.repeat(64),
+      },
+    }
+    const save = vi.spyOn(api, 'saveServers').mockResolvedValue()
+    const confirm = vi
+      .spyOn(api, 'confirmInstallation')
+      .mockReturnValue(pending.promise)
+    vi.spyOn(api, 'listServers').mockResolvedValue([server, installed])
+    const registration = useServersStore
+      .getState()
+      .registerInstallation('install-partial', installed.executablePath, null)
+    const failed = expect(registration).rejects.toThrow('draft write failed')
+    await vi.waitFor(() => expect(confirm).toHaveBeenCalledOnce())
+    const edit = useServersStore
+      .getState()
+      .updateServer(server.id, { name: 'Concurrent edit' })
+    pending.reject(new Error('draft write failed'))
+    await Promise.all([failed, edit])
+    expect(save.mock.lastCall?.[0]).toEqual([
+      { ...server, name: 'Concurrent edit' },
+      installed,
+    ])
+  })
 })

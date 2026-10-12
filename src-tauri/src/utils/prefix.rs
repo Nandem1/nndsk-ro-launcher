@@ -11,6 +11,21 @@ pub const LEGACY_PREFIX_MARKER: &str = ".ro-launcher-configured";
 pub const PREFIX_MARKER: &str = ".ro-launcher-prefix.json";
 pub const PREFIX_SCHEMA_VERSION: u32 = 2;
 pub const PREFIX_SCHEMA_V3: u32 = 3;
+pub const INSTALLATION_MARKER: &str = ".ro-launcher-installation.json";
+
+/// An installer may have written both game files and registry/dependency state.
+/// Mere marker presence is conservative protection, never runner provenance.
+pub fn ensure_installation_rebuild_allowed(prefix: &Path) -> Result<(), String> {
+    let marker = prefix.join(INSTALLATION_MARKER);
+    for candidate in [&marker, &super::backup_path(&marker)] {
+        match candidate.symlink_metadata() {
+            Ok(_) => return Err("Este entorno contiene una instalación de juego y no puede reconstruirse automáticamente. Sus archivos, registros y dependencias se conservaron; usa la reparación de componentes".into()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {},
+            Err(error) => return Err(format!("No se pudo verificar la protección de la instalación; no se reconstruirá el entorno: {error}")),
+        }
+    }
+    Ok(())
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]

@@ -23,8 +23,8 @@ const importAction = useSettingsStore.getState().importRuntimeArchive
 const setRunnerAction = useSettingsStore.getState().setRunner
 const current = {
   id: MANAGED_RUNTIME_ID,
-  name: 'nndsk-ro-proton 0.1.0-dev.2',
-  path: '/runtime/nndsk-ro-proton-0.1.0-dev.2/proton',
+  name: 'nndsk-ro-proton 0.1.0-dev.3',
+  path: '/runtime/nndsk-ro-proton-0.1.0-dev.3/proton',
 }
 const server: ServerConfig = {
   id: 'sakura',
@@ -144,7 +144,7 @@ describe('RunnerSelector runtime import', () => {
       screen.getByRole('button', { name: 'Importar y usar nndsk-ro-proton' }),
     ).toBeDisabled()
     expect(
-      screen.getByRole('button', { name: 'nndsk-ro-proton 0.1.0-dev.2' }),
+      screen.getByRole('button', { name: 'nndsk-ro-proton 0.1.0-dev.3' }),
     ).toBeDisabled()
   })
 
@@ -165,6 +165,32 @@ describe('RunnerSelector runtime import', () => {
     expect(useSettingsStore.getState().selectedRunner).toBe(
       '/old/wine/bin/wine',
     )
+  })
+
+  it('mantiene dev.2 global y por servidor sin elegir dev.3 automáticamente', () => {
+    const previous = '/runtime/nndsk-ro-proton-0.1.0-dev.2/proton'
+    const selecting = vi.fn()
+    useSettingsStore.setState({
+      runners: [current],
+      selectedRunner: previous,
+      setRunner: selecting,
+    })
+    useServersStore.setState({
+      servers: [{ ...server, runner: previous }],
+      selectedId: server.id,
+    })
+    render(<RunnerSelector />)
+    expect(
+      screen.getByRole('button', {
+        name: `Selección anterior conservada · ${previous}`,
+      }),
+    ).toBeInTheDocument()
+    expect(screen.getByText('Runner efectivo de SakuraRO:')).toHaveTextContent(
+      previous,
+    )
+    expect(useSettingsStore.getState().selectedRunner).toBe(previous)
+    expect(useServersStore.getState().servers[0].runner).toBe(previous)
+    expect(selecting).not.toHaveBeenCalled()
   })
 
   it('reports a native dialog error without starting an import', async () => {

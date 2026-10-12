@@ -9,6 +9,7 @@ use crate::state::GameState;
 
 /// Same sequence as `RunEvent::Exit`: presence, tools, sessions, input.
 pub async fn shutdown_launcher_services(state: &GameState) {
+    state.installations.request_shutdown();
     state.presence.shutdown();
     let _ = tokio::join!(
         state.autopot.stop(),
@@ -16,6 +17,7 @@ pub async fn shutdown_launcher_services(state: &GameState) {
         state.spammer.stop()
     );
     let _ = state.sessions.shutdown_all().await;
+    state.installations.wait_for_shutdown().await;
     state.input.shutdown();
 }
 

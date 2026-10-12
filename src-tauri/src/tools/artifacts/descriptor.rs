@@ -1,20 +1,25 @@
 use crate::tools::runtime::ArtifactArchitecture;
 
-pub const MANAGED_RUNNER_ID: &str = "nndsk-ro-proton-0.1.0-dev.2";
-pub const MANAGED_RUNNER_LABEL: &str = "nndsk-ro-proton 0.1.0-dev.2";
+pub const MANAGED_RUNNER_ID: &str = "nndsk-ro-proton-0.1.0-dev.3";
+pub const MANAGED_RUNNER_LABEL: &str = "nndsk-ro-proton 0.1.0-dev.3";
 pub(crate) const MANAGED_WINE716_ID: &str = "wine-7.16-staging-tkg-amd64";
 pub(crate) const MANAGED_WINE716_LABEL: &str = "Wine 7.16 Staging/TkG amd64 · old-WoW64";
 pub(crate) const WINE716_SHA256: &str =
     "6d9e960b93afa273c329a42116ffe7a4f0fc738f8b8b9c0242082ea3f58e971e";
 pub(crate) const LOCAL_MANAGED_RUNNER_ID: &str = "nndsk-ro-proton-0.1.0-dev.1";
+pub(crate) const PREVIOUS_MANAGED_RUNNER_ID: &str = "nndsk-ro-proton-0.1.0-dev.2";
 pub(crate) const LEGACY_MANAGED_RUNNER_ID: &str = "ro-proton-cachyos-11.0-20260702-slr";
 pub(crate) const LEGACY_MANAGED_RUNNER_LABEL: &str = "proton-cachyos-11.0-20260702-slr-x86_64";
 pub(crate) const NNDSK_RUNTIME_SOURCE_COMMIT: &str = "93bda981a6e8b7bdadb46fa3497f84df8dfc6fe2";
+pub(crate) const NNDSK_DEV3_SOURCE_COMMIT: &str = "5855cfe862b1bc58f8bec75c51669153934116ca";
 pub(crate) const NNDSK_RUNTIME_SHA256: &str =
+    "441d2d237649a7a84f7074e94173ded91ee3a593f29156531b6427e3dd631a14";
+const PREVIOUS_NNDSK_RUNTIME_SHA256: &str =
     "208e6d4735c9a25c4f14b6465712a1069ce53aaf4d5a12eb5a3967abe962ead4";
 const LOCAL_NNDSK_RUNTIME_SHA256: &str =
     "75b0c916ccf6e7fcd64ed2afe576c2c0bc6a75ef63a8d74ad6dd9bee629d4d9f";
-const NNDSK_RUNTIME_URL: &str = "https://github.com/Nandem1/nndsk-ro-proton/releases/download/v0.1.0-dev.2/nndsk-ro-proton-0.1.0-dev.2-linux-x86_64.tar.zst";
+const NNDSK_RUNTIME_URL: &str = "https://github.com/Nandem1/nndsk-ro-proton/releases/download/v0.1.0-dev.3/nndsk-ro-proton-0.1.0-dev.3-linux-x86_64.tar.zst";
+const PREVIOUS_NNDSK_RUNTIME_URL: &str = "https://github.com/Nandem1/nndsk-ro-proton/releases/download/v0.1.0-dev.2/nndsk-ro-proton-0.1.0-dev.2-linux-x86_64.tar.zst";
 pub(crate) const MANAGED_DXVK_ID: &str = "dxvk-2.6.2";
 pub(crate) const UMU_ID: &str = "umu-launcher-1.4.4";
 
@@ -170,12 +175,32 @@ const PROTON_DESCRIPTOR: ArtifactDescriptor = ArtifactDescriptor {
 const NNDSK_RUNTIME_DESCRIPTOR: ArtifactDescriptor = ArtifactDescriptor {
     id: MANAGED_RUNNER_ID,
     kind: ArtifactKind::NndskRoProton,
-    version: "0.1.0-dev.2",
+    version: "0.1.0-dev.3",
     source: ArtifactSource::Https {
         url: NNDSK_RUNTIME_URL,
     },
-    expected_size: 399_605_131,
+    expected_size: 399_666_743,
     digest: ExpectedDigest::Sha256(NNDSK_RUNTIME_SHA256),
+    archive: ArchiveLayout::TarZst {
+        archive_name: "nndsk-ro-proton-0.1.0-dev.3-linux-x86_64.tar.zst",
+        root: "nndsk-ro-proton",
+    },
+    platform: "linux-x86_64",
+    architectures: &[ArtifactArchitecture::X86, ArtifactArchitecture::X86_64],
+    recipe_revision: 2,
+    payload: PayloadValidatorId::NndskRoProton,
+};
+
+// Historical public receipts and prefix fingerprints remain exactly dev.2.
+const NNDSK_PREVIOUS_DESCRIPTOR: ArtifactDescriptor = ArtifactDescriptor {
+    id: PREVIOUS_MANAGED_RUNNER_ID,
+    kind: ArtifactKind::NndskRoProton,
+    version: "0.1.0-dev.2",
+    source: ArtifactSource::Https {
+        url: PREVIOUS_NNDSK_RUNTIME_URL,
+    },
+    expected_size: 399_605_131,
+    digest: ExpectedDigest::Sha256(PREVIOUS_NNDSK_RUNTIME_SHA256),
     archive: ArchiveLayout::TarZst {
         archive_name: "nndsk-ro-proton-0.1.0-dev.2-linux-x86_64.tar.zst",
         root: "nndsk-ro-proton",
@@ -242,13 +267,14 @@ const WINE716_DESCRIPTOR: ArtifactDescriptor = ArtifactDescriptor {
     payload: PayloadValidatorId::WineTkg716,
 };
 
-static CATALOG: [ArtifactDescriptor; 6] = [
+static CATALOG: [ArtifactDescriptor; 7] = [
     UMU_DESCRIPTOR,
     PROTON_DESCRIPTOR,
     DXVK_DESCRIPTOR,
     NNDSK_RUNTIME_DESCRIPTOR,
     NNDSK_LOCAL_DESCRIPTOR,
     WINE716_DESCRIPTOR,
+    NNDSK_PREVIOUS_DESCRIPTOR,
 ];
 
 #[allow(dead_code)]
@@ -347,11 +373,36 @@ mod tests {
                 url: NNDSK_RUNTIME_URL
             }
         );
-        assert_eq!(public.expected_size, 399_605_131);
+        assert_eq!(public.expected_size, 399_666_743);
         assert_eq!(public.digest, ExpectedDigest::Sha256(NNDSK_RUNTIME_SHA256));
         assert_ne!(public.id, local.id);
         assert_ne!(public.digest, local.digest);
-        assert_eq!(public.recipe_revision, local.recipe_revision);
+        assert_eq!(public.recipe_revision, 2);
+        assert_eq!(local.recipe_revision, 1);
+    }
+
+    #[test]
+    fn previous_public_identity_is_preserved_not_relabelled_as_the_installer_release() {
+        let previous = catalog_descriptor(PREVIOUS_MANAGED_RUNNER_ID).unwrap();
+        let current = catalog_descriptor(MANAGED_RUNNER_ID).unwrap();
+        assert_eq!(previous.version, "0.1.0-dev.2");
+        assert_eq!(previous.expected_size, 399_605_131);
+        assert_eq!(
+            previous.digest,
+            ExpectedDigest::Sha256(PREVIOUS_NNDSK_RUNTIME_SHA256)
+        );
+        assert_eq!(
+            previous.source,
+            ArtifactSource::Https {
+                url: PREVIOUS_NNDSK_RUNTIME_URL
+            }
+        );
+        assert_eq!(previous.recipe_revision, 1);
+        assert_ne!(previous.id, current.id);
+        assert_ne!(previous.digest, current.digest);
+        let ids: std::collections::BTreeSet<_> =
+            catalog_all().iter().map(|entry| entry.id).collect();
+        assert_eq!(ids.len(), catalog_all().len());
     }
 
     #[test]

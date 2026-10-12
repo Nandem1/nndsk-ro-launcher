@@ -554,7 +554,7 @@ fn managed_runtime_pending(
         && (!requires_rebuild || reset_allowed)
         && !needs_local_import;
     let runtime_warning = if needs_local_import {
-        "El runtime local anterior no está instalado. Importa su paquete verificado o selecciona explícitamente nndsk-ro-proton 0.1.0-dev.2, disponible por descarga; el entorno existente se conservará".to_string()
+        "El runtime local anterior no está instalado. Importa su paquete verificado o selecciona explícitamente nndsk-ro-proton 0.1.0-dev.3, disponible por descarga; el entorno existente se conservará".to_string()
     } else if pending_wine {
         "Wine 7.16 Staging/TkG amd64 se descargará y verificará por SHA-256 al preparar el entorno; no requiere UMU ni descargar Proton. Necesita las librerías del host de 32 y 64 bits".to_string()
     } else {

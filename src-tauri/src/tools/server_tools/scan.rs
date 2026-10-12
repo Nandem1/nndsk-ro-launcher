@@ -209,6 +209,7 @@ mod tests {
             wine_prefix: None,
             prefix_mode: None,
             runner: None,
+            installation: None,
             launch: Default::default(),
             autopot: Default::default(),
             spammer: Default::default(),

@@ -75,6 +75,25 @@ pub(crate) fn resolve_prefix_binding(
     resolve_prefix_binding_for_location(server, resolved, &desired, base_location)
 }
 
+/// The same namespace and material fingerprint as a finished isolated server, without
+/// inventing a game executable before installation.
+pub(crate) fn resolve_installation_prefix_binding(
+    server_id: &str,
+    resolved: &ResolvedRunner,
+    probe: &RunnerProbe,
+) -> Result<PrefixBinding, String> {
+    let desired = desired_prefix_fingerprint(resolved, probe, resolved.is_wine_7_16())?;
+    let runner = std::fs::canonicalize(resolved.runner_path())
+        .unwrap_or_else(|_| resolved.runner_path().to_path_buf());
+    let location = PrefixLocation {
+        path: isolated_prefix_path_for_runner(server_id, runner.to_string_lossy().as_ref()),
+        scope: PrefixScope::Isolated,
+        managed: true,
+        server_id: Some(server_id.to_string()),
+    };
+    resolve_prefix_binding_for_location(None, resolved, &desired, location)
+}
+
 pub(crate) fn resolve_prefix_binding_for_managed_descriptor(
     server: Option<&ServerConfig>,
 ) -> Result<PrefixBinding, String> {

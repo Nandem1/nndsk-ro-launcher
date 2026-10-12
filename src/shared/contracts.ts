@@ -20,6 +20,19 @@ export const SERVER_CONTRACT = {
 
 /** Validación de frontera antes de persistir o enviar datos al backend. */
 export function validateServerConfig(server: ServerConfig): string | null {
+  if (server.installation) {
+    const binding = server.installation
+    if (
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        binding.installationId,
+      ) ||
+      !binding.prefixPath.startsWith('/') ||
+      binding.prefixPath === '/' ||
+      !/^[0-9a-f]{64}$/i.test(binding.prefixFingerprint) ||
+      !server.runner?.trim()
+    )
+      return 'El servidor instalado debe conservar su runner y entorno de instalación'
+  }
   if (!server.id.trim() || server.id.length > SERVER_CONTRACT.maxIdLength) {
     return 'El identificador del servidor no es válido'
   }

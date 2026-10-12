@@ -141,6 +141,7 @@ pub async fn reset_runtime_prefix(
     ctx: &WineContext,
     requirements: RuntimeRequirements,
 ) -> Result<(), String> {
+    crate::utils::ensure_installation_rebuild_allowed(Path::new(&ctx.prefix))?;
     emit_progress(app, "Preparando reconstrucción del entorno...", 40)?;
 
     let operational_plan = resolve_operational_plan(OperationalRuntimeInput {
@@ -155,6 +156,8 @@ pub async fn reset_runtime_prefix(
     let mut op = RunnerOperation::begin(Some(app), sessions, game, ctx, &anchor).await?;
     let _operation = OperationGuard::acquire("prefix", Path::new(&ctx.prefix))?;
     ensure_managed_reset_allowed(&ctx.location)?;
+
+    crate::utils::ensure_installation_rebuild_allowed(Path::new(&ctx.prefix))?;
 
     shutdown_existing_prefix_for_reset(app, &op, ctx).await?;
 
