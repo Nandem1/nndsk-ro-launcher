@@ -6,6 +6,7 @@ on:
 
 permissions:
   contents: write
+  actions: read
 
 concurrency:
   group: release-${{ github.ref }}
@@ -17,6 +18,22 @@ jobs:
     environment: release
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      # The full quality gate (tests included) already ran in ci.yml for this commit.
+      # Require that evidence instead of repeating it; it also guarantees the release
+      # cache from ci.yml's release-cache job was saved.
+      - name: Require green CI on main for this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          green=$(gh api \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${GITHUB_SHA}&branch=main&event=push&status=success" \
+            --jq '.total_count')
+          if [[ "$green" -lt 1 ]]; then
+            echo "::error::ci.yml has no successful push run on main for ${GITHUB_SHA}; wait for CI before tagging"
+            exit 1
+          fi
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
@@ -30,14 +47,12 @@ jobs:
 
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
-          shared-key: ubuntu-24.04
-          cache-on-failure: true
+          # Warmed by the release-cache job of ci.yml on main. A tag-scoped cache could
+          # not be restored by the next tag, so never save one from here.
+          shared-key: release-ubuntu-24.04
+          save-if: false
 
-      - name: Install Linux build dependencies
-        run: >-
-          sudo apt-get update && sudo apt-get install -y
-          libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev
-          librsvg2-dev patchelf
+      - uses: ./.github/actions/linux-build-deps
 
       - name: Fail closed on release environment
         env:
@@ -51,7 +66,6 @@ jobs:
         run: node scripts/check-release-invariants.mjs --tag "${GITHUB_REF_NAME}"
 
       - run: npm ci
-      - run: npm test
       - run: npm run build
       - run: npm run lint
       - run: npm run format:check
@@ -59,7 +73,6 @@ jobs:
       - name: Build sidecars
         run: cargo build -p ro-inputd -p ro-sessiond
       - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
-      - run: cargo test --workspace --all-features
       - name: Build release sidecars
         run: cargo build -p ro-inputd -p ro-sessiond --release
 

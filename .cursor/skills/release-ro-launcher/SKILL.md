@@ -79,7 +79,7 @@ git tag -a vX.Y.Z -m "RO-Launcher X.Y.Z"
 git push origin vX.Y.Z
 ```
 
-7. Watch `.github/workflows/release.yml` on that tag. Environment `release` must supply `RO_LAUNCHER_DISCORD_APPLICATION_ID` and `TAURI_SIGNING_PRIVATE_KEY`. Quality steps stay in the same job as the AppImage so `target/` stays warm.
+7. Watch `.github/workflows/release.yml` on that tag. Environment `release` must supply `RO_LAUNCHER_DISCORD_APPLICATION_ID` and `TAURI_SIGNING_PRIVATE_KEY`. The job fails closed unless `ci.yml` (both `quality` and `release-cache`) is green on `main` for the tagged commit, so wait for that whole run before tagging. It reruns only static checks and restores the release cache that `release-cache` saved.
 8. Open the **draft** GitHub Release. Check AppImage, `.sig`, `latest.json`, sidecar layout, SHA-256 evidence. Fill user-facing notes before asking the user to publish. Empty `notes` in `latest.json` is what the in-app updater shows as detail.
 9. Stop. The user publishes the draft.
 

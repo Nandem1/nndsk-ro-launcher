@@ -1,0 +1,27 @@
+name: Linux build dependencies
+description: >-
+  Install the Tauri/WebKitGTK build packages, reusing downloaded .deb archives.
+  apt re-verifies cached archives against the signed package index, so a stale or
+  altered archive is downloaded again instead of installed.
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      with:
+        path: ~/.cache/apt-archives
+        key: apt-archives-ubuntu-24.04-${{ hashFiles('.github/actions/linux-build-deps/action.yml') }}
+
+    - name: Install packages
+      shell: bash
+      run: |
+        set -euo pipefail
+        archives="$HOME/.cache/apt-archives"
+        mkdir -p "$archives/partial"
+        sudo apt-get update
+        sudo apt-get install -y -o Dir::Cache::Archives="$archives" \
+          libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
+          librsvg2-dev patchelf
+        # apt leaves a root-only lock and partial dir; the cache saver runs as the runner user.
+        sudo rm -rf "$archives/lock" "$archives/partial"
+        sudo chown -R "$(id -u):$(id -g)" "$archives"

@@ -49,7 +49,7 @@ Cortes siguientes:
 
 1. Elegir y justificar el bump con la skill, verificar su dry-run y, una vez autorizado, ejecutar `npm run version:bump -- <bump>` (o el `X.Y.Z` explícito del usuario).
 2. Commit del bump.
-3. Push de `main` y CI de calidad verde. `ci.yml` no corre en tags `v*.*.*`.
+3. Push de `main` y CI verde completo (`quality` y `release-cache`). `ci.yml` no corre en tags `v*.*.*`; `release.yml` se niega a firmar un commit sin ese CI verde.
 4. Tag `vX.Y.Z` (debe coincidir con `npm run version:show`).
 5. Push del tag. Actions corre `.github/workflows/release.yml`.
 6. Revisa el GitHub Release en borrador (`latest.json`, AppImage, `.sig`).

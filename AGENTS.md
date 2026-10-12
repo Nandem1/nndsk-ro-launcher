@@ -88,8 +88,11 @@ installed AppImages. Do not publish the draft. Do not run `npm version`. Do not 
 versions. Do not move a published tag.
 
 Quality CI (`.github/workflows/ci.yml`) runs on `main` and pull requests. It must not run on
-`v*.*.*` tags. `release.yml` repeats quality in the same job as the AppImage so `target/` stays
-warm for the signed bundle.
+`v*.*.*` tags. `release.yml` does not repeat the tests: it refuses to run unless `ci.yml` has a
+green push run on `main` for the tagged commit, then keeps only the static checks (lint, format,
+fmt, clippy) before the signed AppImage. Its Rust cache is warmed by the `release-cache` job of
+`ci.yml` on `main`, because a tag cannot restore a cache saved by another tag. Linux build
+packages come from `.github/actions/linux-build-deps`.
 
 The guest webview must not receive `updater:default` or `updater:allow-*`.
 `scripts/check-release-invariants.mjs` is the gate for version drift, the updater endpoint, the
