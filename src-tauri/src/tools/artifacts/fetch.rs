@@ -28,12 +28,7 @@ pub(crate) async fn download_verified(
         ));
     }
 
-    let client = reqwest::Client::builder()
-        .user_agent("nndsk-ro-launcher")
-        .connect_timeout(std::time::Duration::from_secs(15))
-        .timeout(std::time::Duration::from_secs(1800))
-        .build()
-        .map_err(|error| format!("No se pudo preparar HTTP: {error}"))?;
+    let client = pinned_download_client()?;
     let mut response = client
         .get(url)
         .send()
@@ -100,6 +95,19 @@ pub(crate) async fn download_verified(
     Ok(())
 }
 
+/// Digests already guarantee integrity; refusing plaintext redirects also keeps the
+/// request (and what it reveals) off the wire and bounds a stalled mirror.
+fn pinned_download_client() -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
+        .user_agent("nndsk-ro-launcher")
+        .https_only(true)
+        .redirect(reqwest::redirect::Policy::limited(10))
+        .connect_timeout(std::time::Duration::from_secs(15))
+        .timeout(std::time::Duration::from_secs(1800))
+        .build()
+        .map_err(|error| format!("No se pudo preparar HTTP: {error}"))
+}
+
 pub(crate) struct PinnedHttpsFile {
     pub id: &'static str,
     pub url: &'static str,
@@ -122,10 +130,7 @@ pub(crate) async fn download_pinned_https(
         ));
     }
 
-    let client = reqwest::Client::builder()
-        .user_agent("nndsk-ro-launcher")
-        .build()
-        .map_err(|error| format!("No se pudo preparar HTTP: {error}"))?;
+    let client = pinned_download_client()?;
     let mut response = client
         .get(file.url)
         .send()

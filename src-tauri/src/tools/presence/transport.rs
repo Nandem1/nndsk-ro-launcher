@@ -74,6 +74,13 @@ impl DiscordIpcTransport {
         for path in socket_paths() {
             match UnixStream::connect(&path) {
                 Ok(stream) => {
+                    // `/tmp` is shared: another local user could listen on `discord-ipc-N`
+                    // and receive the character name and map. Trust only a peer running as
+                    // us; checked on the connected socket, so symlinks and races don't matter.
+                    if let Err(error) = ensure_peer_is_current_user(&stream) {
+                        last_error = Some(format!("{path:?}: {error}"));
+                        continue;
+                    }
                     let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
                     let _ = stream.set_write_timeout(Some(Duration::from_secs(2)));
                     self.stream = Some(stream);
@@ -225,6 +232,43 @@ fn socket_paths() -> Vec<PathBuf> {
     paths
 }
 
+fn ensure_peer_is_current_user(stream: &UnixStream) -> Result<(), String> {
+    ensure_peer_uid(stream, unsafe { libc::getuid() })
+}
+
+fn ensure_peer_uid(stream: &UnixStream, expected_uid: u32) -> Result<(), String> {
+    use std::os::unix::io::AsRawFd;
+
+    let mut cred = libc::ucred {
+        pid: 0,
+        uid: 0,
+        gid: 0,
+    };
+    let mut len = std::mem::size_of::<libc::ucred>() as libc::socklen_t;
+    let rc = unsafe {
+        libc::getsockopt(
+            stream.as_raw_fd(),
+            libc::SOL_SOCKET,
+            libc::SO_PEERCRED,
+            (&mut cred as *mut libc::ucred).cast(),
+            &mut len,
+        )
+    };
+    if rc != 0 {
+        return Err(format!(
+            "no se pudo verificar el dueño del socket: {}",
+            std::io::Error::last_os_error()
+        ));
+    }
+    if cred.uid != expected_uid {
+        return Err(format!(
+            "el socket pertenece a otro usuario (uid {}); se ignora",
+            cred.uid
+        ));
+    }
+    Ok(())
+}
+
 #[allow(dead_code)]
 fn is_socket_path(path: &Path) -> bool {
     path.file_name()
@@ -240,6 +284,35 @@ mod tests {
     fn socket_paths_include_the_runtime_directory() {
         let paths = socket_paths();
         assert!(paths.iter().any(|path| is_socket_path(path)));
+    }
+
+    #[test]
+    fn peer_must_run_as_the_expected_user() {
+        let (ours, _peer) = UnixStream::pair().unwrap();
+        let uid = unsafe { libc::getuid() };
+
+        assert!(ensure_peer_uid(&ours, uid).is_ok());
+        let foreign = ensure_peer_uid(&ours, uid.wrapping_add(1)).unwrap_err();
+        assert!(foreign.contains("otro usuario"), "{foreign}");
+    }
+
+    #[test]
+    fn symlinked_sockets_are_accepted_when_the_peer_is_ours() {
+        use std::os::unix::net::UnixListener;
+
+        // Flatpak Discord is commonly exposed through a symlink in XDG_RUNTIME_DIR.
+        let dir =
+            std::env::temp_dir().join(format!("ro-launcher-discord-peer-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&dir).unwrap();
+        let socket = dir.join("real-ipc");
+        let _listener = UnixListener::bind(&socket).unwrap();
+        let link = dir.join("discord-ipc-0");
+        std::os::unix::fs::symlink(&socket, &link).unwrap();
+
+        let stream = UnixStream::connect(&link).unwrap();
+        assert!(ensure_peer_is_current_user(&stream).is_ok());
+
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
