@@ -1,8 +1,21 @@
-use tauri::{AppHandle, State};
+use std::sync::Arc;
+use tauri::{AppHandle, Manager, State};
 
 use crate::models::update::UpdateSnapshot;
 use crate::state::GameState;
-use crate::tools::updater::{check_for_packaged_update, OfficialUpdaterBackend, UpdateLease};
+use crate::tools::updater::{
+    check_for_packaged_update, OfficialUpdaterBackend, ShutdownForUpdate, UpdateLease,
+};
+
+/// Retain access to managed GameState for the host task without borrowing the IPC waiter.
+struct UpdateShutdown(AppHandle);
+
+#[async_trait::async_trait]
+impl ShutdownForUpdate for UpdateShutdown {
+    async fn shutdown_for_update(&self) -> Result<(), String> {
+        self.0.state::<GameState>().shutdown_for_update().await
+    }
+}
 
 #[tauri::command]
 pub async fn get_update_snapshot(lease: State<'_, UpdateLease>) -> Result<UpdateSnapshot, String> {
@@ -15,7 +28,7 @@ pub async fn check_for_update(
     lease: State<'_, UpdateLease>,
     backend: State<'_, OfficialUpdaterBackend>,
 ) -> Result<UpdateSnapshot, String> {
-    Ok(check_for_packaged_update(&lease, &app, backend.inner()).await)
+    Ok(check_for_packaged_update(&lease, &app, Arc::new(backend.inner().clone())).await)
 }
 
 #[tauri::command]
@@ -23,11 +36,17 @@ pub async fn install_checked_update(
     app: AppHandle,
     lease: State<'_, UpdateLease>,
     backend: State<'_, OfficialUpdaterBackend>,
-    state: State<'_, GameState>,
 ) -> Result<UpdateSnapshot, String> {
-    let census = || state.game.active_count();
+    let census_app = app.clone();
+    let census = move || census_app.state::<GameState>().game.active_count();
+    let shutdown = Arc::new(UpdateShutdown(app.clone()));
     Ok(lease
-        .install(Some(&app), backend.inner(), &census, &*state)
+        .install(
+            Some(app),
+            Arc::new(backend.inner().clone()),
+            census,
+            shutdown,
+        )
         .await)
 }
 
