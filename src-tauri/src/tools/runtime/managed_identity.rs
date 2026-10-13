@@ -3,16 +3,18 @@ use std::collections::BTreeSet;
 use crate::tools::artifacts::{
     catalog_descriptor, decode_hex_digest, expected_digest_hex, ExpectedDigest,
 };
-use crate::tools::runners::{
-    managed_dxvk_source_digest_bytes, managed_runtime_ready, managed_umu_source_digest_bytes,
-    MANAGED_DXVK_ID, MANAGED_RUNNER_ID, UMU_ID,
-};
+use crate::tools::runners::{managed_dxvk_source_digest_bytes, MANAGED_DXVK_ID};
+#[cfg(test)]
+use crate::tools::runners::{managed_runtime_ready, MANAGED_RUNNER_ID};
 
+#[cfg(test)]
+use super::model::PayloadVerification;
 use super::model::{
-    ArtifactArchitecture, ArtifactId, ArtifactIdentity, DigestAlgorithm, PayloadVerification,
-    SourceDigest, ARTIFACT_IDENTITY_SCHEMA_VERSION,
+    ArtifactArchitecture, ArtifactId, ArtifactIdentity, DigestAlgorithm, SourceDigest,
+    ARTIFACT_IDENTITY_SCHEMA_VERSION,
 };
 
+#[cfg(test)]
 pub(crate) fn managed_runtime_payload_verification() -> PayloadVerification {
     if managed_runtime_ready() {
         PayloadVerification::ShapeVerified
@@ -21,6 +23,7 @@ pub(crate) fn managed_runtime_payload_verification() -> PayloadVerification {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn managed_proton_artifact_identity() -> ArtifactIdentity {
     managed_proton_artifact_identity_for_id(MANAGED_RUNNER_ID)
 }
@@ -53,20 +56,6 @@ pub(crate) fn managed_dxvk_artifact_identity() -> ArtifactIdentity {
         },
         platform: "linux-x86_64".to_string(),
         architectures: BTreeSet::from([ArtifactArchitecture::X86, ArtifactArchitecture::X86_64]),
-        install_recipe_revision: 1,
-    }
-}
-
-pub(crate) fn managed_umu_artifact_identity() -> ArtifactIdentity {
-    ArtifactIdentity {
-        schema_version: ARTIFACT_IDENTITY_SCHEMA_VERSION,
-        artifact_id: ArtifactId::new(UMU_ID).expect("managed umu id"),
-        source_digest: SourceDigest {
-            algorithm: DigestAlgorithm::Sha256,
-            bytes: managed_umu_source_digest_bytes(),
-        },
-        platform: "linux-x86_64".to_string(),
-        architectures: BTreeSet::from([ArtifactArchitecture::X86_64]),
         install_recipe_revision: 1,
     }
 }

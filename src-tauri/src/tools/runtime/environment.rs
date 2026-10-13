@@ -254,16 +254,6 @@ pub(crate) enum GraphicsEnvironmentError {
     EnvironmentConflict(EnvironmentConflict),
 }
 
-impl GraphicsEnvironmentError {
-    pub(crate) fn conflict_key(&self) -> Option<&str> {
-        match self {
-            Self::EnvironmentConflict(conflict) => Some(conflict.key.as_str()),
-            Self::OverrideConflict(conflict) => Some(conflict.dll.as_str()),
-            Self::InvalidDllName => None,
-        }
-    }
-}
-
 impl From<OverrideConflict> for GraphicsEnvironmentError {
     fn from(value: OverrideConflict) -> Self {
         Self::OverrideConflict(value)

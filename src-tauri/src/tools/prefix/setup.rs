@@ -77,7 +77,7 @@ pub async fn setup_runtime_prefix(
         webview2_required: requirements.webview2,
     })
     .ok();
-    let anchor = operational_session_anchor(ctx, operational_plan.as_ref(), requirements.webview2);
+    let anchor = operational_session_anchor(ctx, operational_plan.as_ref());
     let mut op = RunnerOperation::begin(Some(app), sessions, game, ctx, &anchor).await?;
     let _operation = OperationGuard::acquire("prefix", root)?;
     // Runner startup may await another operation. Re-evaluate ownership and cleanup authority
@@ -152,7 +152,7 @@ pub async fn reset_runtime_prefix(
         webview2_required: requirements.webview2,
     })
     .ok();
-    let anchor = operational_session_anchor(ctx, operational_plan.as_ref(), requirements.webview2);
+    let anchor = operational_session_anchor(ctx, operational_plan.as_ref());
     let mut op = RunnerOperation::begin(Some(app), sessions, game, ctx, &anchor).await?;
     let _operation = OperationGuard::acquire("prefix", Path::new(&ctx.prefix))?;
     ensure_managed_reset_allowed(&ctx.location)?;

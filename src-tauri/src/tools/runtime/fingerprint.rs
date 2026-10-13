@@ -1,12 +1,13 @@
 use super::managed_identity::managed_dxvk_artifact_identity;
 #[cfg(test)]
 use super::managed_identity::managed_proton_artifact_identity;
+#[cfg(test)]
 use crate::tools::runners::MANAGED_RUNNER_ID;
 use crate::utils::RunnerKind;
 
-use super::encode::{
-    fingerprint_digest, CanonicalValue, PREFIX_FINGERPRINT_DOMAIN, RUNTIME_FINGERPRINT_DOMAIN,
-};
+#[cfg(test)]
+use super::encode::RUNTIME_FINGERPRINT_DOMAIN;
+use super::encode::{fingerprint_digest, CanonicalValue, PREFIX_FINGERPRINT_DOMAIN};
 use super::model::{
     ArtifactArchitecture, ArtifactIdentity, FingerprintDigest, FINGERPRINT_SCHEMA_VERSION,
     PREFIX_MATERIAL_RECIPE_REVISION,
@@ -126,6 +127,7 @@ pub(crate) fn encode_artifact_identity(identity: &ArtifactIdentity) -> Canonical
     ])
 }
 
+#[cfg(test)]
 pub(crate) fn prefix_fingerprint_from_hex(hex_digest: &str) -> PrefixFingerprint {
     assert_eq!(hex_digest.len(), 64, "se esperan 64 hex de digest SHA-256");
     let mut digest = [0u8; 32];
@@ -275,6 +277,7 @@ fn encode_prefix_fingerprint_input(input: &PrefixFingerprintInput) -> CanonicalV
     ])
 }
 
+#[cfg(test)]
 pub(crate) fn managed_proton_prefix_fingerprint_input() -> PrefixFingerprintInput {
     managed_proton_prefix_fingerprint_input_for_id(MANAGED_RUNNER_ID)
 }
@@ -325,6 +328,7 @@ pub(crate) fn prefix_owned_graphics_for_dxvk(
     }
 }
 
+#[cfg(test)]
 pub(crate) fn runtime_fingerprint_placeholder() -> RuntimeFingerprint {
     let digest = fingerprint_digest(
         RUNTIME_FINGERPRINT_DOMAIN,
@@ -342,6 +346,7 @@ pub(crate) fn runtime_fingerprint_placeholder() -> RuntimeFingerprint {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn explain_identity_delta(
     left: &PrefixFingerprintInput,
     right: &PrefixFingerprintInput,

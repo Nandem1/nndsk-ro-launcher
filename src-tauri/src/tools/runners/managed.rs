@@ -4,7 +4,7 @@ use tauri::AppHandle;
 
 use crate::tools::artifacts::{
     self, artifact_ready, catalog_descriptor, decode_hex_digest, ensure_catalog_artifact,
-    runtime_dir, DXVK_SHA256, UMU_SHA256,
+    runtime_dir, DXVK_SHA256,
 };
 use crate::utils::{emit_log, OperationGuard};
 
@@ -90,6 +90,7 @@ pub fn managed_umu_path() -> PathBuf {
     managed_umu_root().join("umu-run")
 }
 
+#[cfg(test)]
 pub fn managed_runtime_ready() -> bool {
     managed_runtime_ready_for_id(MANAGED_RUNNER_ID)
 }
@@ -100,10 +101,6 @@ pub(crate) fn managed_runtime_ready_for_id(id: &str) -> bool {
 
 pub fn managed_dxvk_source_digest_bytes() -> Vec<u8> {
     decode_hex_digest(DXVK_SHA256)
-}
-
-pub fn managed_umu_source_digest_bytes() -> Vec<u8> {
-    decode_hex_digest(UMU_SHA256)
 }
 
 /// Provision only the effective runner. A Wine 7.16 override must not depend on

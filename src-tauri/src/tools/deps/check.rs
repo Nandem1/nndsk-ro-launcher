@@ -156,7 +156,7 @@ async fn check_runtime_dependencies(
         let (profile, plan) = operational_profile_plan
             .as_ref()
             .ok_or_else(|| "runtime-plan-resolution-failed".to_string())?;
-        let anchor = operational_session_anchor(&ctx, Some(plan), webview2_required);
+        let anchor = operational_session_anchor(&ctx, Some(plan));
         let summary =
             build_runtime_plan_summary(anchor.plan_id, profile, plan, dgvoodoo_configured);
         (

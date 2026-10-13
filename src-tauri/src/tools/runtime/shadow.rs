@@ -14,8 +14,6 @@ use crate::utils::{emit_tool_log_opt, ProcessEnv, WineContext, WineSyncMode};
 use super::environment::{
     ComponentOwner, DllLoadOrder, EnvironmentChange, GraphicsEnvironment, OwnershipDomain,
 };
-use super::fingerprint::{compute_prefix_fingerprint, managed_proton_prefix_fingerprint_input};
-use super::identity::{PrefixBinding, PrefixIdentityStatus, RuntimeEligibility};
 use super::model::{
     BaseRecipeStep, ComponentProvenance, GraphicsProfile, InvocationTarget, RunnerRequest,
     RunnerSelectionSource, RuntimePlan, RuntimeProfile, SyncPlan,
@@ -23,15 +21,6 @@ use super::model::{
 use super::resolver::{
     profile_from_legacy, resolve_runtime, DgVoodooState, LegacyProfileInput, RuntimeResolutionInput,
 };
-
-fn shadow_prefix_binding(location: crate::utils::PrefixLocation) -> PrefixBinding {
-    PrefixBinding {
-        status: PrefixIdentityStatus::Unknown,
-        desired_fingerprint: compute_prefix_fingerprint(&managed_proton_prefix_fingerprint_input()),
-        location,
-        eligibility: RuntimeEligibility::Eligible,
-    }
-}
 
 const MANAGED_DXVK_COMPONENT: &str = "dxvk-2.6.2";
 const RUNNER_DXVK_COMPONENT: &str = "runner/dxvk";
@@ -139,7 +128,6 @@ pub(crate) fn observe_legacy_runtime(
         profile: profile.clone(),
         resolved: &input.context.resolved,
         prefix: prefix.clone(),
-        prefix_binding: shadow_prefix_binding(prefix),
         probe: input.context.probe.clone(),
         dgvoodoo,
         webview2_required: input.webview2_required,
@@ -669,7 +657,6 @@ mod tests {
             profile: profile.clone(),
             resolved: &context.resolved,
             prefix: prefix.clone(),
-            prefix_binding: shadow_prefix_binding(prefix),
             probe: probe_runner(&context.resolved),
             dgvoodoo: DgVoodooState::verified(true),
             webview2_required: true,
@@ -729,7 +716,6 @@ mod tests {
                 profile: profile.clone(),
                 resolved: &context.resolved,
                 prefix: prefix.clone(),
-                prefix_binding: shadow_prefix_binding(prefix),
                 probe: probe_runner(&context.resolved),
                 dgvoodoo: DgVoodooState::verified(false),
                 webview2_required: false,
@@ -817,7 +803,6 @@ mod tests {
             profile: profile.clone(),
             resolved: &context.resolved,
             prefix: prefix.clone(),
-            prefix_binding: shadow_prefix_binding(prefix),
             probe: probe_runner(&context.resolved),
             dgvoodoo: DgVoodooState::verified(false),
             webview2_required: false,

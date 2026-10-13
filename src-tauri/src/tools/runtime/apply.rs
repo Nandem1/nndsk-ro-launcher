@@ -51,7 +51,6 @@ pub(crate) fn resolve_operational_plan_with_profile(
         profile: profile.clone(),
         resolved: &input.context.resolved,
         prefix: input.context.location.clone(),
-        prefix_binding: input.context.identity.clone(),
         probe: input.context.probe.clone(),
         dgvoodoo: input.dgvoodoo,
         webview2_required: input.webview2_required,

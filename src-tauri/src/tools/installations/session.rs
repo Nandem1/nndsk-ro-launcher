@@ -124,7 +124,7 @@ async fn run(
         webview2_required: draft.require_webview2,
     })
     .map_err(|error| error.code().to_string())?;
-    let anchor = operational_session_anchor(&ctx, Some(&plan), draft.require_webview2);
+    let anchor = operational_session_anchor(&ctx, Some(&plan));
     let mut op = RunnerOperation::begin(Some(app), sessions, game, &ctx, &anchor).await?;
     let _prefix = OperationGuard::acquire("prefix", Path::new(&ctx.prefix))?;
     let _destination = draft

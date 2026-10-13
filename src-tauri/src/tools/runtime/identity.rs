@@ -1,9 +1,9 @@
 use std::path::Path;
 
 use crate::models::server::ServerConfig;
-use crate::tools::runners::{
-    managed_proton_id_for_path, managed_proton_path_for_id, MANAGED_RUNNER_ID,
-};
+#[cfg(test)]
+use crate::tools::runners::MANAGED_RUNNER_ID;
+use crate::tools::runners::{managed_proton_id_for_path, managed_proton_path_for_id};
 use crate::utils::{
     inspect_prefix, isolated_prefix_path_for_runner, isolated_prefix_path_v3, PrefixLocation,
     PrefixScope, ResolvedRunner, RunnerKind, PREFIX_SCHEMA_V3,
@@ -94,6 +94,7 @@ pub(crate) fn resolve_installation_prefix_binding(
     resolve_prefix_binding_for_location(None, resolved, &desired, location)
 }
 
+#[cfg(test)]
 pub(crate) fn resolve_prefix_binding_for_managed_descriptor(
     server: Option<&ServerConfig>,
 ) -> Result<PrefixBinding, String> {

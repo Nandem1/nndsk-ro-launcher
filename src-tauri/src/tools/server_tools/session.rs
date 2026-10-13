@@ -166,7 +166,6 @@ pub async fn launch_tool(
     let anchor = crate::tools::runtime::operational_session_anchor(
         &ctx,
         resolved_operational_plan.as_ref().ok(),
-        webview2_required,
     );
     let op = RunnerOperation::begin(Some(app), sessions, game, &ctx, &anchor).await?;
     let prefix_operation = OperationGuard::acquire("prefix", Path::new(&ctx.prefix))?;

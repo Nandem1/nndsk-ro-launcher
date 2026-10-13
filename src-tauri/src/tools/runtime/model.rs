@@ -99,7 +99,18 @@ impl RuntimeProfile {
 pub(crate) enum PayloadVerification {
     ShapeVerified,
     Unverified,
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "payload hashing of installed runtimes is not wired yet"
+        )
+    )]
     SourceAndPayloadVerified,
+    #[expect(
+        dead_code,
+        reason = "closed verification state; no payload check reports corruption yet"
+    )]
     Corrupt,
 }
 
@@ -480,7 +491,6 @@ pub(crate) struct RuntimePlan {
     pub(super) graphics: GraphicsPlan,
     pub(super) prefix: PrefixLocation,
     pub(super) webview2_required: bool,
-    pub(super) prefix_binding: super::identity::PrefixBinding,
 }
 
 impl RuntimePlan {
@@ -502,10 +512,6 @@ impl RuntimePlan {
 
     pub(crate) fn webview2_required(&self) -> bool {
         self.webview2_required
-    }
-
-    pub(crate) fn prefix_binding(&self) -> &super::identity::PrefixBinding {
-        &self.prefix_binding
     }
 }
 

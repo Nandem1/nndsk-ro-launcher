@@ -4,7 +4,6 @@ use crate::tools::runners::managed_proton_id_for_path;
 use crate::tools::runners::MANAGED_RUNNER_ID;
 use crate::utils::{is_wine_7_16_version, PrefixLocation, ResolvedRunner, RunnerKind};
 
-use super::identity::PrefixBinding;
 use super::model::{
     ArtifactId, CapabilityEvidence, ComponentId, ComponentProvenance, DgVoodooOverlayPlan,
     DxvkProvider, GraphicsPlan, GraphicsProfile, LegacyUnpinned, PrefixArchitecture, RunnerPlan,
@@ -90,7 +89,6 @@ pub(super) struct RuntimeResolutionInput<'a> {
     pub(super) profile: RuntimeProfile,
     pub(super) resolved: &'a ResolvedRunner,
     pub(super) prefix: PrefixLocation,
-    pub(super) prefix_binding: PrefixBinding,
     pub(super) probe: RunnerProbe,
     pub(super) dgvoodoo: DgVoodooState,
     pub(super) webview2_required: bool,
@@ -156,7 +154,6 @@ pub(crate) fn resolve_runtime(
         graphics,
         prefix: input.prefix,
         webview2_required: input.webview2_required,
-        prefix_binding: input.prefix_binding,
     })
 }
 
@@ -303,28 +300,12 @@ mod tests {
         )
     }
 
-    fn test_prefix_binding(location: PrefixLocation) -> PrefixBinding {
-        use crate::tools::runtime::fingerprint::{
-            compute_prefix_fingerprint, managed_proton_prefix_fingerprint_input,
-        };
-        use crate::tools::runtime::identity::{PrefixIdentityStatus, RuntimeEligibility};
-        PrefixBinding {
-            status: PrefixIdentityStatus::Unknown,
-            desired_fingerprint: compute_prefix_fingerprint(
-                &managed_proton_prefix_fingerprint_input(),
-            ),
-            location,
-            eligibility: RuntimeEligibility::Eligible,
-        }
-    }
-
     fn resolve(runner: &ResolvedRunner, profile: RuntimeProfile, dg: DgVoodooState) -> RuntimePlan {
         let location = prefix();
         resolve_runtime(RuntimeResolutionInput {
             profile,
             resolved: runner,
             prefix: location.clone(),
-            prefix_binding: test_prefix_binding(location),
             probe: probe_runner(runner),
             dgvoodoo: dg,
             webview2_required: false,
@@ -469,7 +450,6 @@ mod tests {
             profile,
             resolved: &wine,
             prefix: location.clone(),
-            prefix_binding: test_prefix_binding(location),
             probe: probe_runner(&wine),
             dgvoodoo: DgVoodooState::unverified_configured(),
             webview2_required: false,
@@ -502,7 +482,6 @@ mod tests {
             profile,
             resolved: &runner,
             prefix: location.clone(),
-            prefix_binding: test_prefix_binding(location),
             probe: probe_runner(&runner),
             dgvoodoo: DgVoodooState::verified(false),
             webview2_required: false,

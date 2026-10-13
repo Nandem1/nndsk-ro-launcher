@@ -1,5 +1,4 @@
 //! Dominio tipado del runtime. Identidad de prefix y gráficos operacionales bajo flag.
-#![allow(dead_code)]
 
 mod apply;
 pub(crate) mod benchmark;
@@ -63,7 +62,7 @@ pub(crate) use observation_store::{
 pub(crate) use probe::{probe_runner, RunnerProbe};
 pub(crate) use resolver::DgVoodooState;
 pub(crate) use session_anchor::{
-    runtime_anchor_for_operation, session_anchor_unavailable, ExecutionFacts, SessionAnchorV2,
+    runtime_anchor_for_operation, session_anchor_unavailable, SessionAnchorV2,
 };
 
 #[cfg(test)]
@@ -72,12 +71,10 @@ pub(crate) use session_anchor::session_anchor_from_context;
 pub(crate) fn operational_session_anchor(
     ctx: &crate::utils::WineContext,
     plan: Option<&model::RuntimePlan>,
-    webview2_required: bool,
 ) -> SessionAnchorV2 {
+    // The plan already carries webview2_required, which the runtime fingerprint includes.
     match plan {
-        Some(plan) => {
-            runtime_anchor_for_operation(plan, &ctx.identity, ExecutionFacts { webview2_required })
-        }
+        Some(plan) => runtime_anchor_for_operation(plan, &ctx.identity),
         None => session_anchor_unavailable(),
     }
 }

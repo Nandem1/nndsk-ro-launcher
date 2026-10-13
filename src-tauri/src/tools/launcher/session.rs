@@ -182,7 +182,6 @@ pub async fn launch_game(
     let anchor = operational_session_anchor(
         &ctx,
         operational_profile_plan.as_ref().map(|(_, plan)| plan),
-        webview2_required,
     );
     let observation_id = if runtime_observe_enabled() {
         Some(new_observation_id())

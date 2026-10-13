@@ -20,7 +20,6 @@ pub(crate) const SPIKE_SHA256: &str =
 pub(crate) const SPIKE_LICENSE: &str = "zlib";
 pub(crate) const SPIKE_MANIFEST: &str = ".ro-launcher-d7vk-spike.json";
 pub(crate) const SPIKE_BACKUP_DIR: &str = ".ro-launcher-d7vk-spike-backup";
-pub(crate) const SPIKE_COMPONENT: &str = "game-dir/d7vk-spike";
 pub(crate) const WINE_DDRAW_DELEGATE: &str = "ddraw_.dll";
 const DGVOODOO_MANIFEST: &str = ".ro-launcher-dgvoodoo.json";
 const PREFIX_MARKER: &str = ".ro-launcher-prefix.json";
@@ -55,8 +54,15 @@ pub(crate) enum SpikeDeployment {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum SpikeError {
+    #[expect(
+        dead_code,
+        reason = "spike error kept for its message; the pinned URL is constant"
+    )]
     UrlNotHttpsExact,
-    SizeMismatch { actual: u64, expected: u64 },
+    SizeMismatch {
+        actual: u64,
+        expected: u64,
+    },
     DigestMismatch,
     ZipUnsafeEntry,
     MissingRequiredPayload,
@@ -113,8 +119,16 @@ pub(crate) struct SpikeFile {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct PinnedLayout {
+    #[expect(
+        dead_code,
+        reason = "pinned fixture schema; validated by deserialization only"
+    )]
     pub archive_root: String,
     pub x86_relative_source: String,
+    #[expect(
+        dead_code,
+        reason = "pinned fixture schema; validated by deserialization only"
+    )]
     pub x64_relative_source: Option<String>,
     pub x86_payload_sha256: String,
     pub x86_payload_size: u64,

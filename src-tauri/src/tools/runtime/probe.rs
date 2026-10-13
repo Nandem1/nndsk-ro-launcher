@@ -1,15 +1,13 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use crate::tools::runners::{
-    managed_proton_id_for_path, managed_proton_ready, LOCAL_MANAGED_RUNNER_ID, MANAGED_RUNNER_ID,
-};
+use crate::tools::runners::{managed_proton_id_for_path, managed_proton_ready};
 use crate::utils::is_wine_7_16_version;
 use crate::utils::{ResolvedRunner, RunnerKind};
 
-use super::managed_identity::{
-    managed_proton_artifact_identity, managed_proton_artifact_identity_for_id,
-};
+#[cfg(test)]
+use super::managed_identity::managed_proton_artifact_identity;
+use super::managed_identity::managed_proton_artifact_identity_for_id;
 use super::material::FileDigestCache;
 use super::model::{
     ArtifactReceipt, CapabilityEvidence, CapabilitySource, ComponentProvenance, ExternalObserved,
@@ -25,6 +23,7 @@ pub(crate) struct RunnerProbe {
     pub(super) sync: SyncPlan,
 }
 
+#[cfg(test)]
 pub(crate) fn probe_managed_proton_descriptor(payload: PayloadVerification) -> RunnerProbe {
     RunnerProbe {
         identity: RunnerIdentity {
@@ -56,14 +55,6 @@ pub(crate) fn probe_managed_proton_descriptor(payload: PayloadVerification) -> R
 pub(crate) fn probe_runner(resolved: &ResolvedRunner) -> RunnerProbe {
     let mut cache = FileDigestCache::default();
     probe_runner_with_cache(resolved, &mut cache)
-}
-
-pub(crate) fn probe_managed_proton_identity(probe: &RunnerProbe) -> bool {
-    matches!(
-        &probe.identity.provenance,
-        ComponentProvenance::ArtifactReceipt(receipt)
-            if [MANAGED_RUNNER_ID, LOCAL_MANAGED_RUNNER_ID].contains(&receipt.identity.artifact_id.as_str())
-    )
 }
 
 pub(crate) fn probe_wine_716_old_wow64_layout(probe: &RunnerProbe) -> bool {
@@ -161,11 +152,6 @@ fn probe_runner_with_cache(resolved: &ResolvedRunner, cache: &mut FileDigestCach
         },
         sync,
     }
-}
-
-pub(super) fn is_managed_proton(resolved: &ResolvedRunner) -> bool {
-    resolved.kind() == RunnerKind::Proton
-        && managed_proton_id_for_path(resolved.runner_path()).is_some()
 }
 
 pub(crate) fn paths_match(left: &Path, right: &Path) -> bool {

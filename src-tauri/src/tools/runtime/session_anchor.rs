@@ -5,11 +5,6 @@ use super::runtime_fingerprint::{
     compute_runtime_fingerprint_from_input, runtime_fingerprint_input_from_plan,
 };
 
-#[derive(Debug, Clone)]
-pub(crate) struct ExecutionFacts {
-    pub(crate) webview2_required: bool,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SessionAnchorV2 {
     pub(crate) plan_id: String,
@@ -19,7 +14,6 @@ pub(crate) struct SessionAnchorV2 {
 pub(crate) fn compute_runtime_fingerprint(
     plan: &RuntimePlan,
     binding: &PrefixBinding,
-    _facts: &ExecutionFacts,
 ) -> RuntimeFingerprint {
     let input = runtime_fingerprint_input_from_plan(plan, binding);
     compute_runtime_fingerprint_from_input(&input)
@@ -28,9 +22,8 @@ pub(crate) fn compute_runtime_fingerprint(
 pub(crate) fn runtime_anchor_for_operation(
     plan: &RuntimePlan,
     binding: &PrefixBinding,
-    facts: ExecutionFacts,
 ) -> SessionAnchorV2 {
-    let runtime_fingerprint = compute_runtime_fingerprint(plan, binding, &facts);
+    let runtime_fingerprint = compute_runtime_fingerprint(plan, binding);
     SessionAnchorV2 {
         plan_id: runtime_fingerprint.digest.hex_digest(),
         runtime_fingerprint,

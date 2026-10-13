@@ -82,7 +82,7 @@ pub async fn start_runtime_benchmark_run(
     })
     .map_err(|_| "plan-resolution-failed".to_string())?;
 
-    let anchor = operational_session_anchor(&ctx, Some(&plan), webview2_required);
+    let anchor = operational_session_anchor(&ctx, Some(&plan));
     if anchor.plan_id == session_anchor_unavailable().plan_id {
         return Err("plan-id-unavailable".into());
     }

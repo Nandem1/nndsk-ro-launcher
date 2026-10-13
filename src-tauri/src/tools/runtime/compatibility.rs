@@ -15,6 +15,7 @@ use crate::utils::ResolvedRunner;
 use super::model::{ComponentProvenance, RuntimePlan};
 use super::probe::{probe_wine_716_old_wow64_layout, RunnerProbe};
 
+#[cfg(test)]
 pub(crate) const COMPATIBILITY_CATALOG_SCHEMA_VERSION: u32 = 1;
 
 pub(crate) fn runtime_compat_enabled() -> bool {
@@ -56,9 +57,17 @@ pub(crate) enum CompatibilityAssessment {
     Validated {
         evidence_id: EvidenceId,
     },
+    #[expect(
+        dead_code,
+        reason = "closed assessment states; the curated catalog only ships Validated evidence today"
+    )]
     Experimental {
         evidence_id: EvidenceId,
     },
+    #[expect(
+        dead_code,
+        reason = "closed assessment states; the curated catalog only ships Validated evidence today"
+    )]
     Incompatible {
         evidence_id: EvidenceId,
         reason: FailureClass,
@@ -72,6 +81,13 @@ pub(crate) enum FailureClass {}
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum EvidenceProvenance {
     CuratedShipped,
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "local observations are not promoted to evidence yet"
+        )
+    )]
     LocalObservation,
 }
 
@@ -212,11 +228,6 @@ fn preferred_record_by_hash<'a>(
                 .iter()
                 .find(|record| record.gepard_sha256.eq_ignore_ascii_case(sha256))
         })
-}
-
-pub(crate) fn curated_gepard_runner_for_hash(sha256: &str) -> Option<GepardRunnerProfile> {
-    find_shipped_record_by_hash(sha256)
-        .map(|record| recommended_profile_to_gepard_runner(record.recommendation_profile))
 }
 
 pub(crate) fn recommended_profile_to_gepard_runner(
@@ -583,22 +594,7 @@ mod tests {
     use crate::utils::{PrefixLocation, PrefixScope, ResolvedRunner};
     use serde::Deserialize;
 
-    use super::super::fingerprint::{
-        compute_prefix_fingerprint, managed_proton_prefix_fingerprint_input,
-    };
-    use super::super::identity::{PrefixBinding, PrefixIdentityStatus, RuntimeEligibility};
     use super::*;
-
-    fn prefix_binding(location: PrefixLocation) -> PrefixBinding {
-        PrefixBinding {
-            status: PrefixIdentityStatus::Unknown,
-            desired_fingerprint: compute_prefix_fingerprint(
-                &managed_proton_prefix_fingerprint_input(),
-            ),
-            location,
-            eligibility: RuntimeEligibility::Eligible,
-        }
-    }
 
     fn resolve_plan(resolved: &ResolvedRunner, dgvoodoo: bool, probe: &RunnerProbe) -> RuntimePlan {
         let profile = profile_from_legacy(LegacyProfileInput {
@@ -618,7 +614,6 @@ mod tests {
             profile,
             resolved,
             prefix: location.clone(),
-            prefix_binding: prefix_binding(location),
             probe: probe.clone(),
             dgvoodoo: DgVoodooState::verified(dgvoodoo),
             webview2_required: false,
