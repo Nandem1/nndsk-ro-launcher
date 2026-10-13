@@ -19,7 +19,11 @@ pub enum RuntimeCheckSeverity {
 }
 
 #[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase", tag = "kind")]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "kind"
+)]
 pub enum CompatibilityAssessmentIpc {
     Validated { evidence_id: String },
     Experimental { evidence_id: String },
