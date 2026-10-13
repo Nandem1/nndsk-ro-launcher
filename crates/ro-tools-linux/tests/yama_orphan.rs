@@ -24,6 +24,29 @@ fn read_ptrace_scope() -> Option<u32> {
         .ok()
 }
 
+/// Environment opt-out for hosts that are deliberately not at `ptrace_scope=1`. It only skips the
+/// Yama-specific assertion, announces the gap, and must never be set by CI or release workflows.
+const YAMA_OPT_OUT: &str = "RO_YAMA_ALLOW_UNVALIDATED";
+
+/// The Yama property is the reason this fixture exists, so an unexpected host policy is a failure,
+/// not a silent pass. Returns `false` only when the operator explicitly accepted the gap.
+fn require_yama_scope_one() -> bool {
+    let scope = read_ptrace_scope();
+    if scope == Some(1) {
+        return true;
+    }
+    if std::env::var(YAMA_OPT_OUT).as_deref() == Ok("1") {
+        eprintln!(
+            "YAMA NOT VALIDATED: kernel.yama.ptrace_scope={scope:?}; {YAMA_OPT_OUT}=1 accepted the gap"
+        );
+        return false;
+    }
+    panic!(
+        "kernel.yama.ptrace_scope={scope:?}, but this fixture validates the ptrace_scope=1 contract. \
+         Run it on a Yama=1 host, or set {YAMA_OPT_OUT}=1 to skip only the Yama assertion."
+    );
+}
+
 fn read_ppid_from_stat(pid: u32) -> Option<u32> {
     read_ppid(pid).ok()
 }
@@ -154,14 +177,11 @@ fn run_runner() {
         "target should not remain descendant of test runner (ppid={ppid}, test={test_pid})"
     );
 
-    let scope = read_ptrace_scope();
-    if scope == Some(1) {
+    if require_yama_scope_one() {
         assert!(
             memory_read_denied(target_pid, target_addr),
             "expected memory read denied under ptrace_scope=1 for non-ancestor"
         );
-    } else {
-        eprintln!("note: skipping Yama EPERM assertion (ptrace_scope={scope:?}, expected 1 on CI)");
     }
 
     kill_by_identity(target_pid);

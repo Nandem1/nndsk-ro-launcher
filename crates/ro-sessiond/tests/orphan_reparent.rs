@@ -26,6 +26,29 @@ fn read_ptrace_scope() -> Option<u32> {
         .ok()
 }
 
+/// Environment opt-out for hosts that are deliberately not at `ptrace_scope=1`. It only skips the
+/// Yama-specific assertion, announces the gap, and must never be set by CI or release workflows.
+const YAMA_OPT_OUT: &str = "RO_YAMA_ALLOW_UNVALIDATED";
+
+/// The Yama property is the reason this fixture exists, so an unexpected host policy is a failure,
+/// not a silent pass. Returns `false` only when the operator explicitly accepted the gap.
+fn require_yama_scope_one() -> bool {
+    let scope = read_ptrace_scope();
+    if scope == Some(1) {
+        return true;
+    }
+    if std::env::var(YAMA_OPT_OUT).as_deref() == Ok("1") {
+        eprintln!(
+            "YAMA NOT VALIDATED: kernel.yama.ptrace_scope={scope:?}; {YAMA_OPT_OUT}=1 accepted the gap"
+        );
+        return false;
+    }
+    panic!(
+        "kernel.yama.ptrace_scope={scope:?}, but this fixture validates the ptrace_scope=1 contract. \
+         Run it on a Yama=1 host, or set {YAMA_OPT_OUT}=1 to skip only the Yama assertion."
+    );
+}
+
 fn read_ppid(pid: u32) -> Option<u32> {
     let stat = fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
     let close_paren = stat.rfind(')')?;
@@ -359,8 +382,9 @@ fn test_handshake_and_orphan() {
         "target should be reparented to ro-sessiond"
     );
 
-    if read_ptrace_scope() == Some(1) {
-        let value = process_vm_read_u32(target_pid, target_addr).expect("read under Yama");
+    if require_yama_scope_one() {
+        let value = process_vm_read_u32(target_pid, target_addr)
+            .expect("subreaper ancestry must keep memory readable under ptrace_scope=1");
         assert_eq!(value, MAGIC);
     }
 
@@ -552,5 +576,8 @@ fn main() {
     test_empty_tree_shutdown_completes_before_grace_and_live_children_keep_their_grace();
     test_handshake_and_orphan();
     test_hundred_true_cycles();
-    eprintln!("orphan_reparent integration tests passed");
+    eprintln!(
+        "orphan_reparent integration tests passed (sidecar: {})",
+        sessiond_binary().display()
+    );
 }
