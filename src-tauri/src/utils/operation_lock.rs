@@ -13,6 +13,8 @@ static ACTIVE_OPERATIONS: OnceLock<Mutex<HashMap<String, LockState>>> = OnceLock
 struct LockState {
     readers: usize,
     writer: bool,
+    /// The process-wide record lock for this key, held while any guard of the key is alive.
+    cross_process: Option<File>,
 }
 
 /// Exclusión mutua no bloqueante para operaciones destructivas sobre una misma ruta.
@@ -21,13 +23,16 @@ struct LockState {
 /// guard evita que dos setup/reset o dos operaciones dgVoodoo compitan por backups y manifiestos.
 ///
 /// El registro en memoria solo ve este proceso. Otra instancia del launcher o
-/// `ro-launcher --import-runtime` son procesos distintos, así que cada guard también toma un
-/// `flock(2)` no bloqueante (compartido o exclusivo) sobre un archivo por clave. El descriptor es
-/// `O_CLOEXEC`: Wine y los sidecars no lo heredan, y el lock muere con el guard o con el proceso.
+/// `ro-launcher --import-runtime` son procesos distintos, así que cada clave también toma un lock
+/// de registro POSIX (`fcntl(F_SETLK)`, lectura o escritura) sobre un archivo por clave.
+///
+/// No se usa `flock(2)`: pertenece a la descripción de archivo abierta y un `fork` de cualquier
+/// hilo (Wine, sidecars) la hereda hasta su `exec`, así que un guard ya liberado podía seguir
+/// bloqueando. Los locks POSIX pertenecen al proceso, no se heredan con `fork` y mueren con el
+/// proceso. Un único descriptor por clave vive en el registro y se cierra bajo el mismo mutex.
 pub struct OperationGuard {
     key: String,
     shared: bool,
-    _cross_process: File,
 }
 
 impl OperationGuard {
@@ -60,26 +65,31 @@ impl OperationGuard {
                 normalized.display()
             ));
         }
-        let cross_process = lock_across_processes(&key, shared).map_err(|error| match error {
-            CrossProcessLockError::Busy => format!(
-                "Ya hay una operación {namespace} en curso para {} en otro proceso de RO-Launcher",
-                normalized.display()
-            ),
-            CrossProcessLockError::Io(error) => format!(
-                "No se pudo bloquear la operación {namespace} para {}: {error}",
-                normalized.display()
-            ),
-        })?;
+        // Shared readers in this process reuse the read lock that the first one took.
+        if active.cross_process.is_none() {
+            match lock_across_processes(&key, shared) {
+                Ok(file) => active.cross_process = Some(file),
+                Err(error) => {
+                    operations.remove(&key);
+                    return Err(match error {
+                        CrossProcessLockError::Busy => format!(
+                            "Ya hay una operación {namespace} en curso para {} en otro proceso de RO-Launcher",
+                            normalized.display()
+                        ),
+                        CrossProcessLockError::Io(error) => format!(
+                            "No se pudo bloquear la operación {namespace} para {}: {error}",
+                            normalized.display()
+                        ),
+                    });
+                }
+            }
+        }
         if shared {
             active.readers += 1;
         } else {
             active.writer = true;
         }
-        Ok(Self {
-            key,
-            shared,
-            _cross_process: cross_process,
-        })
+        Ok(Self { key, shared })
     }
 }
 
@@ -117,7 +127,7 @@ fn lock_across_processes(key: &str, shared: bool) -> Result<File, CrossProcessLo
             .map_err(CrossProcessLockError::Io)?;
     }
     // std opens with O_CLOEXEC; the file is never truncated or removed, so every process always
-    // locks the same inode.
+    // locks the same inode. Write access is required for a write lock.
     let file = std::fs::OpenOptions::new()
         .read(true)
         .write(true)
@@ -126,15 +136,17 @@ fn lock_across_processes(key: &str, shared: bool) -> Result<File, CrossProcessLo
         .mode(0o600)
         .open(&path)
         .map_err(CrossProcessLockError::Io)?;
-    let operation = if shared { libc::LOCK_SH } else { libc::LOCK_EX };
+    let mut lock: libc::flock = unsafe { std::mem::zeroed() };
+    lock.l_type = if shared { libc::F_RDLCK } else { libc::F_WRLCK } as libc::c_short;
+    lock.l_whence = libc::SEEK_SET as libc::c_short;
     loop {
-        if unsafe { libc::flock(file.as_raw_fd(), operation | libc::LOCK_NB) } == 0 {
+        if unsafe { libc::fcntl(file.as_raw_fd(), libc::F_SETLK, &lock) } == 0 {
             return Ok(file);
         }
         let error = std::io::Error::last_os_error();
         match error.raw_os_error() {
             Some(libc::EINTR) => continue,
-            Some(libc::EWOULDBLOCK) => return Err(CrossProcessLockError::Busy),
+            Some(libc::EACCES | libc::EAGAIN) => return Err(CrossProcessLockError::Busy),
             _ => return Err(CrossProcessLockError::Io(error)),
         }
     }
@@ -190,9 +202,68 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
 
-    /// Another process (a second launcher or the import CLI) holding the key's flock must block
-    /// both exclusive and shared admission here. A separate open file description is exactly what
-    /// another process would hold.
+    /// Forks a child that takes the key's record lock itself, i.e. a genuinely different process
+    /// such as a second launcher or the import CLI. Returns (pid, write end kept by the parent).
+    fn foreign_process_lock(key: &str, shared: bool) -> libc::pid_t {
+        use std::os::unix::ffi::OsStrExt;
+        let path = lock_file_path(key);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let c_path = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
+        let mut ready = [0 as libc::c_int; 2];
+        assert_eq!(unsafe { libc::pipe(ready.as_mut_ptr()) }, 0);
+        let mut lock: libc::flock = unsafe { std::mem::zeroed() };
+        lock.l_type = if shared { libc::F_RDLCK } else { libc::F_WRLCK } as libc::c_short;
+        lock.l_whence = libc::SEEK_SET as libc::c_short;
+        let pid = unsafe { libc::fork() };
+        assert!(pid >= 0);
+        if pid == 0 {
+            // Child: async-signal-safe calls only, then wait to be killed.
+            unsafe {
+                close_inherited_except(ready[1]);
+                let fd = libc::open(c_path.as_ptr(), libc::O_RDWR | libc::O_CREAT, 0o600);
+                let status: u8 = if fd >= 0 && libc::fcntl(fd, libc::F_SETLK, &lock) == 0 {
+                    1
+                } else {
+                    0
+                };
+                libc::write(ready[1], (&status as *const u8).cast(), 1);
+                loop {
+                    libc::pause();
+                }
+            }
+        }
+        unsafe { libc::close(ready[1]) };
+        let mut status = 0u8;
+        assert_eq!(
+            unsafe { libc::read(ready[0], (&mut status as *mut u8).cast(), 1) },
+            1
+        );
+        unsafe { libc::close(ready[0]) };
+        assert_eq!(status, 1, "child could not take the lock");
+        pid
+    }
+
+    /// Closes every descriptor in a forked test child except `keep`, so it does not hold pipes or
+    /// freshly written executables of tests running on other threads (ETXTBSY, missing EOF).
+    unsafe fn close_inherited_except(keep: libc::c_int) {
+        if keep > 3 {
+            libc::syscall(libc::SYS_close_range, 3u32, (keep - 1) as u32, 0u32);
+        }
+        libc::syscall(
+            libc::SYS_close_range,
+            (keep.max(2) + 1) as u32,
+            u32::MAX,
+            0u32,
+        );
+    }
+
+    fn reap(pid: libc::pid_t) {
+        unsafe {
+            libc::kill(pid, libc::SIGKILL);
+            libc::waitpid(pid, std::ptr::null_mut(), 0);
+        }
+    }
+
     #[test]
     fn another_process_holding_the_lock_blocks_admission() {
         let path = std::env::temp_dir().join(format!(
@@ -200,26 +271,48 @@ mod tests {
             std::process::id()
         ));
         let key = format!("runtime:{}", normalize_path(&path).display());
-        let foreign = lock_across_processes(&key, false)
-            .ok()
-            .expect("foreign exclusive lock");
+
+        let writer = foreign_process_lock(&key, false);
         let error = OperationGuard::acquire("runtime", &path).err().unwrap();
         assert!(error.contains("otro proceso"), "{error}");
         assert!(OperationGuard::acquire_shared("runtime", &path).is_err());
-        drop(foreign);
+        reap(writer);
 
-        let foreign_reader = lock_across_processes(&key, true)
-            .ok()
-            .expect("foreign shared lock");
-        let reader = OperationGuard::acquire_shared("runtime", &path).unwrap();
+        let reader = foreign_process_lock(&key, true);
+        let shared = OperationGuard::acquire_shared("runtime", &path).unwrap();
+        drop(shared);
         assert!(OperationGuard::acquire("runtime", &path).is_err());
-        drop(reader);
-        assert!(OperationGuard::acquire("runtime", &path).is_err());
-        drop(foreign_reader);
-        let writer = OperationGuard::acquire("runtime", &path).unwrap();
-        assert!(lock_across_processes(&key, true).is_err());
-        drop(writer);
-        assert!(lock_across_processes(&key, false).is_ok());
+        reap(reader);
+        assert!(OperationGuard::acquire("runtime", &path).is_ok());
+    }
+
+    /// Regression: with flock(2) a fork inherited the lock's open file description, so a released
+    /// guard stayed locked until that child exec'd or exited. The launcher forks Wine, UMU and
+    /// sidecars from other threads at any time.
+    #[test]
+    fn a_forked_child_does_not_keep_a_released_lock() {
+        let path =
+            std::env::temp_dir().join(format!("ro-launcher-operation-fork-{}", std::process::id()));
+        let guard = OperationGuard::acquire("prefix", &path).unwrap();
+        let lock_fd = ACTIVE_OPERATIONS.get().unwrap().lock().unwrap()[&guard.key]
+            .cross_process
+            .as_ref()
+            .unwrap()
+            .as_raw_fd();
+        let child = unsafe { libc::fork() };
+        assert!(child >= 0);
+        if child == 0 {
+            // Keep exactly what a forked Wine/sidecar would inherit from this guard.
+            unsafe {
+                close_inherited_except(lock_fd);
+                libc::sleep(2);
+                libc::_exit(0);
+            }
+        }
+        drop(guard);
+        let again = OperationGuard::acquire("prefix", &path);
+        reap(child);
+        assert!(again.is_ok(), "{:?}", again.err());
     }
 
     #[test]
@@ -229,7 +322,13 @@ mod tests {
             std::process::id()
         ));
         let guard = OperationGuard::acquire("prefix", &path).unwrap();
-        let flags = unsafe { libc::fcntl(guard._cross_process.as_raw_fd(), libc::F_GETFD) };
+        let operations = ACTIVE_OPERATIONS.get().unwrap().lock().unwrap();
+        let fd = operations[&guard.key]
+            .cross_process
+            .as_ref()
+            .unwrap()
+            .as_raw_fd();
+        let flags = unsafe { libc::fcntl(fd, libc::F_GETFD) };
         assert!(flags & libc::FD_CLOEXEC != 0);
     }
 
