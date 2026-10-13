@@ -68,4 +68,16 @@ mod tests {
             assert!(import_argument(&args(&values)).is_err());
         }
     }
+
+    #[test]
+    fn instance_import_dispatch_bypasses_desktop_startup() {
+        let source = include_str!("main.rs");
+        let main = source.split("#[cfg(test)]").next().unwrap();
+        let importer = main.split("Ok(Some(path)) => {").nth(1).unwrap();
+        let importer = importer.split("Ok(None) =>").next().unwrap();
+        assert!(importer.contains("ro_launcher_lib::import_runtime_archive"));
+        assert!(!importer.contains("ro_launcher_lib::run()"));
+        assert!(!importer.contains("with_desktop_instance"));
+        assert!(main.contains("Ok(None) => ro_launcher_lib::run()"));
+    }
 }

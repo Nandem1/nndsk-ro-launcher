@@ -4,6 +4,7 @@ use std::os::fd::AsRawFd;
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
 use sha2::{Digest, Sha256};
 
@@ -35,24 +36,84 @@ pub struct OperationGuard {
     shared: bool,
 }
 
+/// Structured admission failures for callers that may retry contention only.
+#[derive(Debug)]
+pub enum OperationLockError {
+    Busy(String),
+    Io(String),
+    RegistryPoisoned,
+}
+
+impl std::fmt::Display for OperationLockError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Busy(message) | Self::Io(message) => f.write_str(message),
+            Self::RegistryPoisoned => f.write_str("El registro de operaciones está bloqueado"),
+        }
+    }
+}
+
 impl OperationGuard {
     pub fn acquire(namespace: &str, path: &Path) -> Result<Self, String> {
-        Self::acquire_with_mode(namespace, path, false)
+        Self::acquire_with_mode(namespace, path, false).map_err(|error| error.to_string())
+    }
+
+    /// Exclusive ownership with a bounded handoff wait. Existing resource admission stays
+    /// non-blocking. Only Busy is retried; no F_SETLKW or wall-clock deadline is involved.
+    pub fn acquire_for(
+        namespace: &str,
+        path: &Path,
+        timeout: Duration,
+    ) -> Result<Self, OperationLockError> {
+        Self::acquire_for_inner(
+            namespace,
+            path,
+            timeout,
+            #[cfg(test)]
+            || {},
+        )
+    }
+
+    fn acquire_for_inner(
+        namespace: &str,
+        path: &Path,
+        timeout: Duration,
+        #[cfg(test)] mut on_busy: impl FnMut(),
+    ) -> Result<Self, OperationLockError> {
+        let started = Instant::now();
+        loop {
+            match Self::acquire_with_mode(namespace, path, false) {
+                Err(error @ OperationLockError::Busy(_)) => {
+                    #[cfg(test)]
+                    on_busy();
+                    let remaining = timeout.saturating_sub(started.elapsed());
+                    if remaining.is_zero() {
+                        return Err(error);
+                    }
+                    std::thread::sleep(remaining.min(Duration::from_millis(25)));
+                }
+                result => return result,
+            }
+        }
     }
 
     /// Registra un uso no destructivo de la ruta. Varios procesos pueden compartirlo, pero una
     /// operación exclusiva como setup/reset/install debe esperar a que todos terminen.
     pub fn acquire_shared(namespace: &str, path: &Path) -> Result<Self, String> {
-        Self::acquire_with_mode(namespace, path, true)
+        Self::acquire_with_mode(namespace, path, true).map_err(|error| error.to_string())
     }
 
-    fn acquire_with_mode(namespace: &str, path: &Path, shared: bool) -> Result<Self, String> {
+    fn acquire_with_mode(
+        namespace: &str,
+        path: &Path,
+        shared: bool,
+    ) -> Result<Self, OperationLockError> {
         let normalized = normalize_path(path);
         let key = format!("{namespace}:{}", normalized.display());
         let operations = ACTIVE_OPERATIONS.get_or_init(|| Mutex::new(HashMap::new()));
         let mut operations = operations
             .lock()
-            .map_err(|_| "El registro de operaciones está bloqueado".to_string())?;
+            .map_err(|_| OperationLockError::RegistryPoisoned)?;
         let active = operations.entry(key.clone()).or_default();
         let unavailable = if shared {
             active.writer
@@ -60,10 +121,10 @@ impl OperationGuard {
             active.writer || active.readers > 0
         };
         if unavailable {
-            return Err(format!(
+            return Err(OperationLockError::Busy(format!(
                 "Ya hay una operación {namespace} en curso para {}",
                 normalized.display()
-            ));
+            )));
         }
         // Shared readers in this process reuse the read lock that the first one took.
         if active.cross_process.is_none() {
@@ -72,14 +133,14 @@ impl OperationGuard {
                 Err(error) => {
                     operations.remove(&key);
                     return Err(match error {
-                        CrossProcessLockError::Busy => format!(
+                        CrossProcessLockError::Busy => OperationLockError::Busy(format!(
                             "Ya hay una operación {namespace} en curso para {} en otro proceso de RO-Launcher",
                             normalized.display()
-                        ),
-                        CrossProcessLockError::Io(error) => format!(
+                        )),
+                        CrossProcessLockError::Io(error) => OperationLockError::Io(format!(
                             "No se pudo bloquear la operación {namespace} para {}: {error}",
                             normalized.display()
-                        ),
+                        )),
                     });
                 }
             }
@@ -177,6 +238,10 @@ impl Drop for OperationGuard {
 fn normalize_path(path: &Path) -> PathBuf {
     ro_session_protocol::canonicalize_prefix_path(path).unwrap_or_else(|| path.to_path_buf())
 }
+
+#[cfg(test)]
+#[path = "instance_tests.rs"]
+mod instance_tests;
 
 #[cfg(test)]
 mod tests {
