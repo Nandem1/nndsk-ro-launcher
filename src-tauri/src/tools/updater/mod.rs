@@ -1,3 +1,4 @@
+mod activate;
 mod backend;
 mod policy;
 mod session;

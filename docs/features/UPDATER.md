@@ -104,7 +104,7 @@ vieja que ya embeba el pubkey nuevo, o pide reinstalar el AppImage una vez.
 ## AppImageLauncher
 
 Instalar y reiniciar son operaciones distintas. La instalación atestigua que no hay
-clientes antes de descargar y otra vez antes de llamar al instalador del plugin.
+clientes antes de descargar y otra vez antes de la activación del AppImage en el host.
 No cierra instalaciones guiadas, presencia, herramientas, sesiones ni input; tanto
 un error de instalación como `readyToRestart` dejan el launcher utilizable.
 
@@ -128,12 +128,72 @@ guiadas. Preparación/reset de prefixes, importación de artefactos y herramient
 servidor conservan sus propios contratos; aún pueden entrar antes de que el cierre
 de sesiones de salida los rechace. Según `FINAL_HARDENING_PLAN.md`, F-02 puede
 integrarse primero, pero no debe publicarse una estable sin la recuperación F-05/F-06.
-La sustitución atómica del AppImage (F-03) y la exclusividad entre procesos (F-04)
-siguen pendientes.
+La exclusividad entre procesos (F-04) sigue pendiente.
 
 El updater sustituye el fichero `APPIMAGE` en su sitio. No llama a `ail-cli`.
 La entrada de escritorio de AppImageLauncher sigue apuntando a la misma ruta.
-Si el tempdir no está en el mismo mount, la fase pasa a error de instalación.
+La activación usa un temporal hermano en el mismo directorio, sin fallback a copy/delete.
 
 En desarrollo (`tauri:dev`) la fase es `unavailable` / AppImage-only: no hay red ni
 reemplazo de `current_exe`.
+
+## Activación atómica del AppImage (F-03)
+
+Tauri conserva el endpoint, el manifiesto, la descarga y la verificación minisign,
+incluida la coincidencia con la versión firmada (`requireSignedVersion`). El
+manifiesto por sí solo no está firmado. Solo después de que `Update::download`
+devuelva bytes autenticados, el launcher activa el AppImage; no llama a
+`Update::install` ni añade otro verificador criptográfico.
+
+El destino viene de `packaged_appimage(app)`: el `APPIMAGE` capturado en `Env` del
+host por Tauri, la misma fuente que el plugin 2.12.0 usa para su `extract_path`
+privado. Ni el WebView ni el manifiesto eligen una ruta. Se exige una ruta absoluta
+a un archivo regular ejecutable y se rechaza un destino symlink. Se comprueba la
+identidad de formato del payload: cabecera ELF64 little-endian completa y marcador
+type-2 `AI\x02` en offset 8, como el artefacto de este producto y la
+[especificación AppImage](https://github.com/AppImage/AppImageSpec/blob/master/draft.md#type-2-image-format).
+Gzip, tar y otros paquetes fallan cerrados; no se extraen archivos. Esta defensa
+de formato no interpreta todo ELF/SquashFS; la autenticidad y la integridad de la
+descarga siguen siendo responsabilidad exclusiva de Tauri.
+
+Protocolo, con el gate F-01 retenido:
+
+1. Validar el payload sin mutación; inspeccionar destino y guardar su modo.
+2. Abrir el directorio padre para su fsync; rechazar un padre symlink.
+3. Resolver el nombre reservado `.<nombre>.update-tmp` en ese mismo directorio.
+   Retirar un temporal regular anterior del mismo usuario y con un solo hardlink.
+   Un symlink, directorio, FIFO, hardlink o archivo de otro usuario se conserva y
+   produce un error. No se trunca ni se sigue un objeto existente.
+4. Crear el temporal exclusivamente (`O_CREAT|O_EXCL|O_NOFOLLOW|O_CLOEXEC`, 0600).
+5. `write_all` de los bytes verificados; chmod al modo original; `sync_all` del
+   archivo para sincronizar contenido y metadatos del modo final.
+6. `rename(2)` del temporal **sobre** el destino: único punto de commit.
+7. `sync_all` del directorio padre. El rename consume el nombre temporal.
+
+No se mueve el AppImage antiguo a un backup. Antes del rename, cualquier error
+ordinario conserva el destino antiguo e intenta retirar solo el temporal recién
+creado; un fallo de limpieza se incluye en el error. Un SIGKILL puede dejar ese
+temporal, incluso parcial; el siguiente intento lo retira y lo crea otra vez.
+Después del rename, el destino nuevo es autoritativo. Si el fsync del directorio
+falla se informa que el AppImage ya fue activado pero su durabilidad no pudo
+confirmarse; no se intenta rollback. El proceso/mount actual puede seguir usando
+el inode antiguo hasta el reinicio explícito.
+
+La prueba negativa es inspección del código **bloqueado** de
+`tauri-plugin-updater 2.12.0`, `updater.rs:1053–1127`: elegía un tempdir en el
+mismo dispositivo, movía el destino a `current_app.AppImage`, escribía directamente
+en el destino original y luego restauraba permisos. En el error ordinario intentaba
+renombrar el backup de vuelta; el drop del tempdir lo eliminaba en éxito. Entre
+el primer rename y la escritura el destino faltaba, y durante la escritura podía
+contener bytes parciales. No había fsync del archivo ni del directorio.
+
+Los tests de F-03 usan procesos reales y pipes, sin sleeps: SIGKILL inmediatamente
+antes del rename conserva bytes y modo antiguos, deja un temporal completo y el
+retry funciona; SIGKILL inmediatamente después del rename, **antes del fsync del
+padre**, conserva bytes y modo nuevos. También se prueba un short write real con
+`RLIMIT_FSIZE` en un hijo desechable. Los hooks solo existen en el binario de tests.
+Esto califica interrupción de proceso/SIGKILL en directorios desechables, **no**
+pérdida de alimentación: el orden de fsync está implementado pero no calificado
+contra power-loss. No es una calificación E2E de AppImages firmados N-1 → N.
+F-04 aún debe excluir dos procesos launcher que compitan por el mismo destino;
+este cambio no añade un lock global.
