@@ -86,13 +86,16 @@ impl PresenceHandle {
 
     pub fn shutdown(&self) {
         let Ok(mut worker) = self.worker.lock() else {
+            crate::utils::report("exit/presence", "no se pudo acceder al worker de presencia");
             return;
         };
         let Some(worker) = worker.take() else {
             return;
         };
         let _ = self.commands.send(PresenceCommand::Shutdown);
-        let _ = worker.join();
+        if worker.join().is_err() {
+            crate::utils::report("exit/presence", "el worker de presencia terminó con pánico");
+        }
     }
 }
 

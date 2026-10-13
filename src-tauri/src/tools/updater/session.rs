@@ -1,3 +1,4 @@
+#[cfg(test)]
 use async_trait::async_trait;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
@@ -22,9 +23,9 @@ pub struct UpdateLease {
     op: Arc<tokio::sync::Mutex<()>>,
 }
 
-#[async_trait]
-pub trait ShutdownForUpdate: Send + Sync {
-    async fn shutdown_for_update(&self) -> Result<(), String>;
+pub(crate) struct RelaunchAdmission {
+    _game: crate::state::GameLaunchAdmission,
+    _installations: crate::tools::installations::InstallationAdmission,
 }
 
 impl UpdateLease {
@@ -173,11 +174,10 @@ impl UpdateLease {
         app: Option<AppHandle>,
         backend: Arc<dyn UpdateBackend>,
         census: impl Fn() -> Result<usize, String> + Send + Sync + 'static,
-        shutdown: Arc<dyn ShutdownForUpdate>,
     ) -> UpdateSnapshot {
         self.run_owned(move |lease| async move {
             lease
-                .install_owned(app.as_ref(), backend.as_ref(), &census, shutdown.as_ref())
+                .install_owned(app.as_ref(), backend.as_ref(), &census)
                 .await
         })
         .await
@@ -188,7 +188,6 @@ impl UpdateLease {
         app: Option<&AppHandle>,
         backend: &dyn UpdateBackend,
         census: &(dyn Fn() -> Result<usize, String> + Send + Sync),
-        shutdown: &dyn ShutdownForUpdate,
     ) -> UpdateSnapshot {
         {
             let mut inner = self.inner.lock().await;
@@ -338,10 +337,6 @@ impl UpdateLease {
             return self.publish(app, snapshot).await;
         }
 
-        if let Err(message) = shutdown.shutdown_for_update().await {
-            return self.fail(app, UpdateFailureClass::Install, message).await;
-        }
-
         if let Err(error) = candidate.install(&bytes) {
             let (class, message) = classify_backend_error(error);
             return self.fail(app, class, message).await;
@@ -376,23 +371,37 @@ impl UpdateLease {
         self.publish(app, snapshot).await
     }
 
+    pub(crate) async fn reserve_relaunch(
+        &self,
+        game: &crate::state::GameProcessHandle,
+        installations: &crate::tools::installations::InstallationManager,
+    ) -> Result<RelaunchAdmission, String> {
+        if !matches!(
+            self.inner.lock().await.phase,
+            UpdatePhase::ReadyToRestart { .. }
+        ) {
+            return Err("No hay una actualización instalada para reiniciar".into());
+        }
+        // No await between closures: each owner checks idle and excludes admission
+        // under its own mutex. If installations refuse, Drop reopens game admission.
+        let game = game.close_admission_if_idle()?;
+        let installations = installations.close_admission_if_idle()?;
+        Ok(RelaunchAdmission {
+            _game: game,
+            _installations: installations,
+        })
+    }
+
     pub async fn relaunch(
         &self,
         app: &AppHandle,
-        census: &(dyn Fn() -> Result<usize, String> + Send + Sync),
+        game: &crate::state::GameProcessHandle,
+        installations: &crate::tools::installations::InstallationManager,
     ) -> Result<(), String> {
-        {
-            let inner = self.inner.lock().await;
-            match &inner.phase {
-                UpdatePhase::ReadyToRestart { .. } => {}
-                _ => return Err("No hay una actualización instalada para reiniciar".to_string()),
-            }
-        }
-
-        let active = census()?;
-        IdleClients::attest(active)
-            .map_err(|_| "Cierra los clientes del juego antes de reiniciar".to_string())?;
-
+        let _admission = self.reserve_relaunch(game, installations).await?;
+        // Tauri 2.11.2 AppHandle::restart -> !. This async command runs off the
+        // event-loop thread: request_exit delivers RunEvent::Exit for actual cleanup.
+        // Keep both guards alive until exit; unwinding drops them and rolls back.
         app.restart();
     }
 }
@@ -584,12 +593,8 @@ mod tests {
         });
         backend.checking.entered.notified().await;
         assert!(backend.mock.pending_version().is_none());
-        let shutdown = Arc::new(RecordingShutdown {
-            called: AtomicBool::new(false),
-        });
-        let second = lease
-            .install(None, backend.clone(), census(0), shutdown)
-            .await;
+
+        let second = lease.install(None, backend.clone(), census(0)).await;
         assert_eq!(lease.snapshot().await.phase, UpdatePhase::Checking);
         backend.checking.resume.notify_one();
         let _ = first.await.unwrap();
@@ -609,12 +614,8 @@ mod tests {
             async move { lease.check(None, backend).await }
         });
         backend.checking.entered.notified().await;
-        let shutdown = Arc::new(RecordingShutdown {
-            called: AtomicBool::new(false),
-        });
-        let overlap = lease
-            .install(None, backend.clone(), census(0), shutdown)
-            .await;
+
+        let overlap = lease.install(None, backend.clone(), census(0)).await;
         assert_eq!(overlap.phase, UpdatePhase::Checking);
         assert_eq!(lease.snapshot().await, overlap);
         backend.checking.resume.notify_one();
@@ -679,22 +680,12 @@ mod tests {
         let mut first = Box::pin({
             let lease = lease.clone();
             let backend = backend.clone();
-            async move {
-                let shutdown = Arc::new(RecordingShutdown {
-                    called: AtomicBool::new(false),
-                });
-                lease.install(None, backend, census(0), shutdown).await
-            }
+            async move { lease.install(None, backend, census(0)).await }
         });
         let mut second = Box::pin({
             let lease = lease.clone();
             let backend = backend.clone();
-            async move {
-                let shutdown = Arc::new(RecordingShutdown {
-                    called: AtomicBool::new(false),
-                });
-                lease.install(None, backend, census(0), shutdown).await
-            }
+            async move { lease.install(None, backend, census(0)).await }
         });
         let state = lease.inner.lock().await;
         poll_pending(first.as_mut());
@@ -715,14 +706,11 @@ mod tests {
         let backend = PausedBackend::available();
         lease.check(None, backend.clone()).await;
         backend.downloading.arm();
-        let shutdown = Arc::new(RecordingShutdown {
-            called: AtomicBool::new(false),
-        });
+
         let first = tokio::spawn({
             let lease = lease.clone();
             let backend = backend.clone();
-            let shutdown = shutdown.clone();
-            async move { lease.install(None, backend, census(0), shutdown).await }
+            async move { lease.install(None, backend, census(0)).await }
         });
         backend.downloading.entered.notified().await;
         let downloading = lease.snapshot().await;
@@ -736,9 +724,7 @@ mod tests {
         ));
         assert_eq!(lease.check(None, backend.clone()).await, downloading);
         assert_eq!(
-            lease
-                .install(None, backend.clone(), census(0), shutdown.clone())
-                .await,
+            lease.install(None, backend.clone(), census(0)).await,
             downloading
         );
         assert_eq!(backend.check_calls.load(Ordering::SeqCst), 1);
@@ -759,12 +745,8 @@ mod tests {
         let lease = UpdateLease::new("0.1.0");
         let backend = MockBackend::available("0.2.0");
         lease.check(None, backend.clone()).await;
-        let shutdown = Arc::new(RecordingShutdown {
-            called: AtomicBool::new(false),
-        });
-        let installed = lease
-            .install(None, backend.clone(), census(0), shutdown)
-            .await;
+
+        let installed = lease.install(None, backend.clone(), census(0)).await;
         let checked = lease.check(None, backend.clone()).await;
         assert_eq!(checked, installed);
         assert_eq!(lease.mark_unpackaged(backend.clone()).await, installed);
@@ -804,12 +786,7 @@ mod tests {
         let waiter = tokio::spawn({
             let lease = lease.clone();
             let backend = backend.clone();
-            async move {
-                let shutdown = Arc::new(RecordingShutdown {
-                    called: AtomicBool::new(false),
-                });
-                lease.install(None, backend, census(0), shutdown).await
-            }
+            async move { lease.install(None, backend, census(0)).await }
         });
         backend.downloading.entered.notified().await;
         waiter.abort();
@@ -836,12 +813,7 @@ mod tests {
         let waiter = tokio::spawn({
             let lease = lease.clone();
             let backend = backend.clone();
-            async move {
-                let shutdown = Arc::new(RecordingShutdown {
-                    called: AtomicBool::new(false),
-                });
-                lease.install(None, backend, census(0), shutdown).await
-            }
+            async move { lease.install(None, backend, census(0)).await }
         });
         backend.downloading.entered.notified().await;
         waiter.abort();
@@ -864,18 +836,6 @@ mod tests {
         ));
     }
 
-    struct RecordingShutdown {
-        called: AtomicBool,
-    }
-
-    #[async_trait]
-    impl ShutdownForUpdate for RecordingShutdown {
-        async fn shutdown_for_update(&self) -> Result<(), String> {
-            self.called.store(true, Ordering::SeqCst);
-            Ok(())
-        }
-    }
-
     fn census(count: usize) -> impl Fn() -> Result<usize, String> {
         move || Ok(count)
     }
@@ -884,12 +844,8 @@ mod tests {
     async fn install_without_pending_is_no_pending() {
         let lease = UpdateLease::new("0.1.0");
         let backend = MockBackend::available("0.2.0");
-        let shutdown = Arc::new(RecordingShutdown {
-            called: AtomicBool::new(false),
-        });
-        let snapshot = lease
-            .install(None, backend.clone(), census(0), shutdown.clone())
-            .await;
+
+        let snapshot = lease.install(None, backend.clone(), census(0)).await;
         assert!(matches!(
             snapshot.phase,
             UpdatePhase::Failed {
@@ -897,7 +853,6 @@ mod tests {
                 ..
             }
         ));
-        assert!(!shutdown.called.load(Ordering::SeqCst));
         assert_eq!(backend.install_calls.load(Ordering::SeqCst), 0);
     }
 
@@ -913,12 +868,8 @@ mod tests {
                 ..
             }
         ));
-        let shutdown = Arc::new(RecordingShutdown {
-            called: AtomicBool::new(false),
-        });
-        let install = lease
-            .install(None, backend.clone(), census(0), shutdown.clone())
-            .await;
+
+        let install = lease.install(None, backend.clone(), census(0)).await;
         assert!(matches!(
             install.phase,
             UpdatePhase::Failed {
@@ -927,7 +878,6 @@ mod tests {
             }
         ));
         assert_eq!(backend.install_calls.load(Ordering::SeqCst), 0);
-        assert!(!shutdown.called.load(Ordering::SeqCst));
     }
 
     #[tokio::test]
@@ -947,12 +897,8 @@ mod tests {
             second.phase,
             UpdatePhase::Available { release } if release.version == "0.3.0"
         ));
-        let shutdown = Arc::new(RecordingShutdown {
-            called: AtomicBool::new(false),
-        });
-        lease
-            .install(None, backend.clone(), census(0), shutdown)
-            .await;
+
+        lease.install(None, backend.clone(), census(0)).await;
         assert_eq!(*backend.installed_versions.lock().unwrap(), ["0.3.0"]);
         assert!(backend.take_pending().is_err());
     }
@@ -962,13 +908,8 @@ mod tests {
         let lease = UpdateLease::new("0.1.0");
         let backend = MockBackend::available("0.2.0");
         let _ = lease.check(None, backend.clone()).await;
-        let shutdown = Arc::new(RecordingShutdown {
-            called: AtomicBool::new(false),
-        });
 
-        let before = lease
-            .install(None, backend.clone(), census(2), shutdown.clone())
-            .await;
+        let before = lease.install(None, backend.clone(), census(2)).await;
         assert!(matches!(
             before.phase,
             UpdatePhase::Failed {
@@ -980,18 +921,13 @@ mod tests {
         assert_eq!(backend.take_calls.load(Ordering::SeqCst), 0);
         assert_eq!(backend.download_calls.load(Ordering::SeqCst), 0);
         assert_eq!(backend.install_calls.load(Ordering::SeqCst), 0);
-        assert!(!shutdown.called.load(Ordering::SeqCst));
 
         // Repeated refusals still leave the same checked candidate in its slot.
-        let refused_again = lease
-            .install(None, backend.clone(), census(1), shutdown.clone())
-            .await;
+        let refused_again = lease.install(None, backend.clone(), census(1)).await;
         assert_eq!(refused_again, before);
         assert_eq!(backend.take_calls.load(Ordering::SeqCst), 0);
 
-        let retry = lease
-            .install(None, backend.clone(), census(0), shutdown.clone())
-            .await;
+        let retry = lease.install(None, backend.clone(), census(0)).await;
         assert!(matches!(
             retry.phase,
             UpdatePhase::ReadyToRestart { ref installed_version } if installed_version == "0.2.0"
@@ -1001,13 +937,7 @@ mod tests {
         assert_eq!(backend.take_calls.load(Ordering::SeqCst), 1);
         assert_eq!(backend.download_calls.load(Ordering::SeqCst), 1);
         assert_eq!(*backend.installed_versions.lock().unwrap(), ["0.2.0"]);
-        assert!(shutdown.called.load(Ordering::SeqCst));
-        assert_eq!(
-            lease
-                .install(None, backend.clone(), census(0), shutdown)
-                .await,
-            retry
-        );
+        assert_eq!(lease.install(None, backend.clone(), census(0)).await, retry);
         assert_eq!(backend.install_calls.load(Ordering::SeqCst), 1);
     }
 
@@ -1017,23 +947,15 @@ mod tests {
         let backend = PausedBackend::available();
         lease.check(None, backend.clone()).await;
         backend.downloading.arm();
-        let shutdown = Arc::new(RecordingShutdown {
-            called: AtomicBool::new(false),
-        });
+
         let active = Arc::new(AtomicUsize::new(0));
         let waiter = tokio::spawn({
             let lease = lease.clone();
             let backend = backend.clone();
-            let shutdown = shutdown.clone();
             let active = active.clone();
             async move {
                 lease
-                    .install(
-                        None,
-                        backend,
-                        move || Ok(active.load(Ordering::SeqCst)),
-                        shutdown,
-                    )
+                    .install(None, backend, move || Ok(active.load(Ordering::SeqCst)))
                     .await
             }
         });
@@ -1051,7 +973,6 @@ mod tests {
             }
         ));
         assert_eq!(backend.mock.pending_version().as_deref(), Some("0.2.0"));
-        assert!(!shutdown.called.load(Ordering::SeqCst));
         assert_eq!(backend.mock.install_calls.load(Ordering::SeqCst), 0);
 
         active.store(0, Ordering::SeqCst);
@@ -1059,8 +980,7 @@ mod tests {
         let retrying = tokio::spawn({
             let lease = lease.clone();
             let backend = backend.clone();
-            let shutdown = shutdown.clone();
-            async move { lease.install(None, backend, census(0), shutdown).await }
+            async move { lease.install(None, backend, census(0)).await }
         });
         backend.downloading.entered.notified().await;
         let downloading = lease.snapshot().await;
@@ -1070,9 +990,7 @@ mod tests {
         );
         assert_eq!(lease.check(None, backend.clone()).await, downloading);
         assert_eq!(
-            lease
-                .install(None, backend.clone(), census(0), shutdown.clone())
-                .await,
+            lease.install(None, backend.clone(), census(0)).await,
             downloading
         );
         assert!(backend.mock.pending_version().is_none());
@@ -1092,13 +1010,7 @@ mod tests {
         // The returned candidate downloads/verifies again; no filesystem install preceded retry.
         assert_eq!(backend.mock.download_calls.load(Ordering::SeqCst), 2);
         assert_eq!(*backend.mock.installed_versions.lock().unwrap(), ["0.2.0"]);
-        assert!(shutdown.called.load(Ordering::SeqCst));
-        assert_eq!(
-            lease
-                .install(None, backend.clone(), census(0), shutdown)
-                .await,
-            retry
-        );
+        assert_eq!(lease.install(None, backend.clone(), census(0)).await, retry);
         assert_eq!(backend.mock.install_calls.load(Ordering::SeqCst), 1);
     }
 
@@ -1107,12 +1019,8 @@ mod tests {
         let lease = UpdateLease::new("0.1.0");
         let backend = PausedBackend::available();
         lease.check(None, backend.clone()).await;
-        let shutdown = Arc::new(RecordingShutdown {
-            called: AtomicBool::new(false),
-        });
-        lease
-            .install(None, backend.clone(), census(1), shutdown.clone())
-            .await;
+
+        lease.install(None, backend.clone(), census(1)).await;
         assert_eq!(backend.mock.pending_version().as_deref(), Some("0.2.0"));
         *backend.mock.check.lock().unwrap() = MockCheck::Available {
             version: "0.3.0".into(),
@@ -1127,10 +1035,7 @@ mod tests {
         backend.checking.entered.notified().await;
         assert!(backend.mock.pending_version().is_none());
         assert_eq!(
-            lease
-                .install(None, backend.clone(), census(0), shutdown.clone())
-                .await
-                .phase,
+            lease.install(None, backend.clone(), census(0)).await.phase,
             UpdatePhase::Checking
         );
         assert_eq!(backend.mock.download_calls.load(Ordering::SeqCst), 0);
@@ -1140,9 +1045,7 @@ mod tests {
             UpdatePhase::Available { release } if release.version == "0.3.0"
         ));
         assert_eq!(backend.mock.pending_version().as_deref(), Some("0.3.0"));
-        lease
-            .install(None, backend.clone(), census(0), shutdown)
-            .await;
+        lease.install(None, backend.clone(), census(0)).await;
         assert_eq!(*backend.mock.installed_versions.lock().unwrap(), ["0.3.0"]);
     }
 
@@ -1162,12 +1065,8 @@ mod tests {
                 class,
                 message: "previous failure".into(),
             };
-            let shutdown = Arc::new(RecordingShutdown {
-                called: AtomicBool::new(false),
-            });
-            let result = lease
-                .install(None, backend.clone(), census(0), shutdown.clone())
-                .await;
+
+            let result = lease.install(None, backend.clone(), census(0)).await;
             assert!(
                 matches!(
                     result.phase,
@@ -1182,21 +1081,16 @@ mod tests {
             assert_eq!(backend.take_calls.load(Ordering::SeqCst), 0);
             assert_eq!(backend.download_calls.load(Ordering::SeqCst), 0);
             assert_eq!(backend.install_calls.load(Ordering::SeqCst), 0);
-            assert!(!shutdown.called.load(Ordering::SeqCst));
         }
     }
 
     #[tokio::test]
-    async fn unauthentic_download_does_not_shutdown_tools() {
+    async fn unauthentic_download_never_installs() {
         let lease = UpdateLease::new("0.1.0");
         let backend = MockBackend::unauthentic_download("0.2.0");
         let _ = lease.check(None, backend.clone()).await;
-        let shutdown = Arc::new(RecordingShutdown {
-            called: AtomicBool::new(false),
-        });
-        let snapshot = lease
-            .install(None, backend.clone(), census(0), shutdown.clone())
-            .await;
+
+        let snapshot = lease.install(None, backend.clone(), census(0)).await;
         assert!(matches!(
             snapshot.phase,
             UpdatePhase::Failed {
@@ -1204,7 +1098,6 @@ mod tests {
                 ..
             }
         ));
-        assert!(!shutdown.called.load(Ordering::SeqCst));
         assert_eq!(backend.install_calls.load(Ordering::SeqCst), 0);
         assert!(backend.take_pending().is_err());
     }
@@ -1214,12 +1107,8 @@ mod tests {
         let lease = UpdateLease::new("0.1.0");
         let backend = MockBackend::available("0.2.0");
         let _ = lease.check(None, backend.clone()).await;
-        let shutdown = Arc::new(RecordingShutdown {
-            called: AtomicBool::new(false),
-        });
-        let first = lease
-            .install(None, backend.clone(), census(0), shutdown.clone())
-            .await;
+
+        let first = lease.install(None, backend.clone(), census(0)).await;
         assert!(matches!(
             first.phase,
             UpdatePhase::ReadyToRestart {
@@ -1227,9 +1116,7 @@ mod tests {
             } if v == "0.2.0"
         ));
         let installs = backend.install_calls.load(Ordering::SeqCst);
-        let second = lease
-            .install(None, backend.clone(), census(0), shutdown.clone())
-            .await;
+        let second = lease.install(None, backend.clone(), census(0)).await;
         assert_eq!(first, second);
         assert_eq!(backend.install_calls.load(Ordering::SeqCst), installs);
     }

@@ -117,6 +117,23 @@ impl ProcessState {
 #[derive(Default)]
 struct RegistryState {
     clients: HashMap<u64, ProcessState>,
+    relaunch_admission_closed: bool,
+}
+
+/// Sole owner of a reversible relaunch closure. Held until process exit by restart().
+pub(crate) struct GameLaunchAdmission {
+    game: GameProcessHandle,
+}
+
+impl Drop for GameLaunchAdmission {
+    fn drop(&mut self) {
+        match self.game.state.lock() {
+            Ok(mut state) => state.relaunch_admission_closed = false,
+            Err(_) => {
+                crate::utils::report("relaunch", "no se pudo reabrir la admisión de clientes")
+            }
+        }
+    }
 }
 
 pub struct StopRequest {
@@ -153,6 +170,9 @@ impl GameProcessHandle {
         server_name: String,
     ) -> Result<LaunchReservation, String> {
         let mut state = self.lock()?;
+        if state.relaunch_admission_closed {
+            return Err("El launcher se está reiniciando".into());
+        }
         if state
             .clients
             .values()
@@ -277,6 +297,18 @@ impl GameProcessHandle {
 
     pub fn active_count(&self) -> Result<usize, String> {
         Ok(self.lock()?.clients.len())
+    }
+
+    pub(crate) fn close_admission_if_idle(&self) -> Result<GameLaunchAdmission, String> {
+        let mut state = self.lock()?;
+        if !state.clients.is_empty() {
+            return Err("Cierra los clientes del juego antes de reiniciar".into());
+        }
+        if state.relaunch_admission_closed {
+            return Err("El launcher se está reiniciando".into());
+        }
+        state.relaunch_admission_closed = true;
+        Ok(GameLaunchAdmission { game: self.clone() })
     }
 
     pub fn snapshots(&self) -> Result<Vec<GameClientSnapshot>, String> {
@@ -643,6 +675,66 @@ mod tests {
         process
             .begin_launch(id.into(), "server".into(), "Server".into())
             .unwrap()
+    }
+
+    #[test]
+    fn regression_relaunch_census_reserves_game_admission() {
+        let game = GameProcessHandle::new();
+        let _admission = game.close_admission_if_idle().unwrap();
+        // Force the old schedule: idle decision, then a launch before restart.
+        let admitted = game.begin_launch("late".into(), "server".into(), "Server".into());
+        assert!(
+            admitted.is_err(),
+            "idle census did not reserve launch admission"
+        );
+    }
+
+    #[test]
+    fn relaunch_refuses_launching_running_and_stopping_clients_without_mutation() {
+        let game = GameProcessHandle::new();
+        let client = launch(&game, "active");
+        assert!(game.close_admission_if_idle().is_err());
+        assert!(!game.lock().unwrap().relaunch_admission_closed);
+        game.mark_running(client, identity(42), direct_runtime(), "plan".into(), None)
+            .unwrap();
+        assert!(game.close_admission_if_idle().is_err());
+        game.request_stop("active").unwrap();
+        assert!(game.close_admission_if_idle().is_err());
+        assert!(!game.lock().unwrap().relaunch_admission_closed);
+        game.finish(client).unwrap();
+        drop(game.close_admission_if_idle().unwrap());
+        launch(&game, "retry");
+    }
+
+    #[test]
+    fn relaunch_guard_has_one_owner_and_reopens_on_drop() {
+        let game = GameProcessHandle::new();
+        let admission = game.close_admission_if_idle().unwrap();
+        assert!(game.close_admission_if_idle().is_err());
+        assert!(game
+            .begin_launch("late".into(), "server".into(), "Server".into())
+            .is_err());
+        drop(admission);
+        launch(&game, "retry");
+    }
+
+    #[test]
+    fn game_launch_and_relaunch_race_have_exactly_one_winner() {
+        for _ in 0..1_000 {
+            let game = GameProcessHandle::new();
+            let barrier = std::sync::Barrier::new(2);
+            std::thread::scope(|scope| {
+                let launch = scope.spawn(|| {
+                    barrier.wait();
+                    game.begin_launch("race".into(), "server".into(), "Server".into())
+                });
+                barrier.wait();
+                let restart = game.close_admission_if_idle();
+                // Keep the successful closure/client alive through both decisions.
+                let launch = launch.join().unwrap();
+                assert_ne!(launch.is_ok(), restart.is_ok());
+            });
+        }
     }
 
     #[test]
