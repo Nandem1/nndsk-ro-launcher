@@ -930,7 +930,16 @@ fn runner_anchor(ctx: &WineContext) -> Result<RunnerAnchor, SessionError> {
 }
 
 fn kill_supervisor_identity(identity: &ProcessIdentity) {
-    let _ = signal_process_identity(identity, libc::SIGKILL);
+    report_failed_kill(identity, signal_process_identity(identity, libc::SIGKILL));
+}
+
+fn report_failed_kill(identity: &ProcessIdentity, outcome: std::io::Result<bool>) {
+    if let Err(error) = outcome {
+        crate::utils::report(
+            "runner-session",
+            format!("SIGKILL a pid {} falló: {error}", identity.pid),
+        );
+    }
 }
 
 fn kill_owned_descendants(supervisor: &ProcessIdentity) {
@@ -953,7 +962,7 @@ fn kill_owned_descendants(supervisor: &ProcessIdentity) {
             && is_descendant_of(pid, supervisor.pid)
             && verify_process_identity(&identity)
         {
-            let _ = signal_process_identity(&identity, libc::SIGKILL);
+            report_failed_kill(&identity, signal_process_identity(&identity, libc::SIGKILL));
         }
     }
 }

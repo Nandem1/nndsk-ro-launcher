@@ -89,6 +89,7 @@ pub fn run() {
         .manage(StorageNotices::default())
         .manage(UpdateLease::new(env!("CARGO_PKG_VERSION")))
         .setup(|app| {
+            utils::init_diagnostics(app.handle());
             app.manage(OfficialUpdaterBackend::new(app.handle().clone()));
             #[cfg(target_os = "linux")]
             if let Some(window) = app.get_webview_window("main") {

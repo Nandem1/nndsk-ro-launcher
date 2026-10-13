@@ -214,6 +214,10 @@ rg -n 'runner_kind|runner_path|components|schema_version' \
   /absolute/path/to/prefix/.ro-launcher-prefix.json
 /absolute/path/to/wine --version
 
+# Failures with no caller to return them to (rollbacks, background persistence, shutdown kills).
+# Bounded, rotated once to diagnostics.log.1; also mirrored to stderr and the UI log panel.
+tail -n 50 ~/.local/share/ro-launcher/diagnostics.log
+
 # Kernel/crash/graphics evidence.
 sysctl kernel.yama.ptrace_scope
 coredumpctl --no-pager list --since today

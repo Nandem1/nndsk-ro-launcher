@@ -308,7 +308,14 @@ impl SpawnedRunner {
                         .id()
                         .and_then(ro_tools_linux::capture_process_identity)
                     {
-                        let _ = ro_tools_linux::signal_process_identity(&identity, libc::SIGKILL);
+                        if let Err(error) =
+                            ro_tools_linux::signal_process_identity(&identity, libc::SIGKILL)
+                        {
+                            crate::utils::report(
+                                "runner",
+                                format!("SIGKILL a pid {} falló: {error}", identity.pid),
+                            );
+                        }
                     }
                 }
                 let _ = child.wait().await;

@@ -65,11 +65,20 @@ where
         let _active = active;
         let result = execute(manager.clone(), draft.clone(), cancel).await;
         if let Err(error) = result {
-            let _ = manager.update(&draft.id, |draft| {
+            let message = error.clone();
+            if let Err(persist) = manager.update(&draft.id, |draft| {
                 draft.status = InstallationStatus::Failed;
-                draft.message = Some(error);
+                draft.message = Some(message);
                 Ok(())
-            });
+            }) {
+                crate::utils::report(
+                    "installations",
+                    format!(
+                        "la instalación {} falló ({error}) y no se pudo guardar su estado: {persist}",
+                        draft.id
+                    ),
+                );
+            }
         }
     });
     Ok(result)

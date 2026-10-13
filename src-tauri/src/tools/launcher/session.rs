@@ -995,7 +995,12 @@ fn terminate_processes(identities: Vec<ProcessIdentity>) -> Vec<String> {
                     })
                     .await;
                     if ended.is_err() {
-                        let _ = signal_process_identity(&identity, libc::SIGKILL);
+                        if let Err(error) = signal_process_identity(&identity, libc::SIGKILL) {
+                            crate::utils::report(
+                                "launcher",
+                                format!("SIGKILL a pid {} falló: {error}", identity.pid),
+                            );
+                        }
                     }
                 });
             }

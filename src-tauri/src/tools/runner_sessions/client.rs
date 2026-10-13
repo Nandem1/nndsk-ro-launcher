@@ -65,10 +65,21 @@ pub async fn kill_child_by_identity(
         let _ = signal_process_identity(identity, libc::SIGTERM);
         let _ = timeout(Duration::from_secs(2), child.wait()).await;
         if verify_process_identity(identity) {
-            let _ = signal_process_identity(identity, libc::SIGKILL);
+            if let Err(error) = signal_process_identity(identity, libc::SIGKILL) {
+                crate::utils::report(
+                    "runner-session",
+                    format!("SIGKILL a pid {} falló: {error}", identity.pid),
+                );
+            }
         }
     }
     let _ = timeout(Duration::from_secs(3), child.wait()).await;
+    if verify_process_identity(identity) {
+        crate::utils::report(
+            "runner-session",
+            format!("el pid {} sigue vivo tras SIGTERM y SIGKILL", identity.pid),
+        );
+    }
     Ok(())
 }
 

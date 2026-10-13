@@ -3,6 +3,7 @@
 //! Dominio de tools (AutoPot, input) vive en [`crate::tools`] + crates `ro-tools-*`.
 
 pub mod audio;
+mod diagnostics;
 mod events;
 mod fs;
 mod game_dir;
@@ -19,6 +20,7 @@ mod system;
 mod webview;
 mod wine;
 
+pub use diagnostics::{init_diagnostics, report};
 pub use events::*;
 pub use fs::*;
 pub use game_dir::*;

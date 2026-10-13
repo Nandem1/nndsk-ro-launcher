@@ -312,7 +312,7 @@ impl PresenceWorker {
             }
             Err(error) => {
                 if self.last_error.as_deref() != Some(error.as_str()) {
-                    eprintln!("[ro-launcher] Discord Rich Presence: {error}");
+                    crate::utils::report("presence", format!("Discord Rich Presence: {error}"));
                 }
                 self.last_error = Some(error);
             }

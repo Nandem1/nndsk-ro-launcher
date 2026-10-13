@@ -168,11 +168,11 @@ pub fn install_files(app: &AppHandle, game_dir: &Path) -> Result<Vec<String>, St
     })();
 
     if let Err(error) = result {
-        rollback(&snapshots);
+        let failures = rollback(&snapshots);
         if !backup_dir_existed {
             let _ = std::fs::remove_dir(&backup_root);
         }
-        return Err(error);
+        return Err(with_rollback_failures(error, &failures));
     }
     result
 }
@@ -263,9 +263,10 @@ pub fn uninstall_files(game_dir: &Path) -> Result<Vec<String>, String> {
     })();
 
     if let Err(error) = result {
-        rollback(&snapshots);
-        return Err(format!(
-            "No se pudo desinstalar dgVoodoo de forma segura: {error}"
+        let failures = rollback(&snapshots);
+        return Err(with_rollback_failures(
+            format!("No se pudo desinstalar dgVoodoo de forma segura: {error}"),
+            &failures,
         ));
     }
 
@@ -566,16 +567,35 @@ fn snapshot_once(
     Ok(())
 }
 
-fn rollback(snapshots: &[Snapshot]) {
+/// Restores every snapshot and returns the files it could not restore. A failed rollback leaves
+/// game files in an intermediate state, so the caller must report it next to the original error.
+fn rollback(snapshots: &[Snapshot]) -> Vec<String> {
+    let mut failures = Vec::new();
     for snapshot in snapshots.iter().rev() {
-        match &snapshot.bytes {
-            Some(bytes) => {
-                let _ = atomic_write_regular(&snapshot.path, bytes);
-            }
-            None => {
-                let _ = std::fs::remove_file(&snapshot.path);
-            }
+        let outcome = match &snapshot.bytes {
+            Some(bytes) => atomic_write_regular(&snapshot.path, bytes),
+            None => match std::fs::remove_file(&snapshot.path) {
+                Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
+                    Err(error.to_string())
+                }
+                _ => Ok(()),
+            },
+        };
+        if let Err(error) = outcome {
+            failures.push(format!("{}: {error}", snapshot.path.display()));
         }
+    }
+    failures
+}
+
+fn with_rollback_failures(error: String, failures: &[String]) -> String {
+    if failures.is_empty() {
+        error
+    } else {
+        format!(
+            "{error}. Rollback incompleto; revisa estos archivos: {}",
+            failures.join("; ")
+        )
     }
 }
 
@@ -599,6 +619,48 @@ fn fnv1a(bytes: &[u8]) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rollback_reports_files_it_could_not_restore() {
+        let root = std::env::temp_dir().join(format!(
+            "ro-dgvoodoo-rollback-{}-{}",
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let restorable = root.join("dgVoodoo.conf");
+        let created = root.join("D3D8.dll");
+        std::fs::write(&created, b"new").unwrap();
+        let never_created = root.join("DDraw.dll");
+        let unreachable = root.join("missing-dir").join("D3DImm.dll");
+        let snapshots = vec![
+            Snapshot {
+                path: restorable.clone(),
+                bytes: Some(b"original".to_vec()),
+            },
+            Snapshot {
+                path: created.clone(),
+                bytes: None,
+            },
+            Snapshot {
+                path: never_created,
+                bytes: None,
+            },
+            Snapshot {
+                path: unreachable.clone(),
+                bytes: Some(b"x".to_vec()),
+            },
+        ];
+        let failures = rollback(&snapshots);
+        assert_eq!(std::fs::read(&restorable).unwrap(), b"original");
+        assert!(!created.exists());
+        assert_eq!(failures.len(), 1, "{failures:?}");
+        assert!(failures[0].starts_with(&unreachable.display().to_string()));
+        let message = with_rollback_failures("fallo original".into(), &failures);
+        assert!(message.starts_with("fallo original. Rollback incompleto"));
+        assert_eq!(with_rollback_failures("solo".into(), &[]), "solo");
+        std::fs::remove_dir_all(root).unwrap();
+    }
     use serde::Deserialize;
     use std::sync::atomic::{AtomicU64, Ordering};
 

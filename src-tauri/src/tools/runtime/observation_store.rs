@@ -115,7 +115,12 @@ pub(crate) fn enqueue_persist_started(
     }
     let paths = ObservationPaths::production();
     Some(tokio::task::spawn_blocking(move || {
-        let _ = persist_started(&paths, payload);
+        if let Err(error) = persist_started(&paths, payload) {
+            crate::utils::report(
+                "runtime-observe",
+                format!("no se guardó el inicio: {error}"),
+            );
+        }
     }))
 }
 
@@ -125,7 +130,12 @@ pub(crate) fn enqueue_persist_finished(payload: ObservationFinishedPayload) {
     }
     let paths = ObservationPaths::production();
     tokio::task::spawn_blocking(move || {
-        let _ = persist_finished(&paths, payload);
+        if let Err(error) = persist_finished(&paths, payload) {
+            crate::utils::report(
+                "runtime-observe",
+                format!("no se guardó el cierre: {error}"),
+            );
+        }
     });
 }
 
@@ -138,8 +148,13 @@ pub(crate) fn enqueue_persist_unreached(
     }
     let paths = ObservationPaths::production();
     tokio::task::spawn_blocking(move || {
-        if persist_started(&paths, started).is_ok() {
-            let _ = persist_finished(&paths, finished);
+        let result =
+            persist_started(&paths, started).and_then(|()| persist_finished(&paths, finished));
+        if let Err(error) = result {
+            crate::utils::report(
+                "runtime-observe",
+                format!("no se guardó una ejecución sin alcanzar: {error}"),
+            );
         }
     });
 }
@@ -345,7 +360,12 @@ fn prune(paths: &ObservationPaths, keep_id: &str) -> Result<(), String> {
         match read_record(&path) {
             Ok(record) => records.push((path, record)),
             Err(_) => {
-                let _ = quarantine_corrupt(&path);
+                if let Err(error) = quarantine_corrupt(&path) {
+                    crate::utils::report(
+                        "runtime-observe",
+                        format!("no se pudo aislar {}: {error}", path.display()),
+                    );
+                }
             }
         }
     }

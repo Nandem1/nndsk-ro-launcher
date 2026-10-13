@@ -15,7 +15,10 @@ pub fn load_profiles() -> &'static [PresenceMemoryProfile] {
         .get_or_init(|| {
             let raw = include_str!("../../../resources/presence_profiles.json");
             parse_presence_profiles_json(raw).unwrap_or_else(|error| {
-                eprintln!("[ro-launcher] presence_profiles.json parse error: {error}");
+                crate::utils::report(
+                    "presence",
+                    format!("presence_profiles.json parse error: {error}"),
+                );
                 Vec::new()
             })
         })

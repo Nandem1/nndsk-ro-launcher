@@ -9,7 +9,7 @@ fn load_map_names() -> &'static HashMap<String, String> {
         match serde_json::from_str::<HashMap<String, String>>(raw) {
             Ok(map) => map,
             Err(error) => {
-                eprintln!("[ro-launcher] map_names.json parse error: {error}");
+                crate::utils::report("presence", format!("map_names.json parse error: {error}"));
                 HashMap::new()
             }
         }
