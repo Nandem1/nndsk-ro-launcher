@@ -17,3 +17,6 @@ pub mod spammer;
 pub mod storage;
 pub mod tool_kind;
 pub mod update;
+
+#[cfg(test)]
+mod ipc_golden;

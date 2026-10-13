@@ -1,0 +1,50 @@
+{
+  "compatibilityAssessment": {
+    "validated": { "kind": "validated", "evidenceId": "evidence-validated-1" },
+    "experimental": {
+      "kind": "experimental",
+      "evidenceId": "evidence-experimental-1"
+    },
+    "incompatible": {
+      "kind": "incompatible",
+      "evidenceId": "evidence-incompatible-1",
+      "reason": "known crash"
+    },
+    "unknown": { "kind": "unknown" }
+  },
+  "environmentAction": {
+    "recheck": { "kind": "recheck" },
+    "prepare": { "kind": "prepare" },
+    "hostGuide": {
+      "kind": "hostGuide",
+      "family": "arch",
+      "packages": ["wine", "winetricks"]
+    }
+  },
+  "updatePhase": {
+    "idle": { "kind": "idle" },
+    "checking": { "kind": "checking" },
+    "current": { "kind": "current" },
+    "available": {
+      "kind": "available",
+      "release": {
+        "version": "0.3.4",
+        "publishedAt": "2026-01-02T03:04:05Z",
+        "notes": "notes"
+      }
+    },
+    "downloading": {
+      "kind": "downloading",
+      "release": { "version": "0.3.4", "publishedAt": null, "notes": null },
+      "downloadedBytes": 1024,
+      "contentLength": 4096
+    },
+    "readyToRestart": { "kind": "readyToRestart", "installedVersion": "0.3.4" },
+    "failed": {
+      "kind": "failed",
+      "class": "clientsActive",
+      "message": "clients running"
+    },
+    "unavailable": { "kind": "unavailable", "reason": "notPackaged" }
+  }
+}
