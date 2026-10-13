@@ -1,5 +1,11 @@
 name: Dependency audit
 
+# Scheduled early warning. The same policy also gates every release in release.yml.
+# Policy (scripts/dependency-audit-policy.mjs): runtime npm advisories >= moderate, dev-only npm
+# criticals and every RustSec vulnerability fail the job. Other advisories are listed in the job
+# summary and as warning annotations. A crashed or unparseable audit fails the job; there is no
+# continue-on-error here on purpose.
+
 on:
   workflow_dispatch:
   schedule:
@@ -11,27 +17,27 @@ permissions:
 jobs:
   npm:
     runs-on: ubuntu-24.04
-    continue-on-error: true
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npm audit --audit-level=high
+      # The audit reads package-lock.json; installing (and running install scripts) is not needed.
+      - run: node scripts/dependency-audit-policy.mjs npm
 
   rustsec:
     runs-on: ubuntu-24.04
-    continue-on-error: true
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
         with:
           toolchain: stable
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           shared-key: cargo-audit
-          cache-on-failure: true
-      - run: cargo install cargo-audit --locked
-      - run: cargo audit
+      - run: cargo install cargo-audit --locked --version 0.22.2
+      - run: node scripts/dependency-audit-policy.mjs cargo
