@@ -247,30 +247,31 @@ unsafe fn child_exec(
     libc::close(stderr_r);
 
     if libc::chdir(cwd) != 0 {
-        libc::write(
-            libc::STDERR_FILENO,
-            b"chdir failed\n".as_ptr() as *const libc::c_void,
-            12,
-        );
+        child_report(b"chdir failed\n");
         libc::_exit(127);
     }
     libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM);
     if libc::getppid() as u32 != expected_parent {
-        libc::write(
-            libc::STDERR_FILENO,
-            b"parent changed before exec\n".as_ptr() as *const libc::c_void,
-            28,
-        );
+        child_report(b"parent changed before exec\n");
         libc::_exit(127);
     }
 
     libc::execve(argv0, argv, envp);
+    child_report(b"execve failed\n");
+    libc::_exit(127);
+}
+
+/// Writes a fixed diagnostic from the forked child before `execve`/`_exit`.
+///
+/// Only async-signal-safe calls are allowed between `fork` and `execve`, so this is a raw
+/// `write(2)`. The length is always taken from the slice itself: hand-counted lengths previously
+/// truncated two messages and read one byte past the end of a third literal.
+unsafe fn child_report(message: &[u8]) {
     libc::write(
         libc::STDERR_FILENO,
-        b"execve failed\n".as_ptr() as *const libc::c_void,
-        13,
+        message.as_ptr().cast::<libc::c_void>(),
+        message.len(),
     );
-    libc::_exit(127);
 }
 
 fn spawn_stream_forwarder(
