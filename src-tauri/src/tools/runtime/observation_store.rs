@@ -36,7 +36,6 @@ struct RuntimeObservationExportBundle {
 }
 
 use crate::models::observation::RuntimeObservationSummaryIpc;
-use crate::tools::runner_sessions::session_supervisor_enabled;
 use crate::utils::{app_data_dir, replace_json};
 
 use super::apply::{build_runtime_plan_summary, runtime_graphics_plan_enabled};
@@ -93,7 +92,6 @@ pub(crate) struct ObservationStartedPayload {
     pub game_identity: Option<ProcessIdentity>,
     pub controller_identity: Option<ProcessIdentity>,
     pub supervisor_identity: Option<ProcessIdentity>,
-    pub supervised: bool,
     pub plan_availability: PlanAvailability,
 }
 
@@ -251,7 +249,7 @@ fn build_started_record(
             handoff_count: 0,
         },
         supervisor: ObservationSupervisorIpc {
-            enabled: payload.supervised,
+            enabled: true,
             supervisor: payload.supervisor_identity.map(to_identity_ipc),
         },
         appimage: ObservationAppImageIpc {
@@ -263,7 +261,7 @@ fn build_started_record(
             compat: runtime_compat_enabled(),
             shadow: runtime_shadow_enabled(),
             prefix_v3: prefix_v3_write_enabled(),
-            session_supervisor: session_supervisor_enabled(),
+            session_supervisor: true,
         },
         outcome: None,
         visual_check: VisualCheckStatus::Pending,
@@ -611,7 +609,79 @@ mod tests {
     }
 
     #[test]
-    fn write_record_persists_valid_observation() {
+    fn new_observation_persists_mandatory_supervision() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = temp_observation_root();
+        fs::create_dir_all(&root).unwrap();
+        for name in ["wine", "wineserver"] {
+            let binary = root.join(name);
+            fs::write(&binary, "#!/bin/sh\nexit 0\n").unwrap();
+            fs::set_permissions(binary, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let resolved = crate::utils::resolve_runner(root.join("wine").to_str().unwrap()).unwrap();
+        let probe = super::super::probe_runner(&resolved);
+        let identity =
+            super::super::resolve_prefix_binding(None, &resolved, &probe, false).unwrap();
+        let ctx = crate::utils::WineContext {
+            prefix: identity.location.path.clone(),
+            location: identity.location.clone(),
+            resolved,
+            identity,
+            probe,
+        };
+        let (profile, plan) = super::super::resolve_operational_plan_with_profile(
+            super::super::OperationalRuntimeInput {
+                server_runner: None,
+                default_runner: None,
+                context: &ctx,
+                dgvoodoo: super::super::DgVoodooState::verified(false),
+                webview2_required: false,
+            },
+        )
+        .unwrap();
+        let anchor = super::super::operational_session_anchor(&ctx, Some(&plan));
+        let payload = ObservationStartedPayload {
+            observation_id: "new-supervised".into(),
+            client_id: "client".into(),
+            server_local_id: "server".into(),
+            game_executable_name: "game.exe".into(),
+            invocation_target: "game".into(),
+            plan_id: anchor.plan_id,
+            runtime_fingerprint: anchor.runtime_fingerprint,
+            prefix_fingerprint_hex: ctx.identity.desired_fingerprint.digest.hex_digest(),
+            prefix_token: "prefix".into(),
+            profile,
+            plan,
+            overlay_verified: false,
+            game_dir: None,
+            game_identity: None,
+            controller_identity: None,
+            supervisor_identity: Some(ProcessIdentity {
+                pid: 100,
+                start_time: 1000,
+            }),
+            plan_availability: PlanAvailability::Resolved,
+        };
+        let paths = ObservationPaths {
+            root: root.join("observations"),
+        };
+        persist_started(&paths, payload).unwrap();
+        let record = read_record(&record_path(&paths, "new-supervised")).unwrap();
+        assert_eq!(record.schema_version, 1);
+        assert!(record.supervisor.enabled);
+        assert!(record.flags.session_supervisor);
+        assert_eq!(record.supervisor.supervisor.unwrap().pid, 100);
+        let json: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(record_path(&paths, "new-supervised")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(json["supervisor"]["enabled"], true);
+        assert_eq!(json["flags"]["sessionSupervisor"], true);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn historical_unsupervised_observation_remains_readable_and_finishable() {
         let root = temp_observation_root();
         let paths = ObservationPaths { root: root.clone() };
         fs::create_dir_all(&root).unwrap();
@@ -672,7 +742,7 @@ mod tests {
                 compat: true,
                 shadow: false,
                 prefix_v3: true,
-                session_supervisor: true,
+                session_supervisor: false,
             },
             outcome: None,
             visual_check: VisualCheckStatus::Pending,
@@ -681,6 +751,14 @@ mod tests {
         write_record(&paths, &record).unwrap();
         let loaded = read_record(&record_path(&paths, &record.observation_id)).unwrap();
         assert_eq!(loaded.observation_id, "good");
+        assert!(!loaded.supervisor.enabled);
+        assert!(!loaded.flags.session_supervisor);
+        assert_eq!(loaded.schema_version, 1);
+        let json: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(record_path(&paths, "good")).unwrap())
+                .unwrap();
+        assert_eq!(json["supervisor"]["enabled"], false);
+        assert_eq!(json["flags"]["sessionSupervisor"], false);
 
         persist_finished(
             &paths,
@@ -703,6 +781,8 @@ mod tests {
         assert_eq!(finished.process.game.unwrap().pid, 100);
         assert_eq!(finished.process.final_game.unwrap().pid, 200);
         assert_eq!(finished.process.handoff_count, 1);
+        assert!(!finished.supervisor.enabled);
+        assert!(!finished.flags.session_supervisor);
         let _ = fs::remove_dir_all(root);
     }
 }

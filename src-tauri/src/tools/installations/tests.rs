@@ -626,7 +626,7 @@ async fn handoff_waits_for_children_with_cleared_environment_and_cancel_preserve
     let game = crate::state::GameProcessHandle::new();
     let anchor = session_anchor_unavailable();
     for expected in [0, 7, 0] {
-        let mut op = RunnerOperation::begin(None, &sessions, &game, &ctx, &anchor)
+        let op = RunnerOperation::begin(None, &sessions, &game, &ctx, &anchor)
             .await
             .unwrap();
         let prefix_guard = OperationGuard::acquire("prefix", Path::new(&ctx.prefix)).unwrap();
@@ -640,7 +640,7 @@ async fn handoff_waits_for_children_with_cleared_environment_and_cancel_preserve
             wait_installer(
                 &mut child,
                 &ctx.prefix,
-                op.lease().map(|lease| lease.supervisor_identity()),
+                Some(op.lease().supervisor_identity()),
                 &mut cancel,
             ),
         )
@@ -653,10 +653,10 @@ async fn handoff_waits_for_children_with_cleared_environment_and_cancel_preserve
         drop(prefix_guard);
         assert!(ro_tools_linux::find_prefix_processes(&ctx.prefix).is_empty());
     }
-    let mut op = RunnerOperation::begin(None, &sessions, &game, &ctx, &anchor)
+    let op = RunnerOperation::begin(None, &sessions, &game, &ctx, &anchor)
         .await
         .unwrap();
-    let mut other_op = RunnerOperation::begin(None, &sessions, &game, &other, &anchor)
+    let other_op = RunnerOperation::begin(None, &sessions, &game, &other, &anchor)
         .await
         .unwrap();
     let mut child = op
@@ -670,18 +670,18 @@ async fn handoff_waits_for_children_with_cleared_environment_and_cancel_preserve
         )
         .await
         .unwrap();
-    let identity = other_child.controller_identity().unwrap();
+    let identity = other_child.controller_identity();
     assert_eq!(child.wait().await.unwrap(), 0);
     assert!(crate::tools::runner_sessions::prefix_has_active_programs(
         &ctx.prefix,
-        op.lease().map(|lease| lease.supervisor_identity())
+        Some(op.lease().supervisor_identity())
     ));
     let (send, mut cancel) = tokio::sync::watch::channel(true);
     assert_eq!(
         wait_installer(
             &mut child,
             &ctx.prefix,
-            op.lease().map(|lease| lease.supervisor_identity()),
+            Some(op.lease().supervisor_identity()),
             &mut cancel
         )
         .await

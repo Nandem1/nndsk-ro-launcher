@@ -32,7 +32,8 @@ Los warnings de compatibilidad y funciones opcionales no se promueven a bloqueos
 La disponibilidad del runner/prefix se conserva independientemente del host. El backend
 recomprueba los requisitos de preparación en setup/reset, antes de descargar artefactos
 o modificar un prefix: invocar IPC directamente no omite el control. Los guards,
-leases, supervisor y rollback existentes siguen siendo la autoridad de ejecución.
+leases, supervisor obligatorio y restauración transaccional de prefixes siguen siendo la
+autoridad de ejecución.
 Los fallos de host conservan todos los bloqueos en la respuesta de error.
 
 Los proveedores actuales son `protonTools` y `wineHostTools`; Wine puede usar el script

@@ -48,8 +48,8 @@ propio en [`PTRACE_SESSION_SUPERVISOR_PLAN.md`](PTRACE_SESSION_SUPERVISOR_PLAN.m
 - La identidad de proceso es `(pid, start_time)`. Se revalida antes de leer memoria o enviar señales.
 - El lifecycle admite varios clientes: cerrar uno no termina los demás ni libera recursos aún usados.
 - Las variables AppImage se sanitizan antes de lanzar Wine, Proton, UMU o sidecars.
-- `ro-sessiond` está activo por defecto y mantiene `ptrace_scope=1`; su rollback de release es
-  `RO_LAUNCHER_SESSION_SUPERVISOR=0`.
+- `ro-sessiond` es obligatorio y mantiene `ptrace_scope=1`. Si no puede iniciarse, la operación
+  falla sin spawn directo. La recuperación de una release es reinstalar la AppImage anterior.
 
 ### Gráficos y runners
 
@@ -261,7 +261,6 @@ Todos estos flags están activos por defecto y sólo el valor exacto `0` desacti
 | `RO_LAUNCHER_RUNTIME_COMPAT`     | usa el check Gepard legacy y omite assessment estructurado        |
 | `RO_LAUNCHER_RUNTIME_OBSERVE`    | deja de escribir nuevas observaciones                             |
 | `RO_LAUNCHER_RUNTIME_BENCHMARK`  | bloquea mutaciones del harness; lectura/export siguen disponibles |
-| `RO_LAUNCHER_SESSION_SUPERVISOR` | usa temporalmente el spawn directo de rollback                    |
 
 Ningún flag autoriza reinterpretar, mover o borrar datos existentes.
 
@@ -291,7 +290,7 @@ La matriz manual mínima conserva ambos anchors:
 - HoneyRO con Proton-CachyOS 11 + UMU;
 - juego directo, handoff de patcher, OpenSetup y maintenance patcher;
 - stop durante launch, varios clientes/prefixes y ciclos repetidos sin zombies;
-- supervisor activo y rollback explícito;
+- supervisor obligatorio y rechazo ante fallo de inicio;
 - AppImage con environment sanitizado.
 
 Una prueba automatizada verde no sustituye una validación live cuando el contrato sólo existe en el

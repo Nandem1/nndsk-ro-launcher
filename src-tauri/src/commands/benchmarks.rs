@@ -8,7 +8,7 @@ use crate::models::benchmark::{
     CompareRuntimeBenchmarksIpc, StartRuntimeBenchmarkRunIpc,
 };
 use crate::state::GameState;
-use crate::tools::runner_sessions::{prefix_log_token, session_supervisor_enabled};
+use crate::tools::runner_sessions::prefix_log_token;
 use crate::tools::runtime::{
     attach_benchmark_run, begin_benchmark_capture,
     benchmark::{
@@ -32,6 +32,32 @@ use crate::tools::runtime::{
 };
 use crate::tools::server_tools;
 use crate::utils::{required_game_dir, resolve_server_wine_context_with_runner, RunnerKind};
+
+fn validate_session_plan(session_plan: Option<String>, plan_id: &str) -> Result<(), String> {
+    let session_plan = session_plan.ok_or_else(|| "session-not-active".to_string())?;
+    if session_plan != plan_id {
+        return Err("plan-id-mismatch".into());
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_session_plan;
+
+    #[test]
+    fn benchmark_requires_active_matching_session_plan() {
+        assert_eq!(
+            validate_session_plan(None, "plan"),
+            Err("session-not-active".into())
+        );
+        assert_eq!(
+            validate_session_plan(Some("other".into()), "plan"),
+            Err("plan-id-mismatch".into())
+        );
+        assert_eq!(validate_session_plan(Some("plan".into()), "plan"), Ok(()));
+    }
+}
 
 #[tauri::command]
 pub async fn start_runtime_benchmark_run(
@@ -90,16 +116,12 @@ pub async fn start_runtime_benchmark_run(
         return Err("plan-id-mismatch".into());
     }
 
-    let supervisor = session_supervisor_enabled();
-    if supervisor {
-        let session_plan = state
+    validate_session_plan(
+        state
             .sessions
-            .plan_id_for_prefix(std::path::Path::new(&ctx.prefix))
-            .ok_or_else(|| "session-not-active".to_string())?;
-        if session_plan != anchor.plan_id {
-            return Err("plan-id-mismatch".into());
-        }
-    }
+            .plan_id_for_prefix(std::path::Path::new(&ctx.prefix)),
+        &anchor.plan_id,
+    )?;
 
     let linked_outcome = lookup_observation_for_identity(&input.client_id, &facts.identity)
         .and_then(|(_, outcome)| outcome);
@@ -174,7 +196,7 @@ pub async fn start_runtime_benchmark_run(
         },
         flags: BenchmarkFlagsIpc {
             graphics_plan: runtime_graphics_plan_enabled(),
-            supervisor,
+            supervisor: true,
             observe: runtime_observe_enabled(),
             benchmark: true,
         },

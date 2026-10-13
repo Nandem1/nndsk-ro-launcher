@@ -653,15 +653,9 @@ impl Default for GameProcessHandle {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tools::runner_sessions::SessionOwnership;
 
-    fn direct_runtime() -> ClientRuntimeGuard {
-        ClientRuntimeGuard {
-            session: SessionOwnership::Direct,
-            memory: None,
-            memory_access: None,
-            profile_memory: None,
-        }
+    fn fixture_runtime() -> ClientRuntimeGuard {
+        ClientRuntimeGuard::fixture()
     }
 
     fn identity(pid: u32) -> ProcessIdentity {
@@ -695,7 +689,7 @@ mod tests {
         let client = launch(&game, "active");
         assert!(game.close_admission_if_idle().is_err());
         assert!(!game.lock().unwrap().relaunch_admission_closed);
-        game.mark_running(client, identity(42), direct_runtime(), "plan".into(), None)
+        game.mark_running(client, identity(42), fixture_runtime(), "plan".into(), None)
             .unwrap();
         assert!(game.close_admission_if_idle().is_err());
         game.request_stop("active").unwrap();
@@ -756,7 +750,13 @@ mod tests {
             .begin_launch("parallel".into(), "server".into(), "Server".into())
             .is_err());
         process
-            .mark_running(first, identity(42), direct_runtime(), "plan-a".into(), None)
+            .mark_running(
+                first,
+                identity(42),
+                fixture_runtime(),
+                "plan-a".into(),
+                None,
+            )
             .unwrap();
 
         let second = launch(&process, "second");
@@ -764,7 +764,7 @@ mod tests {
             .mark_running(
                 second,
                 identity(84),
-                direct_runtime(),
+                fixture_runtime(),
                 "plan-b".into(),
                 None,
             )
@@ -784,7 +784,7 @@ mod tests {
             .mark_running(
                 second,
                 identity(84),
-                direct_runtime(),
+                fixture_runtime(),
                 "plan-b".into(),
                 None,
             )
@@ -796,8 +796,14 @@ mod tests {
     async fn cancelled_task_releases_only_its_pending_reservation() {
         let game = GameProcessHandle::new();
         let running = launch(&game, "running");
-        game.mark_running(running, identity(84), direct_runtime(), "plan".into(), None)
-            .unwrap();
+        game.mark_running(
+            running,
+            identity(84),
+            fixture_runtime(),
+            "plan".into(),
+            None,
+        )
+        .unwrap();
         let pending = launch(&game, "pending");
         let guard = game.guard_pending_launch(pending);
         let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
@@ -824,7 +830,7 @@ mod tests {
         game.mark_running(
             reservation,
             identity(84),
-            direct_runtime(),
+            fixture_runtime(),
             "plan".into(),
             None,
         )
@@ -838,14 +844,20 @@ mod tests {
         let process = GameProcessHandle::new();
         let first = launch(&process, "first");
         process
-            .mark_running(first, identity(42), direct_runtime(), "plan-a".into(), None)
+            .mark_running(
+                first,
+                identity(42),
+                fixture_runtime(),
+                "plan-a".into(),
+                None,
+            )
             .unwrap();
         let second = launch(&process, "second");
         process
             .mark_running(
                 second,
                 identity(84),
-                direct_runtime(),
+                fixture_runtime(),
                 "plan-b".into(),
                 None,
             )
@@ -865,7 +877,13 @@ mod tests {
         let process = GameProcessHandle::new();
         let first = launch(&process, "first");
         process
-            .mark_running(first, identity(42), direct_runtime(), "plan-a".into(), None)
+            .mark_running(
+                first,
+                identity(42),
+                fixture_runtime(),
+                "plan-a".into(),
+                None,
+            )
             .unwrap();
 
         let second = launch(&process, "second");
@@ -874,7 +892,7 @@ mod tests {
             .mark_running(
                 second,
                 identity(84),
-                direct_runtime(),
+                fixture_runtime(),
                 "plan-b".into(),
                 None,
             )
@@ -893,7 +911,7 @@ mod tests {
             .mark_running(
                 reservation,
                 identity(42),
-                direct_runtime(),
+                fixture_runtime(),
                 "plan-a".into(),
                 Some("observation-a".into()),
             )
@@ -919,10 +937,10 @@ mod tests {
             .register(identity, launcher_memory_ancestor())
             .expect("register");
         let runtime = ClientRuntimeGuard {
-            session: SessionOwnership::Direct,
             memory: Some(lease),
             memory_access: Some(MemoryAccess::ProcessVmReadv),
             profile_memory: Some(ProfileMemory::Valid),
+            ..ClientRuntimeGuard::fixture()
         };
         process
             .mark_running(reservation, identity, runtime, "plan-a".into(), None)
@@ -961,10 +979,10 @@ mod tests {
             .register(identity, launcher_memory_ancestor())
             .expect("register");
         let runtime = ClientRuntimeGuard {
-            session: SessionOwnership::Direct,
             memory: Some(lease),
             memory_access: Some(MemoryAccess::ProcessVmReadv),
             profile_memory: Some(ProfileMemory::NotConfigured),
+            ..ClientRuntimeGuard::fixture()
         };
         process
             .mark_running(reservation, identity, runtime, "plan-a".into(), None)
@@ -995,7 +1013,7 @@ mod tests {
             .mark_running(
                 reservation,
                 identity(42),
-                direct_runtime(),
+                fixture_runtime(),
                 "plan-a".into(),
                 None,
             )

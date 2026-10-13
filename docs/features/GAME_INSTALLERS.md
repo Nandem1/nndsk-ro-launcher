@@ -79,9 +79,9 @@ se conserva y se rechaza, también al reintentar; no se adopta automáticamente.
 Se soporta el flujo interactivo de `.exe`; `.msi`, descargas de clientes y automatización de
 asistentes quedan fuera de esta entrega. WebView2 permite una declaración manual y utiliza
 la provisión existente, incluida la política específica de Wine 7.16. La instalación guiada
-requiere el supervisor habilitado: con el rollback
-`RO_LAUNCHER_SESSION_SUPERVISOR=0` se rechaza su inicio, porque el seguimiento de hijos que
-borran su entorno depende del supervisor. El flujo existente de juego conserva su rollback.
+utiliza el supervisor obligatorio `ro-sessiond`, igual que el juego y las herramientas.
+El seguimiento de hijos que borran su entorno depende del supervisor; si no puede iniciarse
+o validar su handshake, la operación falla sin lanzar el runner directamente.
 
 La revisión adversarial cubre serialización camelCase, recuperación persistente, admisión
 duplicada, cancelación, entrega a hijos sin `WINEPREFIX`, exclusión de prefijo, ciclos

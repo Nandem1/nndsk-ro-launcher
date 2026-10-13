@@ -78,7 +78,7 @@ pub async fn setup_runtime_prefix(
     })
     .ok();
     let anchor = operational_session_anchor(ctx, operational_plan.as_ref());
-    let mut op = RunnerOperation::begin(Some(app), sessions, game, ctx, &anchor).await?;
+    let op = RunnerOperation::begin(Some(app), sessions, game, ctx, &anchor).await?;
     let _operation = OperationGuard::acquire("prefix", root)?;
     // Runner startup may await another operation. Re-evaluate ownership and cleanup authority
     // after taking the filesystem guard, never from a pre-lock snapshot of an empty directory.
@@ -88,8 +88,10 @@ pub async fn setup_runtime_prefix(
     }
     let clean_managed_start = ctx.location.managed && !prefix_has_state(&ctx.prefix);
 
+    let preparation = setup_resolved_prefix(app, &op, requirements).await;
+    let op = op.into_cleanup();
     let result = async {
-        setup_resolved_prefix(app, &op, requirements).await?;
+        preparation?;
         op.quiesce().await?;
         write_runtime_manifest(ctx, requirements)
     }
@@ -153,7 +155,7 @@ pub async fn reset_runtime_prefix(
     })
     .ok();
     let anchor = operational_session_anchor(ctx, operational_plan.as_ref());
-    let mut op = RunnerOperation::begin(Some(app), sessions, game, ctx, &anchor).await?;
+    let op = RunnerOperation::begin(Some(app), sessions, game, ctx, &anchor).await?;
     let _operation = OperationGuard::acquire("prefix", Path::new(&ctx.prefix))?;
     ensure_managed_reset_allowed(&ctx.location)?;
 
@@ -175,8 +177,10 @@ pub async fn reset_runtime_prefix(
         None
     };
 
+    let preparation = setup_resolved_prefix(app, &op, requirements).await;
+    let op = op.into_cleanup();
     let result = async {
-        setup_resolved_prefix(app, &op, requirements).await?;
+        preparation?;
         op.quiesce().await?;
         write_runtime_manifest(ctx, requirements)
     }
@@ -927,7 +931,7 @@ mod tests {
         let sessions = RunnerSessionRegistry::with_sidecar_for_test(sidecar);
         let game = GameProcessHandle::new();
         for attempt in 0..2 {
-            let mut op = RunnerOperation::begin(None, &sessions, &game, &ctx, &anchor)
+            let op = RunnerOperation::begin(None, &sessions, &game, &ctx, &anchor)
                 .await
                 .unwrap();
             let root = Path::new(&ctx.prefix);
@@ -935,6 +939,7 @@ mod tests {
             ensure_managed_reset_allowed(&ctx.location).unwrap();
             fs::create_dir_all(root).unwrap();
             let result = initialize_prefix(&op).await;
+            let op = op.into_cleanup();
             op.quiesce().await.unwrap();
             println!(
                 "attempt={attempt} result={:?}",

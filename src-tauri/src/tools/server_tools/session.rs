@@ -9,7 +9,7 @@ use crate::models::server_tools::{
 use crate::models::tool_kind::ToolKind;
 use crate::state::GameProcessHandle;
 use crate::tools::prefix::{DxvkProvision, MANAGED_DXVK_COMPONENT};
-use crate::tools::runner_sessions::{RunnerOperation, RunnerSessionRegistry, SpawnedRunner};
+use crate::tools::runner_sessions::{RunnerOperation, RunnerSessionRegistry};
 use crate::tools::runners::ensure_selected_runtime;
 use crate::tools::runtime::{
     apply_graphics_environment_to_invocation, observe_legacy_runtime,
@@ -17,7 +17,7 @@ use crate::tools::runtime::{
     InvocationTarget, LegacyRuntimeInput, ShadowOperation,
 };
 use crate::utils::{
-    drain_and_log, emit_log_opt, required_game_dir, resolve_server_wine_context_with_runner,
+    emit_log_opt, required_game_dir, resolve_server_wine_context_with_runner,
     validate_runtime_prefix, OperationGuard,
 };
 
@@ -302,16 +302,10 @@ pub async fn launch_tool(
         let _prefix_operation = prefix_operation;
         let _dgvoodoo_operation = dgvoodoo_operation;
         let _operation = op;
-        match &mut spawned {
-            SpawnedRunner::Direct(child) => {
-                drain_and_log(&app, child).await;
-            }
-            SpawnedRunner::Supervised(_) => {}
-        }
         let code = spawned.wait().await.unwrap_or(-1);
         crate::tools::runner_sessions::wait_for_prefix_programs(
             &_operation.ctx().prefix,
-            _operation.lease().map(|lease| lease.supervisor_identity()),
+            Some(_operation.lease().supervisor_identity()),
         )
         .await;
         emit_log_opt(

@@ -175,16 +175,6 @@ fn read_current_driver_from_registry(prefix_path: &str) -> Option<AudioDriver> {
     None
 }
 
-pub fn is_mmdevapi_audio_error(line: &str) -> bool {
-    line.contains("err:mmdevapi")
-        && (line.contains("load_driver") || line.contains("DllGetClassObject"))
-}
-
-pub fn mmdevapi_recovery_hint() -> &'static str {
-    "Fallo de audio detectado. Revisa el driver mostrado en Avanzado. \
-     En Arch/CachyOS instala las bibliotecas de 32 bits: sudo pacman -S lib32-libpulse lib32-alsa-lib"
-}
-
 /// Lee el driver configurado en `user.reg` (sin invocar Wine).
 #[allow(dead_code)]
 pub fn read_current_driver(prefix_path: &str, _runner: &ResolvedRunner) -> Option<AudioDriver> {
