@@ -47,6 +47,9 @@ pub(crate) fn extract_created_archive(
         }
     }
 
+    reject_links_resolving_outside(staging_dir)
+        .map_err(|error| format!("Archive de {} rechazado: {error}", descriptor.id))?;
+
     let extracted = staging_dir.join(descriptor.archive.archive_root());
     if !extracted.is_dir()
         || extracted
@@ -120,6 +123,36 @@ pub(crate) fn normalize_relative_path(path: &Path) -> Result<PathBuf, String> {
         }
     }
     Ok(out)
+}
+
+/// `validate_link_target` is lexical: it cannot see that an earlier entry made a path component a
+/// symlink, so `l1 -> .` followed by `l2 -> l1/..` passes while `l2` physically names the parent
+/// of staging. `unpack_in` already refuses to write through such a link; this sweep also refuses
+/// to keep one, so no installed runtime contains a link that resolves outside its own tree.
+fn reject_links_resolving_outside(staging_dir: &Path) -> Result<(), String> {
+    let root = std::fs::canonicalize(staging_dir).map_err(|error| error.to_string())?;
+    let mut pending = vec![staging_dir.to_path_buf()];
+    while let Some(dir) = pending.pop() {
+        for entry in std::fs::read_dir(&dir).map_err(|error| error.to_string())? {
+            let entry = entry.map_err(|error| error.to_string())?;
+            let file_type = entry.file_type().map_err(|error| error.to_string())?;
+            let path = entry.path();
+            if file_type.is_symlink() {
+                // Dangling links resolve to nothing and cannot be followed out of staging.
+                if let Ok(resolved) = std::fs::canonicalize(&path) {
+                    if !resolved.starts_with(&root) {
+                        return Err(format!(
+                            "symlink {} resuelve fuera de staging",
+                            path.strip_prefix(staging_dir).unwrap_or(&path).display()
+                        ));
+                    }
+                }
+            } else if file_type.is_dir() {
+                pending.push(path);
+            }
+        }
+    }
+    Ok(())
 }
 
 fn validate_entry_type(
@@ -370,5 +403,51 @@ mod tests {
             assert_eq!(std::fs::read(&outside).unwrap(), b"keep");
         }
         std::fs::remove_dir_all(directory).unwrap();
+    }
+    /// Regression for the lexical link check: a chain of individually "inside" links must neither
+    /// write outside staging (tar's unpack_in guard) nor survive as a link that resolves outside.
+    #[test]
+    fn extract_rejects_symlink_chain_resolving_outside_staging() {
+        let parent =
+            std::env::temp_dir().join(format!("ro-launcher-link-chain-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&parent);
+        std::fs::create_dir_all(&parent).unwrap();
+        let link = |builder: &mut Builder<&mut Vec<u8>>, path: &str, target: &str| {
+            let mut header = tar::Header::new_gnu();
+            header.set_entry_type(EntryType::Symlink);
+            header.set_link_name(target).unwrap();
+            header.set_path(path).unwrap();
+            header.set_size(0);
+            header.set_cksum();
+            builder.append(&header, &[] as &[u8]).unwrap();
+        };
+        let write_through = parent.join("write-through.tar");
+        write_tar(&write_through, |builder| {
+            link(builder, "l1", ".");
+            link(builder, "l2", "l1/..");
+            let mut header = tar::Header::new_gnu();
+            header.set_size(5);
+            header.set_entry_type(EntryType::Regular);
+            header.set_path("l2/escaped.txt").unwrap();
+            header.set_cksum();
+            builder.append(&header, &b"pwned"[..]).unwrap();
+        });
+        let link_only = parent.join("link-only.tar");
+        write_tar(&link_only, |builder| {
+            link(builder, "l1", ".");
+            link(builder, "l2", "l1/..");
+        });
+        let descriptor = test_descriptor("ignored");
+        for (archive, staging) in [
+            (&write_through, parent.join("staging-a")),
+            (&link_only, parent.join("staging-b")),
+        ] {
+            assert!(extract_archive(&descriptor, archive, &staging).is_err());
+            assert!(!parent.join("escaped.txt").exists());
+        }
+        let error =
+            extract_archive(&descriptor, &link_only, &parent.join("staging-c")).unwrap_err();
+        assert!(error.contains("resuelve fuera de staging"), "{error}");
+        std::fs::remove_dir_all(parent).unwrap();
     }
 }
