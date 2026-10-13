@@ -325,12 +325,21 @@ impl UinputInput {
     }
 
     pub fn shutdown(&self) {
-        let Some(mut worker) = self.inner.lock().ok().and_then(|mut guard| guard.take()) else {
+        let worker = match self.inner.lock() {
+            Ok(mut guard) => guard.take(),
+            Err(_) => {
+                crate::utils::report("exit/input", "no se pudo acceder al worker de input");
+                return;
+            }
+        };
+        let Some(mut worker) = worker else {
             return;
         };
         let _ = worker.shutdown_tx.send(());
         if let Some(join) = worker.join.take() {
-            let _ = join.join();
+            if join.join().is_err() {
+                crate::utils::report("exit/input", "el worker de input terminó con pánico");
+            }
         }
     }
 }

@@ -65,6 +65,81 @@ fn wait_for_installation_idle(manager: &InstallationManager, id: &str) {
 }
 
 #[test]
+fn regression_relaunch_census_reserves_installation_admission() {
+    let fixture = Fixture::new();
+    let draft = fixture.manager.create(fixture.input()).unwrap();
+    let _admission = fixture.manager.close_admission_if_idle().unwrap();
+    let admitted = fixture.manager.reserve(&draft.id);
+    assert!(
+        admitted.is_err(),
+        "idle census did not reserve installation admission"
+    );
+}
+
+#[test]
+fn active_installation_refuses_relaunch_without_cancellation() {
+    let fixture = Fixture::new();
+    let draft = fixture.manager.create(fixture.input()).unwrap();
+    let (_, cancel, active) = fixture.manager.reserve(&draft.id).unwrap();
+    assert!(fixture.manager.close_admission_if_idle().is_err());
+    assert!(!*cancel.borrow());
+    assert_eq!(
+        fixture.manager.get(&draft.id).unwrap().status,
+        InstallationStatus::Preparing
+    );
+    // A failed relaunch must leave ordinary create admission open too.
+    fixture.manager.create(fixture.input()).unwrap();
+    drop(active);
+    drop(fixture.manager.close_admission_if_idle().unwrap());
+    let (_, _, retry) = fixture.manager.reserve(&draft.id).unwrap();
+    drop(retry);
+}
+
+#[test]
+fn relaunch_installation_guard_cannot_reopen_real_shutdown() {
+    let fixture = Fixture::new();
+    let draft = fixture.manager.create(fixture.input()).unwrap();
+    let admission = fixture.manager.close_admission_if_idle().unwrap();
+    assert!(fixture.manager.close_admission_if_idle().is_err());
+    assert!(fixture.manager.create(fixture.input()).is_err());
+    assert!(fixture.manager.reserve(&draft.id).is_err());
+    fixture.manager.request_shutdown();
+    drop(admission);
+    assert!(fixture.manager.create(fixture.input()).is_err());
+    assert!(fixture.manager.reserve(&draft.id).is_err());
+    assert!(fixture.manager.close_admission_if_idle().is_err());
+}
+
+#[test]
+fn installation_and_relaunch_race_have_exactly_one_winner() {
+    let fixture = Fixture::new();
+    let draft = fixture.manager.create(fixture.input()).unwrap();
+    for _ in 0..1_000 {
+        let barrier = std::sync::Barrier::new(2);
+        std::thread::scope(|scope| {
+            let installer = scope.spawn(|| {
+                barrier.wait();
+                fixture.manager.reserve(&draft.id)
+            });
+            barrier.wait();
+            let restart = fixture.manager.close_admission_if_idle();
+            let installer = installer.join().unwrap();
+            assert_ne!(installer.is_ok(), restart.is_ok());
+        });
+    }
+}
+
+#[test]
+fn create_and_relaunch_share_admission_mutex() {
+    let fixture = Fixture::new();
+    fixture.manager.create(fixture.input()).unwrap();
+    let admission = fixture.manager.close_admission_if_idle().unwrap();
+    assert!(fixture.manager.create(fixture.input()).is_err());
+    drop(admission);
+    fixture.manager.create(fixture.input()).unwrap();
+}
+
+#[test]
 fn synchronous_dispatch_survives_ipc_return_and_delivers_cancellation() {
     let fixture = Fixture::new();
     let draft = fixture.manager.create(fixture.input()).unwrap();

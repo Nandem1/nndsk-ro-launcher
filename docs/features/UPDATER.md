@@ -103,6 +103,34 @@ vieja que ya embeba el pubkey nuevo, o pide reinstalar el AppImage una vez.
 
 ## AppImageLauncher
 
+Instalar y reiniciar son operaciones distintas. La instalación atestigua que no hay
+clientes antes de descargar y otra vez antes de llamar al instalador del plugin.
+No cierra instalaciones guiadas, presencia, herramientas, sesiones ni input; tanto
+un error de instalación como `readyToRestart` dejan el launcher utilizable.
+
+El reinicio exige `readyToRestart`. Bajo el mutex del registro de clientes comprueba
+que no hay clientes iniciando, ejecutando o deteniéndose y reserva la admisión de
+lanzamientos. Luego reserva la admisión de instalaciones guiadas bajo su propio
+mutex, solo si no hay workers activos. Si esa segunda reserva falla, se libera la
+primera. Las reservas no cancelan trabajos y su rollback no revierte el cierre
+terminal de instalaciones de una salida real. Ambas permanecen cerradas al llamar
+a `AppHandle::restart()`; `RunEvent::Exit` es el dueño de la limpieza de servicios.
+Los fallos de limpieza se registran en `diagnostics.log`.
+
+En Tauri 2.11.2 `AppHandle::restart() -> !` no retorna: desde el worker del comando
+solicita la salida al event loop, que entrega `RunEvent::Exit` antes de relanzar.
+Si falla esa solicitud, Tauri usa su reinicio directo; esa ruta de emergencia no
+garantiza el callback de salida. No se ha calificado todavía el flujo completo
+con AppImages firmados.
+
+Límite del hardening F-02: estas reservas cubren clientes y ejecución de instalaciones
+guiadas. Preparación/reset de prefixes, importación de artefactos y herramientas de
+servidor conservan sus propios contratos; aún pueden entrar antes de que el cierre
+de sesiones de salida los rechace. Según `FINAL_HARDENING_PLAN.md`, F-02 puede
+integrarse primero, pero no debe publicarse una estable sin la recuperación F-05/F-06.
+La sustitución atómica del AppImage (F-03) y la exclusividad entre procesos (F-04)
+siguen pendientes.
+
 El updater sustituye el fichero `APPIMAGE` en su sitio. No llama a `ail-cli`.
 La entrada de escritorio de AppImageLauncher sigue apuntando a la misma ruta.
 Si el tempdir no está en el mismo mount, la fase pasa a error de instalación.

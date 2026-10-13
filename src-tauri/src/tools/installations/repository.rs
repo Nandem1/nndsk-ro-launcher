@@ -13,6 +13,24 @@ struct State {
     drafts: Option<Vec<InstallationDraft>>,
     active: HashMap<String, watch::Sender<bool>>,
     closing: bool,
+    relaunch_admission_closed: bool,
+}
+
+/// Relaunch never cancels workers. Dropping this guard cannot undo terminal shutdown.
+pub(crate) struct InstallationAdmission {
+    manager: InstallationManager,
+}
+
+impl Drop for InstallationAdmission {
+    fn drop(&mut self) {
+        match self.manager.state.lock() {
+            Ok(mut state) => state.relaunch_admission_closed = false,
+            Err(_) => crate::utils::report(
+                "relaunch",
+                "no se pudo reabrir la admisión de instalaciones",
+            ),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -103,7 +121,7 @@ impl InstallationManager {
             return Err("El instalador seleccionado no existe".into());
         }
         self.transaction(|state| {
-            if state.closing {
+            if state.closing || state.relaunch_admission_closed {
                 return Err("El launcher se está cerrando".into());
             }
             let mut next = state.drafts.as_ref().unwrap().clone();
@@ -142,7 +160,7 @@ impl InstallationManager {
         // A restart must not invalidate its snapshot or race a server insertion.
         let _admission = OperationGuard::acquire("installation-confirm", std::path::Path::new(id))?;
         self.transaction(|state| {
-            if state.closing {
+            if state.closing || state.relaunch_admission_closed {
                 return Err("El launcher se está cerrando".into());
             }
             if state.active.contains_key(id) {
@@ -201,25 +219,55 @@ impl InstallationManager {
             for sender in state.active.values() {
                 sender.send_replace(true);
             }
+        } else {
+            crate::utils::report(
+                "exit/installations",
+                "no se pudo cerrar la admisión ni cancelar las instalaciones",
+            );
         }
+    }
+
+    pub(crate) fn close_admission_if_idle(&self) -> Result<InstallationAdmission, String> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| "El registro de instalaciones está bloqueado")?;
+        if state.closing || state.relaunch_admission_closed {
+            return Err("El launcher se está cerrando".into());
+        }
+        if !state.active.is_empty() {
+            return Err("Espera a que finalicen las instalaciones antes de reiniciar".into());
+        }
+        state.relaunch_admission_closed = true;
+        Ok(InstallationAdmission {
+            manager: self.clone(),
+        })
     }
 
     pub async fn wait_for_shutdown(&self) {
         let wait = async {
             loop {
-                if self
+                let idle = self
                     .state
                     .lock()
                     .map(|state| state.active.is_empty())
-                    .unwrap_or(true)
-                {
+                    .map_err(|_| "El registro de instalaciones está bloqueado")?;
+                if idle {
                     break;
                 }
                 tokio::time::sleep(std::time::Duration::from_millis(100)).await;
             }
+            Ok::<(), &str>(())
         };
         // RunnerSessionRegistry owns and completes subprocess shutdown independently.
-        let _ = tokio::time::timeout(std::time::Duration::from_secs(15), wait).await;
+        match tokio::time::timeout(std::time::Duration::from_secs(15), wait).await {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => crate::utils::report("exit/installations", error),
+            Err(_) => crate::utils::report(
+                "exit/installations",
+                "las instalaciones no finalizaron en 15 segundos",
+            ),
+        }
     }
 }
 
@@ -277,4 +325,38 @@ fn validate_drafts(drafts: &Vec<InstallationDraft>) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod shutdown_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn poisoned_shutdown_state_reports_instead_of_silently_skipping_cleanup() {
+        let manager = InstallationManager::new(std::env::temp_dir().join(format!(
+            "ro-poisoned-installations-{}.json",
+            uuid::Uuid::new_v4()
+        )));
+        let poisoned = manager.clone();
+        assert!(std::thread::spawn(move || {
+            let _lock = poisoned.state.lock().unwrap();
+            panic!("synthetic poisoned shutdown owner");
+        })
+        .join()
+        .is_err());
+        manager.request_shutdown();
+        manager.wait_for_shutdown().await;
+        assert!(manager.close_admission_if_idle().is_err());
+        let log = std::env::temp_dir()
+            .join(format!(
+                "ro-launcher-test-diagnostics-{}",
+                std::process::id()
+            ))
+            .join("diagnostics.log");
+        let log = std::fs::read_to_string(log).unwrap();
+        assert!(log.contains(
+            "[exit/installations] no se pudo cerrar la admisión ni cancelar las instalaciones"
+        ));
+        assert!(log.contains("[exit/installations] El registro de instalaciones está bloqueado"));
+    }
 }

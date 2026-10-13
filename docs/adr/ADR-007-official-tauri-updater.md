@@ -26,7 +26,11 @@ confiar argumentos del WebView y sin romper el contrato multi-cliente (Wine /
    `updater:default` / `updater:allow-*` o los paquetes JS `@tauri-apps/plugin-updater`
    / `@tauri-apps/plugin-process`.
 4. **IdleClients.** Se atestigua antes de descargar y otra vez antes de reemplazar
-   el AppImage, y otra vez al reiniciar. No se llama a `stop_all_games`.
+   el AppImage. Instalar no apaga servicios. Al reiniciar se comprueba idle y se
+   reserva la admisión bajo el mismo mutex que admite clientes; luego se reserva
+   la de instalaciones guiadas solo si no hay workers activos. Si la segunda
+   reserva falla, se libera la primera. No se llama a `stop_all_games` ni se
+   cancelan instalaciones para obtener idle. `RunEvent::Exit` realiza la limpieza.
 5. **Reinicio explícito.** Tras instalar, fase `readyToRestart`. El usuario reinicia;
    no hay auto-restart.
 

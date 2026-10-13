@@ -6,6 +6,7 @@ use std::{
 };
 use tokio::sync::Mutex as AsyncMutex;
 
+pub(crate) use game_process::GameLaunchAdmission;
 pub use game_process::{GameProcessHandle, LaunchReservation};
 
 use crate::tools::autobuff::AutobuffHandle;

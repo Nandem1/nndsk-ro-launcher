@@ -3,28 +3,34 @@ mod policy;
 mod session;
 
 pub use backend::OfficialUpdaterBackend;
-pub use session::{check_for_packaged_update, ShutdownForUpdate, UpdateLease};
+pub use session::{check_for_packaged_update, UpdateLease};
 
 use crate::state::GameState;
 
-/// Same sequence as `RunEvent::Exit`: presence, tools, sessions, input.
+/// Actual service shutdown belongs only to `RunEvent::Exit`.
 pub async fn shutdown_launcher_services(state: &GameState) {
     state.installations.request_shutdown();
     state.presence.shutdown();
-    let _ = tokio::join!(
+    let (autopot, autobuff, spammer) = tokio::join!(
         state.autopot.stop(),
         state.autobuff.stop(),
         state.spammer.stop()
     );
-    let _ = state.sessions.shutdown_all().await;
+    for (scope, result) in [
+        ("exit/autopot", autopot),
+        ("exit/autobuff", autobuff),
+        ("exit/spammer", spammer),
+    ] {
+        if let Err(error) = result {
+            crate::utils::report(scope, error);
+        }
+    }
+    for error in state.sessions.shutdown_all().await {
+        crate::utils::report("exit/sessions", error);
+    }
     state.installations.wait_for_shutdown().await;
     state.input.shutdown();
 }
 
-#[async_trait::async_trait]
-impl ShutdownForUpdate for GameState {
-    async fn shutdown_for_update(&self) -> Result<(), String> {
-        shutdown_launcher_services(self).await;
-        Ok(())
-    }
-}
+#[cfg(test)]
+mod lifecycle_tests;
