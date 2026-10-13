@@ -1,9 +1,61 @@
+mod recovery;
 mod setup;
 
+use std::path::Path;
+
+use crate::utils::{OperationGuard, PrefixLocation, PrefixScope};
+
+pub use recovery::{
+    transaction_residue_present, uncommitted_transaction_present, RecoveryAction, RecoveryOutcome,
+    RECOVERED_RETRY_MSG,
+};
 pub use setup::{
     reset_runtime_prefix, setup_runtime_prefix, DxvkProvision, RuntimeRequirements,
     MANAGED_DXVK_COMPONENT,
 };
+
+/// Reconcile an interrupted managed provisioning/reset before any runner session can touch the
+/// prefix. Takes the exclusive prefix guard; custom prefixes are never touched.
+pub fn recover_interrupted_prefix(location: &PrefixLocation) -> Result<RecoveryOutcome, String> {
+    if !is_recoverable(location) {
+        return Ok(RecoveryOutcome::untouched());
+    }
+    let _guard = OperationGuard::acquire("prefix", Path::new(&location.path))?;
+    recover_with_guard_held(location)
+}
+
+/// Same reconciliation for a caller that already holds the exclusive prefix guard.
+pub fn recover_with_guard_held(location: &PrefixLocation) -> Result<RecoveryOutcome, String> {
+    if !is_recoverable(location) {
+        return Ok(RecoveryOutcome::untouched());
+    }
+    let outcome = recovery::ManagedPrefix::new(location)?.recover()?;
+    if outcome.action != RecoveryAction::None || outcome.removed_empty_backup {
+        crate::utils::report(
+            "prefix-recovery",
+            format!("{}: {:?}", location.path, outcome.action),
+        );
+    }
+    for note in &outcome.notes {
+        crate::utils::report("prefix-recovery", format!("{}: {note}", location.path));
+    }
+    Ok(outcome)
+}
+
+/// Hot-path variant for supervisor bootstrap: ordinary prefixes without transaction evidence skip
+/// classification entirely.
+pub fn recover_residue_with_guard_held(
+    location: &PrefixLocation,
+) -> Result<RecoveryOutcome, String> {
+    if !transaction_residue_present(Path::new(&location.path)) {
+        return Ok(RecoveryOutcome::untouched());
+    }
+    recover_with_guard_held(location)
+}
+
+fn is_recoverable(location: &PrefixLocation) -> bool {
+    location.managed && location.scope != PrefixScope::Custom
+}
 
 /// A prefix transaction must finish cleanup even if its IPC caller is cancelled.
 pub async fn run_prefix_operation<F>(

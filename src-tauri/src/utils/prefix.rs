@@ -12,6 +12,11 @@ pub const PREFIX_MARKER: &str = ".ro-launcher-prefix.json";
 pub const PREFIX_SCHEMA_VERSION: u32 = 2;
 pub const PREFIX_SCHEMA_V3: u32 = 3;
 pub const INSTALLATION_MARKER: &str = ".ro-launcher-installation.json";
+/// In-root proof that RO-Launcher created this managed root and has not committed it yet.
+/// The manifest (`PREFIX_MARKER`) remains the only commit record; see `tools::prefix::recovery`.
+pub const PROVISIONING_MARKER: &str = ".ro-launcher-provisioning";
+/// Fixed temporary name used while `PROVISIONING_MARKER` is written durably.
+pub const PROVISIONING_MARKER_TMP: &str = ".ro-launcher-provisioning.tmp";
 
 /// An installer may have written both game files and registry/dependency state.
 /// Mere marker presence is conservative protection, never runner provenance.
@@ -155,6 +160,8 @@ pub struct PrefixHealth {
     pub structure_ok: bool,
     pub configured: bool,
     pub legacy_marker: bool,
+    /// A provisioning marker exists without a manifest: an interrupted, uncommitted preparation.
+    pub provisioning: bool,
     pub manifest: Option<StoredPrefixManifest>,
     pub issues: Vec<String>,
 }
@@ -376,7 +383,21 @@ pub fn inspect_prefix(prefix_path: &str) -> PrefixHealth {
             .push("El entorno no tiene manifiesto del launcher".to_string());
     }
 
-    health.configured = health.structure_ok && (health.manifest.is_some() || health.legacy_marker);
+    // The provisioning marker never makes a prefix ready; only a manifest commits it. A committed
+    // manifest stays authoritative even if marker cleanup was interrupted.
+    if health.manifest.is_none()
+        && [PROVISIONING_MARKER, PROVISIONING_MARKER_TMP]
+            .iter()
+            .any(|name| root.join(name).symlink_metadata().is_ok())
+    {
+        health.provisioning = true;
+        health.issues.push(
+            "La preparación anterior del entorno se interrumpió antes de confirmarse; Preparar la recuperará automáticamente"
+                .to_string(),
+        );
+    }
+    health.configured = health.structure_ok
+        && (health.manifest.is_some() || (health.legacy_marker && !health.provisioning));
     if let Some(manifest) = &health.manifest {
         let schema = manifest.schema_version();
         if schema != PREFIX_SCHEMA_VERSION && schema != PREFIX_SCHEMA_V3 {
@@ -411,33 +432,8 @@ pub fn write_prefix_manifest(prefix_path: &str, manifest: &PrefixManifest) -> Re
     if manifest.schema_version != PREFIX_SCHEMA_VERSION {
         return Err("Versión de manifiesto de prefix inválida".to_string());
     }
-    std::fs::create_dir_all(prefix_path).map_err(|error| error.to_string())?;
     let json = serde_json::to_vec_pretty(manifest).map_err(|error| error.to_string())?;
-    let destination = prefix_marker_path(prefix_path);
-    if destination.is_symlink() {
-        return Err("El manifiesto del entorno no puede ser un symlink".to_string());
-    }
-    let temporary = Path::new(prefix_path).join(format!(
-        ".ro-launcher-prefix.tmp-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_err(|error| error.to_string())?
-            .as_nanos()
-    ));
-    let mut file = std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&temporary)
-        .map_err(|error| error.to_string())?;
-    if let Err(error) = file.write_all(&json).and_then(|_| file.sync_all()) {
-        let _ = std::fs::remove_file(&temporary);
-        return Err(error.to_string());
-    }
-    std::fs::rename(&temporary, &destination).map_err(|error| {
-        let _ = std::fs::remove_file(&temporary);
-        error.to_string()
-    })
+    commit_prefix_manifest(prefix_path, &json)
 }
 
 pub fn write_prefix_manifest_v3(
@@ -447,8 +443,15 @@ pub fn write_prefix_manifest_v3(
     if manifest.schema_version != PREFIX_SCHEMA_V3 {
         return Err("Versión de manifiesto de prefix inválida".to_string());
     }
-    std::fs::create_dir_all(prefix_path).map_err(|error| error.to_string())?;
     let json = serde_json::to_vec_pretty(manifest).map_err(|error| error.to_string())?;
+    commit_prefix_manifest(prefix_path, &json)
+}
+
+/// The manifest is the commit record of a managed prefix transaction: write a temporary file,
+/// sync it, rename it over the final name, then sync the prefix directory so the rename itself is
+/// persisted before callers treat the prefix as committed.
+fn commit_prefix_manifest(prefix_path: &str, json: &[u8]) -> Result<(), String> {
+    std::fs::create_dir_all(prefix_path).map_err(|error| error.to_string())?;
     let destination = prefix_marker_path(prefix_path);
     if destination.is_symlink() {
         return Err("El manifiesto del entorno no puede ser un symlink".to_string());
@@ -466,13 +469,16 @@ pub fn write_prefix_manifest_v3(
         .create_new(true)
         .open(&temporary)
         .map_err(|error| error.to_string())?;
-    if let Err(error) = file.write_all(&json).and_then(|_| file.sync_all()) {
+    if let Err(error) = file.write_all(json).and_then(|_| file.sync_all()) {
         let _ = std::fs::remove_file(&temporary);
         return Err(error.to_string());
     }
     std::fs::rename(&temporary, &destination).map_err(|error| {
         let _ = std::fs::remove_file(&temporary);
         error.to_string()
+    })?;
+    super::sync_dir(Path::new(prefix_path)).map_err(|error| {
+        format!("El manifiesto se escribió, pero no se pudo sincronizar el directorio del entorno: {error}")
     })
 }
 

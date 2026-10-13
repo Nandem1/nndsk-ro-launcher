@@ -304,7 +304,8 @@ async fn check_runtime_dependencies(
             .read_dir()
             .is_ok_and(|mut entries| entries.next().is_some())
         && health.manifest.is_none()
-        && !health.legacy_marker;
+        && !health.legacy_marker
+        && !health.provisioning;
     if managed_unclaimed {
         prefix_issues.push(
             "El directorio administrado contiene datos sin un manifiesto válido; no se adoptará"
@@ -508,7 +509,8 @@ fn managed_runtime_pending(
             .read_dir()
             .is_ok_and(|mut entries| entries.next().is_some())
         && health.manifest.is_none()
-        && !health.legacy_marker;
+        && !health.legacy_marker
+        && !health.provisioning;
     let path_safe = ensure_managed_path_safe(&location).is_ok();
     let expected_runner_path = effective_runner
         .map(Path::new)
@@ -560,7 +562,12 @@ fn managed_runtime_pending(
     } else {
         "Runtime administrado pendiente. Al preparar el entorno se comprobarán UMU y Proton; solo se descargará lo que falte o no pase la validación".to_string()
     };
-    let prefix_warning = if managed_unclaimed {
+    let prefix_warning = if health.provisioning {
+        Some(
+            "La preparación anterior se interrumpió antes de confirmarse; al preparar se recuperará el entorno"
+                .to_string(),
+        )
+    } else if managed_unclaimed {
         Some(
             "El directorio administrado contiene datos sin un manifiesto válido; no se modificará"
                 .to_string(),

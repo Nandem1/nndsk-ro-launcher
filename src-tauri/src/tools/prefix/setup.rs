@@ -3,9 +3,12 @@ use std::path::Path;
 use ro_tools_linux::find_prefix_processes;
 use tauri::AppHandle;
 
+use super::recovery::{
+    run_managed_transaction, CommittedTransaction, ManagedPrefix, ProvisioningWork, TransactionKind,
+};
 use crate::state::GameProcessHandle;
-use crate::tools::runner_sessions::RunnerOperation;
 use crate::tools::runner_sessions::RunnerSessionRegistry;
+use crate::tools::runner_sessions::{RunnerCleanup, RunnerOperation};
 use crate::tools::runners::{ensure_managed_dxvk, managed_dxvk_ready, managed_dxvk_root};
 use crate::tools::runtime::{
     operational_session_anchor, resolve_operational_plan, DgVoodooState, OperationalRuntimeInput,
@@ -69,6 +72,11 @@ pub async fn setup_runtime_prefix(
     requirements: RuntimeRequirements,
 ) -> Result<(), String> {
     let root = Path::new(&ctx.prefix);
+    // F-05: reconcile crash residue before a runner session exists. A restored pre-reset prefix
+    // invalidates the caller's setup/rebuild decision, so the caller must re-evaluate it.
+    if super::recover_interrupted_prefix(&ctx.location)?.restored_previous() {
+        return Err(super::RECOVERED_RETRY_MSG.to_string());
+    }
     let operational_plan = resolve_operational_plan(OperationalRuntimeInput {
         server_runner: None,
         default_runner: None,
@@ -85,9 +93,26 @@ pub async fn setup_runtime_prefix(
     ensure_custom_setup_allowed(&ctx.location)?;
     if ctx.location.managed {
         ensure_managed_reset_allowed(&ctx.location)?;
+        ensure_recovered_under_guard(ctx)?;
     }
-    let clean_managed_start = ctx.location.managed && !prefix_has_state(&ctx.prefix);
 
+    if ctx.location.managed && !prefix_has_state(&ctx.prefix) {
+        // Clean managed start: deletion authority on failure comes from the durable provisioning
+        // marker on disk, never from this in-memory branch.
+        let mut work = RunnerWork::new(app, op, ctx, requirements);
+        let committed = run_managed_transaction(
+            &ManagedPrefix::new(&ctx.location)?,
+            TransactionKind::InitialSetup,
+            &ctx.identity.desired_fingerprint.digest.hex_digest(),
+            &mut work,
+        )
+        .await?;
+        report_post_commit_cleanup(app, committed);
+        emit_progress(app, "¡Listo!", 100)?;
+        return Ok(());
+    }
+
+    // Repair in place of a committed or custom prefix: never deleted on failure.
     let preparation = setup_resolved_prefix(app, &op, requirements).await;
     let op = op.into_cleanup();
     let result = async {
@@ -98,42 +123,15 @@ pub async fn setup_runtime_prefix(
     .await;
 
     if let Err(primary) = result {
-        // Always quiesce on failure, also for repairs/custom prefixes. Only an initially
-        // empty managed prefix grants deletion authority; never adopt partial foreign data.
         let cleanup = op.quiesce().await;
         let primary = op.annotate_failure(primary);
-        if clean_managed_start && root.exists() && !root.is_symlink() {
-            match &cleanup {
-                Ok(()) => {
-                    if let Err(error) = std::fs::remove_dir_all(root) {
-                        let _ = emit_log(
-                            app,
-                            format!(
-                                "No se pudo limpiar el entorno inicial incompleto {}: {error}",
-                                root.display()
-                            ),
-                        );
-                    }
-                }
-                Err(error) => {
-                    let _ = emit_log(
-                    app,
-                    format!(
-                        "El entorno inicial incompleto se conservó porque no pudo apagarse con seguridad: {error}"
-                    ),
-                );
-                }
-            }
-        }
         return Err(match cleanup {
             Ok(()) => primary,
             Err(error) => format!("{primary}\nLimpieza pendiente: {error}; el entorno se conservó"),
         });
     }
-    if result.is_ok() {
-        emit_progress(app, "¡Listo!", 100)?;
-    }
-    result
+    emit_progress(app, "¡Listo!", 100)?;
+    Ok(())
 }
 
 pub async fn reset_runtime_prefix(
@@ -145,6 +143,9 @@ pub async fn reset_runtime_prefix(
 ) -> Result<(), String> {
     crate::utils::ensure_installation_rebuild_allowed(Path::new(&ctx.prefix))?;
     emit_progress(app, "Preparando reconstrucción del entorno...", 40)?;
+    // F-05: an interrupted reset is reconciled first. Restoring the old prefix is compatible with
+    // the requested reset, whose preconditions are re-checked under the guard below.
+    super::recover_interrupted_prefix(&ctx.location)?;
 
     let operational_plan = resolve_operational_plan(OperationalRuntimeInput {
         server_runner: None,
@@ -158,91 +159,107 @@ pub async fn reset_runtime_prefix(
     let op = RunnerOperation::begin(Some(app), sessions, game, ctx, &anchor).await?;
     let _operation = OperationGuard::acquire("prefix", Path::new(&ctx.prefix))?;
     ensure_managed_reset_allowed(&ctx.location)?;
-
     crate::utils::ensure_installation_rebuild_allowed(Path::new(&ctx.prefix))?;
+    ensure_recovered_under_guard(ctx)?;
 
     shutdown_existing_prefix_for_reset(app, &op, ctx).await?;
 
-    let root = Path::new(&ctx.prefix);
-    let backup = if root.exists() {
-        let backup = reset_backup_path(root)?;
+    let prefix = ManagedPrefix::new(&ctx.location)?;
+    if Path::new(&ctx.prefix).exists() {
         emit_log(
             app,
-            format!("Preservando entorno anterior en {}...", backup.display()),
+            format!(
+                "Preservando entorno anterior en {}...",
+                prefix.backup().display()
+            ),
         )?;
-        std::fs::rename(root, &backup)
-            .map_err(|error| format!("No se pudo preservar el entorno anterior: {error}"))?;
-        Some(backup)
-    } else {
-        None
-    };
-
-    let preparation = setup_resolved_prefix(app, &op, requirements).await;
-    let op = op.into_cleanup();
-    let result = async {
-        preparation?;
-        op.quiesce().await?;
-        write_runtime_manifest(ctx, requirements)
     }
-    .await;
+    let mut work = RunnerWork::new(app, op, ctx, requirements);
+    let committed = run_managed_transaction(
+        &prefix,
+        TransactionKind::Reset,
+        &ctx.identity.desired_fingerprint.digest.hex_digest(),
+        &mut work,
+    )
+    .await?;
+    report_post_commit_cleanup(app, committed);
+    emit_progress(app, "¡Listo!", 100)?;
+    Ok(())
+}
 
-    match result {
-        Ok(()) => {
-            if let Some(backup) = backup {
-                if let Err(error) = std::fs::remove_dir_all(&backup) {
-                    emit_log(
-                        app,
-                        format!(
-                            "El entorno nuevo está listo, pero el respaldo quedó en {}: {error}",
-                            backup.display()
-                        ),
-                    )?;
-                }
-            }
-            emit_progress(app, "¡Listo!", 100)?;
-            Ok(())
+/// Under the exclusive guard no other launcher writer can create residue, so anything recovery
+/// would still replace here means the state changed after the caller validated it.
+fn ensure_recovered_under_guard(ctx: &WineContext) -> Result<(), String> {
+    if super::recover_with_guard_held(&ctx.location)?.root_replaced() {
+        return Err(super::RECOVERED_RETRY_MSG.to_string());
+    }
+    Ok(())
+}
+
+/// The manifest is committed. Leftover marker/backup cleanup is retried by the next recovery and
+/// must never roll back the new prefix.
+fn report_post_commit_cleanup(app: &AppHandle, committed: CommittedTransaction) {
+    if let Err(error) = committed.cleanup {
+        let message =
+            format!("El entorno nuevo está listo; la limpieza pendiente se reintentará: {error}");
+        crate::utils::report("prefix-recovery", &message);
+        let _ = emit_log(app, message);
+    }
+}
+
+/// Production provisioning engine: every command runs through the supervised operation.
+struct RunnerWork<'a> {
+    app: &'a AppHandle,
+    ctx: &'a WineContext,
+    requirements: RuntimeRequirements,
+    op: Option<RunnerOperation>,
+    cleanup: Option<RunnerCleanup>,
+}
+
+impl<'a> RunnerWork<'a> {
+    fn new(
+        app: &'a AppHandle,
+        op: RunnerOperation,
+        ctx: &'a WineContext,
+        requirements: RuntimeRequirements,
+    ) -> Self {
+        Self {
+            app,
+            ctx,
+            requirements,
+            op: Some(op),
+            cleanup: None,
         }
-        Err(error) => {
-            if let Err(cleanup_error) = op.quiesce().await {
-                let backup_note = backup
-                    .as_ref()
-                    .map(|path| {
-                        format!(
-                            " El entorno anterior sigue preservado en {}.",
-                            path.display()
-                        )
-                    })
-                    .unwrap_or_default();
-                return Err(op.annotate_failure(format!(
-                    "{error}. No se restauró el entorno anterior porque el entorno nuevo no pudo apagarse por completo: {cleanup_error}.{backup_note}"
-                )));
-            }
-            let error = op.annotate_failure(error);
-            if root.exists() {
-                if root.is_symlink() {
-                    return Err(format!(
-                        "{error}. No se restauró el entorno anterior porque el entorno nuevo fue reemplazado por un enlace simbólico"
-                    ));
-                }
-                std::fs::remove_dir_all(root).map_err(|remove_error| {
-                    format!(
-                        "{error}. No se pudo retirar el entorno nuevo; el respaldo anterior se conservó: {remove_error}"
-                    )
-                })?;
-            }
-            if let Some(backup) = backup {
-                std::fs::rename(&backup, root).map_err(|restore_error| {
-                    format!(
-                        "{error}. Además no se pudo restaurar {}: {restore_error}",
-                        backup.display()
-                    )
-                })?;
-                Err(format!(
-                    "{error}. El entorno anterior fue restaurado correctamente"
-                ))
-            } else {
-                Err(error)
-            }
+    }
+}
+
+impl ProvisioningWork for RunnerWork<'_> {
+    async fn provision(&mut self) -> Result<(), String> {
+        let op = self
+            .op
+            .as_ref()
+            .ok_or_else(|| "La operación del entorno ya terminó".to_string())?;
+        setup_resolved_prefix(self.app, op, self.requirements).await
+    }
+
+    async fn quiesce(&mut self) -> Result<(), String> {
+        if let Some(op) = self.op.take() {
+            self.cleanup = Some(op.into_cleanup());
+        }
+        match &self.cleanup {
+            Some(cleanup) => cleanup.quiesce().await,
+            None => Ok(()),
+        }
+    }
+
+    fn commit(&mut self) -> Result<(), String> {
+        write_runtime_manifest(self.ctx, self.requirements)
+    }
+
+    fn annotate_failure(&self, primary: String) -> String {
+        match &self.cleanup {
+            Some(cleanup) => cleanup.annotate_failure(primary),
+            None => primary,
         }
     }
 }
@@ -347,31 +364,6 @@ fn validate_prefix_initialization(prefix: &str, proton: bool, code: i32) -> Resu
         return Err(format!("{stage} salió con código 0 pero no creó un prefix válido. Revisa la causa del runner a continuación; los archivos faltantes son un síntoma, no la causa"));
     }
     Ok(())
-}
-
-fn reset_backup_path(prefix: &Path) -> Result<std::path::PathBuf, String> {
-    let parent = prefix
-        .parent()
-        .ok_or_else(|| "La ruta del entorno no tiene directorio padre".to_string())?;
-    let name = prefix
-        .file_name()
-        .and_then(|name| name.to_str())
-        .ok_or_else(|| "La ruta del entorno no tiene nombre válido".to_string())?;
-    let unique = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_err(|error| error.to_string())?
-        .as_millis();
-    let backup = parent.join(format!(
-        ".{name}.reset-backup-{}-{unique}",
-        std::process::id()
-    ));
-    if backup.exists() {
-        return Err(format!(
-            "Ya existe el respaldo temporal {}",
-            backup.display()
-        ));
-    }
-    Ok(backup)
 }
 
 async fn configure_ui_font_fallback(app: &AppHandle, op: &RunnerOperation) -> Result<(), String> {
@@ -930,14 +922,30 @@ mod tests {
             .unwrap_or_else(|| workspace.join("target/debug/ro-sessiond"));
         let sessions = RunnerSessionRegistry::with_sidecar_for_test(sidecar);
         let game = GameProcessHandle::new();
+        // F-05 leg: attempt 0 is interrupted after real initialization but before the manifest
+        // commit; a fresh recovery must discard only the marker-proven root, and attempt 1 must
+        // then provision and commit cleanly at the same location.
         for attempt in 0..2 {
+            assert_eq!(
+                crate::tools::prefix::recover_interrupted_prefix(&ctx.location)
+                    .unwrap()
+                    .action,
+                if attempt == 0 {
+                    crate::tools::prefix::RecoveryAction::None
+                } else {
+                    crate::tools::prefix::RecoveryAction::DiscardPartial
+                }
+            );
             let op = RunnerOperation::begin(None, &sessions, &game, &ctx, &anchor)
                 .await
                 .unwrap();
             let root = Path::new(&ctx.prefix);
-            let _guard = OperationGuard::acquire("prefix", root).unwrap();
+            let guard = OperationGuard::acquire("prefix", root).unwrap();
             ensure_managed_reset_allowed(&ctx.location).unwrap();
-            fs::create_dir_all(root).unwrap();
+            ManagedPrefix::new(&ctx.location)
+                .unwrap()
+                .begin_provisioning(&ctx.identity.desired_fingerprint.digest.hex_digest())
+                .unwrap();
             let result = initialize_prefix(&op).await;
             let op = op.into_cleanup();
             op.quiesce().await.unwrap();
@@ -948,6 +956,18 @@ mod tests {
                     .map_err(|error| op.annotate_failure(error.clone()))
             );
             result.unwrap();
+            assert!(
+                find_prefix_processes(&ctx.prefix).is_empty(),
+                "setup failure/success must leave no prefix processes"
+            );
+            assert!(
+                !inspect_prefix(&ctx.prefix).configured,
+                "uncommitted root is never ready"
+            );
+            if attempt == 0 {
+                drop(guard);
+                continue;
+            }
             // Record ownership only: this initialization smoke doesn't provision components.
             write_prefix_manifest(
                 &ctx.prefix,
@@ -961,10 +981,13 @@ mod tests {
                 },
             )
             .unwrap();
-            assert!(
-                find_prefix_processes(&ctx.prefix).is_empty(),
-                "setup failure/success must leave no prefix processes"
-            );
+            assert!(matches!(
+                crate::tools::prefix::recover_with_guard_held(&ctx.location)
+                    .unwrap()
+                    .action,
+                crate::tools::prefix::RecoveryAction::CompleteCommit { .. }
+            ));
+            assert!(inspect_prefix(&ctx.prefix).configured);
         }
         assert!(sessions.shutdown_all().await.is_empty());
     }

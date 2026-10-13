@@ -16,7 +16,10 @@ pub use crate::tools::memory_sessions::MemoryLease;
 pub use crate::utils::RunnerInvocation;
 #[allow(unused_imports)]
 pub use client::find_ro_sessiond;
+#[cfg(test)]
+pub(crate) use client::workspace_debug_sessiond;
 pub(crate) use diagnostics::{path_log_token, prefix_log_token};
+pub(crate) use exec::RunnerCleanup;
 #[allow(unused_imports)]
 pub use exec::{RunnerOperation, SpawnedRunner};
 pub use registry::{

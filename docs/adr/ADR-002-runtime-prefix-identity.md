@@ -119,6 +119,59 @@ Detener un cliente no libera el anchor si otro sigue usándolo.
 Un runner actualizado bajo el mismo path se vuelve otra identidad si cambian los roles materiales
 observados. No se confía en nombre de directorio, versión reportada o label para ocultar esa mutación.
 
+### Transacción y recuperación de prefixes administrados (F-05)
+
+Preparar un prefix administrado limpio y reconstruirlo son transacciones recuperables tras la muerte
+del proceso. No hay journal ni archivo de intención fuera del prefix. La evidencia es:
+
+- `B` = `<padre>/.<nombre>.reset-backup`: un único respaldo con nombre fijo, en el mismo directorio
+  y sistema de archivos. Un reset no empieza mientras exista.
+- `M` = `<prefix>/.ro-launcher-provisioning`: marcador escrito antes de provisionar. Registra
+  schema, scope, serverId, ruta y fingerprint. No contiene instrucciones; sólo prueba que el
+  launcher creó esa raíz para esa ubicación y aún no la confirmó. Se escribe en un temporal fijo,
+  con `fsync` del archivo, rename y `fsync` del prefix.
+- El manifiesto v2/v3 existente es el único registro de commit. Se escribe con temporal, `fsync`,
+  rename y `fsync` del directorio del prefix. Para un path v3 debe coincidir además el digest que
+  codifica la ruta.
+
+Reset: `rename(R, B)` + `fsync(padre)`; crear `R` y `M`; provisionar; quiesce; `syncfs`; manifiesto
+(commit); borrar `M` + `fsync(R)`; borrar `B` + `fsync(padre)`. La preparación inicial es igual sin
+`B`. Un fallo ordinario, tras quiesce, usa la misma función de recuperación que un arranque tras
+SIGKILL; no existe un segundo algoritmo de rollback.
+
+| `R` \ `B`                     | ausente                       | restaurable                | parcial o ajeno                       |
+| ----------------------------- | ----------------------------- | -------------------------- | ------------------------------------- |
+| ausente o vacío               | nada                          | restaurar `B`              | rechazar                              |
+| `M` válido sin manifiesto     | retirar `R`                   | retirar `R`, restaurar `B` | rechazar                              |
+| manifiesto confirmado (± `M`) | retirar `M`                   | retirar `M` y `B`          | retirar si parcial; rechazar si ajeno |
+| legacy válido                 | nada                          | rechazar                   | rechazar                              |
+| datos sin evidencia, symlink  | nada (rige el rechazo actual) | rechazar                   | rechazar                              |
+
+"Restaurable" exige un directorio real, sin symlink, en el mismo sistema de archivos, sin marcador
+de instalación de juego y con un manifiesto de esta ubicación, o marcador legacy más estructura
+completa. "Rechazar" conserva todo y devuelve un error accionable con ambas rutas. Un manifiesto
+confirmado siempre gana: nunca se restaura `B` sobre un prefix nuevo confirmado. Borrar `R` o `B`
+deja su evidencia para el final, y restaurar es un único `renameat2(RENAME_NOREPLACE)`. Por eso una
+recuperación interrumpida deja otro estado de la tabla y la siguiente converge. Repetirla no hace
+nada.
+
+Reglas que no cambian: un prefix custom nunca se recupera, mueve, restaura ni borra. Un directorio
+administrado con datos sin evidencia no se adopta. Un prefix con instalación de juego no entra a
+reset, y la recuperación nunca descarta un árbol que contenga ese marcador. Los respaldos
+`.<nombre>.reset-backup-<pid>-<ms>` de versiones anteriores nunca se borran. Sólo se restaura uno
+si la raíz no existe y es el único válido; en otro caso se informan en diagnostics.
+
+Orden: setup/reset concilian bajo el guard exclusivo `prefix` antes de iniciar sesión y vuelven a
+comprobar bajo el guard después de `RunnerOperation::begin`. El bootstrap del supervisor concilia
+tras apagar leftovers y antes de soltar su guard. Si la raíz cambió, la operación termina pidiendo
+reintento, para reevaluar runner, manifiesto y protección. La resolución de identidad sigue apuntando
+a la ruta de una transacción sin commit en lugar de saltar a otro candidato. Ninguna acción
+destructiva corre si hay procesos usando el prefix.
+
+Calificación: probado contra SIGKILL en cada paso del reset, de la preparación inicial y de la propia
+recuperación, también con `ro-sessiond` real y un runner inerte. El orden de `fsync` está
+implementado, pero la pérdida de energía no está calificada.
+
 ## Alternativas rechazadas
 
 - Un único fingerprint para prefix, host, cliente y sesión.

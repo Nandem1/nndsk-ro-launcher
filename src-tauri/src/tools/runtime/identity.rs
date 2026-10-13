@@ -151,6 +151,30 @@ fn resolve_prefix_binding_for_location(
         .as_deref()
         .ok_or_else(|| "El entorno aislado no tiene serverId".to_string())?;
 
+    let runner_path = std::fs::canonicalize(resolved.runner_path())
+        .unwrap_or_else(|_| resolved.runner_path().to_path_buf());
+    let v2_path =
+        isolated_prefix_path_for_runner(server_id, runner_path.to_string_lossy().as_ref());
+
+    // F-05: an interrupted, uncommitted transaction keeps its own location. Otherwise a reset
+    // killed after moving the old root aside would fall through to another candidate path and
+    // silently start a fresh prefix while the old one waits in the reset backup. Recovery at this
+    // path, not resolution, decides what survives.
+    for candidate in [
+        isolated_prefix_path_v3(server_id, &desired.digest.hex_digest()),
+        v2_path.clone(),
+    ] {
+        if crate::tools::prefix::uncommitted_transaction_present(Path::new(&candidate)) {
+            location.path = candidate;
+            return Ok(PrefixBinding {
+                status: PrefixIdentityStatus::Unknown,
+                desired_fingerprint: desired.clone(),
+                location,
+                eligibility: RuntimeEligibility::Eligible,
+            });
+        }
+    }
+
     if let Some(v3_path) = try_v3_verified(server_id, desired) {
         location.path = v3_path;
         return Ok(PrefixBinding {
@@ -173,10 +197,6 @@ fn resolve_prefix_binding_for_location(
         });
     }
 
-    let runner_path = std::fs::canonicalize(resolved.runner_path())
-        .unwrap_or_else(|_| resolved.runner_path().to_path_buf());
-    let v2_path =
-        isolated_prefix_path_for_runner(server_id, runner_path.to_string_lossy().as_ref());
     if try_legacy_v2_match(server_id, resolved, &v2_path) {
         location.path = v2_path;
         return Ok(PrefixBinding {

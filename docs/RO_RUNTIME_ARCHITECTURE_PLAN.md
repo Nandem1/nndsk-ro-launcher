@@ -44,7 +44,8 @@ propio en [`PTRACE_SESSION_SUPERVISOR_PLAN.md`](PTRACE_SESSION_SUPERVISOR_PLAN.m
 - Un directorio desconocido y no vacío no se adopta. Un prefix custom no se mueve, reescribe ni
   elimina automáticamente.
 - Un rebuild administrado es transaccional: el anterior se conserva hasta que el reemplazo termina
-  y se restaura si falla.
+  y se restaura si falla, también tras la muerte del proceso. El manifiesto es el único commit
+  (ADR-002, F-05).
 - La identidad de proceso es `(pid, start_time)`. Se revalida antes de leer memoria o enviar señales.
 - El lifecycle admite varios clientes: cerrar uno no termina los demás ni libera recursos aún usados.
 - Las variables AppImage se sanitizan antes de lanzar Wine, Proton, UMU o sidecars.
@@ -270,6 +271,8 @@ Ningún flag autoriza reinterpretar, mover o borrar datos existentes.
 | -------------------------------- | --------------------------- | -------------------------------------------------------- |
 | `settings.json` / `servers.json` | Configuración del usuario   | escrituras atómicas y compatibilidad hacia atrás         |
 | `.ro-launcher-prefix.json`       | Identidad del prefix        | sólo provisioning/repair bajo guard; custom no se adopta |
+| `.ro-launcher-provisioning`      | Preparación sin commit      | sólo setup/reset administrado bajo guard; nunca custom   |
+| `.<prefix>.reset-backup`         | Prefix anterior a un reset  | único; lo restaura o retira sólo la recuperación         |
 | `.ro-launcher-runtime.json`      | Receipt de artefacto        | instalación/elevación bajo lock `runtime`                |
 | `.ro-launcher-dgvoodoo.json`     | Overlay game-dir            | install/restore transaccional bajo guard                 |
 | `observations/`                  | Evidencia local diagnóstica | retención, redacción y borrado explícito                 |
