@@ -4,7 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>RO-Launcher</title>
-  <style>html,body,#root{background:#09090b;height:100%}</style>
+  <!-- Pre-paint background. It must sit in Tailwind's base layer (same layer order as the
+       bundle) so the stylesheet's body rule still wins once it loads. -->
+  <style>@layer properties, theme, base, components, utilities; @layer base { html,body,#root{background:#09090b;height:100%} }</style>
   </head>
   <body>
     <div id="root"></div>

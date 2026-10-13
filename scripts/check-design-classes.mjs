@@ -3,8 +3,7 @@ import path from 'node:path'
 import ts from 'typescript'
 import postcss from 'postcss'
 import selectorParser from 'postcss-selector-parser'
-import tailwind from 'tailwindcss'
-import config from '../tailwind.config.js'
+import { compile } from '@tailwindcss/node'
 
 const root = path.resolve(import.meta.dirname, '..')
 const utility =
@@ -36,19 +35,29 @@ export async function checkDesignClasses(files) {
     file,
     text: fs.readFileSync(file, 'utf8'),
   }))
-  // Compile the real stylesheet, with the actual config and supplied fixtures.
-  // Also keep normal application content so imported primitives stay available.
-  const result = await postcss([
-    tailwind({
-      ...config,
-      content: [
-        ...config.content,
-        ...sources.map(({ text }) => ({ raw: text, extension: 'tsx' })),
-      ],
-    }),
-  ]).process(fs.readFileSync(path.join(root, 'src/index.css'), 'utf8'), {
-    from: path.join(root, 'src/index.css'),
+  // Compile the real stylesheet with Tailwind 4 for every word found in the checked sources'
+  // string literals. Only words that are valid utilities produce CSS, so this superset is safe.
+  const stylesheet = path.join(root, 'src/index.css')
+  const compiler = await compile(fs.readFileSync(stylesheet, 'utf8'), {
+    base: path.dirname(stylesheet),
+    onDependency: () => {},
   })
+  const words_ = new Set()
+  for (const { file, text } of sources) {
+    const source = ts.createSourceFile(
+      file,
+      text,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TSX,
+    )
+    const collect = (node) => {
+      if (isLiteral(node)) words(node.text).forEach((word) => words_.add(word))
+      ts.forEachChild(node, collect)
+    }
+    collect(source)
+  }
+  const result = { root: postcss.parse(compiler.build([...words_])) }
   const emitted = new Set()
   const borderColors = new Set()
   result.root.walkRules((rule) => {

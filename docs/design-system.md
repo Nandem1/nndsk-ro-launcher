@@ -86,7 +86,7 @@ teclado. Nunca un contorno inicial, de disabled o al clicar con el ratón.
 `focus-modality.ts` marca únicamente la modalidad para CSS: Chromium considera
 focus-visible también los inputs editables clicados. No intercepta eventos,
 mueve foco, modifica valores ni persiste estado; incluye limpieza para HMR.
-Un outline transparente de Tailwind outline-none no es un anillo pintado.
+Un outline transparente de `outline-hidden` (el `outline-none` de Tailwind 3) no es un anillo pintado.
 Transiciones solo color ≤120ms.
 Se conservan pulse-dot, fade de modal 120ms y reduced-motion. Sombras y efectos
 decorativos siguen none. El slider usa una imagen CSS del mismo color en ambos
@@ -153,7 +153,8 @@ wrappers anidados delineados. Input/Select nativos encapsulados en shared/ui.
 Panel.leading rechaza iconos decorativos. Se permite el segmentado delineado,
 un control real; no un wrapper de contenido.
 
-La guardia compila el CSS real de Tailwind, comprueba que cada candidata de
+La guardia compila el CSS real con Tailwind 4 (`@tailwindcss/node`), exige que cada color de
+`scripts/design-token-map.mjs` exista en el `@theme inline` de `src/index.css`, comprueba que cada candidata de
 bg/text/border/ring/rounded/shadow/fill/stroke/divide/outline/placeholder/from/to/via
 emita regla (incluidas variantes/alfa), y rechaza border/divide sin color explícito
 o un primitivo CSS que lo defina. No acepta un token solo porque su nombre parezca
@@ -218,7 +219,7 @@ recorte, escape, solape, scroll anidado y menú desanclado impiden falsos verdes
 Para cambiar un token:
 
 1. Editar su valor en src/index.css; si se añade un rol/nombre, registrar también
-   scripts/design-token-map.mjs y tailwind.config.js. No editar la referencia.
+   scripts/design-token-map.mjs y el bloque `@theme inline` de src/index.css. No editar la referencia.
 2. Actualizar esta tabla y el cálculo de contraste en scripts/check-design-contrast.mjs
    cuando corresponda. Una divergencia visual de la referencia requiere aprobación,
    no una excepción genérica para hacer pasar el arnés.
@@ -230,3 +231,24 @@ Para cambiar un token:
    1280×820 y guarda sus artefactos fuera del repo.
 5. Revisar diff/capturas y completar [la checklist manual](design-review/premerge-checklist.md).
    Los informes JSON y volcados DOM quedan en /tmp, no en design-review.
+
+## Tailwind 4 y paridad con Tailwind 3
+
+El diseño aprobado se construyó sobre Tailwind 3. La migración a Tailwind 4 conserva el
+resultado renderizado con reglas de paridad explícitas en `src/index.css`:
+
+- Preflight: color de borde por defecto, color del placeholder y cursor de botones de v3.
+- Cascada: componentes y reglas compuestas viven en la capa `utilities`, antes de
+  `@tailwind utilities`. Tailwind 4 usa capas CSS reales y las utilidades vencerían siempre.
+- Variantes que v3 propagaba desde `.panel-idle` y `.idle-control:disabled` (hover, disabled).
+- `transition-colors` sin `outline-color`, `outline-hidden` transparente de 2px y `space-y-*`
+  con margen superior en hermanos visibles. `npm run check:design` solo permite los valores
+  de `space-y` que tienen regla de paridad.
+- `index.html` declara el mismo orden de capas para el fondo previo a la carga.
+
+Diferencias aceptadas, sin píxeles distintos: `rotate-180` usa la propiedad `rotate` y los
+colores con opacidad (`bg-overlay-dark/70`) se serializan en `oklab`.
+
+Para validar un cambio de Tailwind: servir el build anterior y el nuevo con
+`npm run preview -- --host 127.0.0.1 --port 5175`, ejecutar `npm run review:design -- 5175`
+y `-- 5175 --minimum` en ambos, y comparar estilos computados y capturas por escena.

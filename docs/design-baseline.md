@@ -20,6 +20,9 @@ Radii: default (18), md (12), lg (31), xl (17), 2xl (3), full (10).
 Most palette references: MemoryScannerModal (61), AdvancedSettings (48),
 AutopotPanel (44), ServerConfigModal (41).
 
+Historical procedure from the Tailwind 3 era; the v3 CLI is no longer installed. With Tailwind 4,
+use the compiled `dist/assets/index-*.css` from `npm run build` as the snapshot input.
+
 ```sh
 npm run build
 npx tailwindcss -i src/index.css -o /tmp/ro-design-baseline.css

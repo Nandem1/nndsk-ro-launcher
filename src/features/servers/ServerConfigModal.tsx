@@ -145,7 +145,7 @@ function ArgEditor({
         placeholder={placeholder}
         spellCheck={false}
         className="resize-y bg-field border border-line rounded-control px-3 py-2 text-detail leading-relaxed
-          font-mono text-ink placeholder:text-muted hover:border-line-strong focus:outline-none "
+          font-mono text-ink placeholder:text-muted hover:border-line-strong focus:outline-hidden "
       />
     </label>
   )

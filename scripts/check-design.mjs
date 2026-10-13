@@ -22,6 +22,8 @@ const forbidden = [
   /\bfont\x2dwordmark\b/g,
   /\buppercase\s+tracking-(?:wide|wider|widest)\b/g,
   /\bborder-t-(?:ok|warn|bad|info)\b/g,
+  // src/index.css restores Tailwind 3 space-y semantics for these values only.
+  /(?<![\w-])space\x2dx-[\w.[\]-]+|(?<![\w-])space\x2dy-(?!(?:0\\?\.5|1\\?\.5|1|2|3|4)(?![\w.-]))[\w.[\]-]+/g,
 ]
 
 function files(target) {
@@ -40,13 +42,7 @@ function files(target) {
 const targets = process.argv.slice(2).map((target) => path.resolve(target))
 const paths = targets.length
   ? targets.map((target) => path.resolve(target))
-  : [
-      'src',
-      'scripts',
-      'index.html',
-      'tailwind.config.js',
-      'postcss.config.js',
-    ].map((target) => path.join(root, target))
+  : ['src', 'scripts', 'index.html'].map((target) => path.join(root, target))
 let violations = 0
 let checked = 0
 const sources = paths.flatMap(files)
@@ -58,6 +54,34 @@ for (const file of sources) {
       const line = source.slice(0, match.index).split('\n').length
       console.error(
         `${path.relative(root, file)}:${line}: ${match[0]} — use a design token or primitive`,
+      )
+      violations++
+    }
+  }
+}
+// Colors are declared in CSS since Tailwind 4; keep the token catalog and @theme in sync.
+{
+  const { colorNames } = await import('./design-token-map.mjs')
+  const css = fs.readFileSync(path.join(root, 'src/index.css'), 'utf8')
+  const theme = css.match(/@theme inline \{([^}]*)\}/)?.[1] ?? ''
+  const declared = [
+    ...theme.matchAll(/--color-([\w-]+):\s*rgb\(var\(--c-([\w-]+)\)\)/g),
+  ]
+  const mapped = new Set(
+    declared.filter(([, a, b]) => a === b).map(([, a]) => a),
+  )
+  for (const name of colorNames) {
+    if (!mapped.has(name)) {
+      console.error(
+        `src/index.css: @theme inline lacks --color-${name}: rgb(var(--c-${name}))`,
+      )
+      violations++
+    }
+  }
+  for (const [, name] of declared) {
+    if (!colorNames.includes(name)) {
+      console.error(
+        `src/index.css: --color-${name} is not in scripts/design-token-map.mjs`,
       )
       violations++
     }

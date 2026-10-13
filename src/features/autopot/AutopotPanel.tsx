@@ -310,7 +310,7 @@ export function AutopotPanel() {
                         DEFAULT_AUTOPOT_CONFIG.hpPercent,
                     })
                   }
-                  className="font-mono input-no-spinner w-full rounded-control border border-line bg-field py-1 pl-1.5 pr-4 text-center text-data text-ink outline-none transition-colors hover:border-line-strong idle-control"
+                  className="font-mono input-no-spinner w-full rounded-control border border-line bg-field py-1 pl-1.5 pr-4 text-center text-data text-ink outline-hidden transition-colors hover:border-line-strong idle-control"
                 />
                 <span className="font-mono tabular-nums pointer-events-none absolute inset-y-0 right-1.5 flex items-center text-micro text-muted">
                   %
@@ -346,7 +346,7 @@ export function AutopotPanel() {
                         DEFAULT_AUTOPOT_CONFIG.spPercent,
                     })
                   }
-                  className="font-mono input-no-spinner w-full rounded-control border border-line bg-field py-1 pl-1.5 pr-4 text-center text-data text-ink outline-none transition-colors hover:border-line-strong idle-control"
+                  className="font-mono input-no-spinner w-full rounded-control border border-line bg-field py-1 pl-1.5 pr-4 text-center text-data text-ink outline-hidden transition-colors hover:border-line-strong idle-control"
                 />
                 <span className="font-mono tabular-nums pointer-events-none absolute inset-y-0 right-1.5 flex items-center text-micro text-muted">
                   %

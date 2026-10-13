@@ -6,11 +6,123 @@
 @import '@fontsource/ibm-plex-mono/latin-500.css';
 @import '@fontsource/ibm-plex-mono/latin-600.css';
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@layer theme, base, components, utilities;
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/preflight.css' layer(base);
+
+/* Utilities resolve the runtime color channels declared in :root below. `inline` keeps every
+   color utility as rgb(var(--c-*)), exactly what the former tailwind.config.js generated. */
+@theme inline {
+  --color-surface: rgb(var(--c-surface));
+  --color-panel: rgb(var(--c-panel));
+  --color-panel-raised: rgb(var(--c-panel-raised));
+  --color-field: rgb(var(--c-field));
+  --color-modal: rgb(var(--c-modal));
+  --color-line: rgb(var(--c-line));
+  --color-line-strong: rgb(var(--c-line-strong));
+  --color-line-soft: rgb(var(--c-line-soft));
+  --color-track: rgb(var(--c-track));
+  --color-track-fill: rgb(var(--c-track-fill));
+  --color-outline: rgb(var(--c-outline));
+  --color-ink: rgb(var(--c-ink));
+  --color-muted: rgb(var(--c-muted));
+  --color-accent: rgb(var(--c-accent));
+  --color-on-accent: rgb(var(--c-on-accent));
+  --color-warn: rgb(var(--c-warn));
+  --color-ok: rgb(var(--c-ok));
+  --color-bad: rgb(var(--c-bad));
+  --color-info: rgb(var(--c-info));
+  --color-special: rgb(var(--c-special));
+  --color-overlay-dark: rgb(var(--c-overlay-dark));
+}
+
+/* Design tokens whose names already follow Tailwind's theme namespaces. `static` emits them even
+   when no utility uses them: plain CSS in this file references them too. */
+@theme static {
+  --radius-inline: 6px;
+  --radius-control-compact: 7px;
+  --radius-control: 9px;
+  --radius-panel: 14px;
+  --radius-modal: 16px;
+  --radius-pill: 9999px;
+  --radius-action: 11px;
+  --radius-segmented: 11px;
+  --radius-segment: 8px;
+  --radius-notice: 11px;
+
+  --text-micro: 11px;
+  --text-caption: 11px;
+  --text-detail: 11px;
+  --text-label: 12px;
+  --text-xs: 12px;
+  --text-xs--line-height: var(--leading-xs);
+  --text-sm: 13px;
+  --text-sm--line-height: var(--leading-sm);
+  --text-base: 15px;
+  --text-base--line-height: var(--leading-base);
+  --text-lg: 18px;
+  --text-lg--line-height: var(--leading-lg);
+  --text-xl: 18px;
+  --text-xl--line-height: var(--leading-xl);
+  --text-panel-title: 15px;
+  --text-panel-title--line-height: 1.25rem;
+  --text-data: 12.5px;
+  --text-brand: 17px;
+  --text-key: 11.5px;
+  --text-action: 14px;
+
+  --tracking-panel-title: 0;
+  --tracking-brand: -0.01em;
+  --font-sans: 'IBM Plex Sans', sans-serif;
+  --font-mono: 'IBM Plex Mono', monospace;
+  --font-weight-panel-title: var(--weight-panel-title);
+
+  --animate-modal-fade: modal-fade 0.12s ease-out both;
+  --animate-pulse-dot: pulse-dot 2s ease-in-out infinite;
+
+  @keyframes modal-fade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes pulse-dot {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.4;
+    }
+  }
+}
 
 @layer base {
+  /* Tailwind 3 preflight parity. v4 defaults borders to currentColor, placeholders to 50%
+     currentColor and buttons to the default cursor; the approved design was built on v3. */
+  *,
+  ::before,
+  ::after {
+    border-color: #e5e7eb;
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: #9ca3af;
+  }
+
+  button,
+  [role='button'] {
+    cursor: pointer;
+  }
+
+  :disabled {
+    cursor: default;
+  }
+
   :root {
     --c-surface: 14 15 17;
     --c-panel: 21 22 24;
@@ -34,42 +146,13 @@
     --c-special: 79 179 169;
     --c-overlay-dark: 0 0 0;
 
-    --radius-inline: 6px;
-    --radius-control-compact: 7px;
-    --radius-control: 9px;
-    --radius-panel: 14px;
-    --radius-modal: 16px;
-    --radius-pill: 9999px;
-    --radius-action: 11px;
-    --radius-segmented: 11px;
-    --radius-segment: 8px;
-    --radius-notice: 11px;
-
-    --text-micro: 11px;
-    --text-caption: 11px;
-    --text-detail: 11px;
-    --text-label: 12px;
-    --text-xs: 12px;
-    --text-sm: 13px;
-    --text-base: 15px;
-    --text-lg: 18px;
-    --text-xl: 18px;
-    --text-panel-title: 15px;
-    --text-data: 12.5px;
-    --text-brand: 17px;
-    --text-key: 11.5px;
-    --text-action: 14px;
     --weight-panel-title: 600;
-    --tracking-panel-title: 0;
     --tracking-micro-label: 0;
-    --tracking-brand: -0.01em;
     --leading-xs: 1rem;
     --leading-sm: 1.25rem;
     --leading-base: 1.5rem;
     --leading-lg: 1.75rem;
     --leading-xl: 1.75rem;
-    --font-sans: 'IBM Plex Sans', sans-serif;
-    --font-mono: 'IBM Plex Mono', monospace;
 
     --shadow-panel: none;
     --shadow-modal: none;
@@ -230,7 +313,31 @@
   }
 }
 
-@layer components {
+/* Tailwind 3 emitted one flat cascade: components, then utilities, then custom utilities, then
+   variants, so these rules won or lost by specificity and order. Tailwind 4 emits real cascade
+   layers, where the utilities layer always beats components. Placing these rules inside the
+   utilities layer, before the generated utilities, keeps the v3 outcome. */
+@layer utilities {
+  .notice-warn {
+    @apply relative block rounded-notice pl-8 pr-3.5 py-[11px] text-muted;
+    /* Plain rgb keeps the v3 value; Tailwind 4 opacity modifiers compute through oklab. */
+    background-color: rgb(var(--c-warn) / 0.09);
+  }
+
+  .notice-warn::before {
+    content: '';
+    @apply absolute left-3.5 top-[11px] h-2 w-2 rounded-pill bg-warn;
+  }
+
+  .micro-label {
+    @apply font-sans text-label font-medium leading-[normal] self-center normal-case text-muted;
+    letter-spacing: var(--tracking-micro-label);
+  }
+
+  .panel-idle {
+    @apply text-muted;
+  }
+
   /* Preparation trades duplicated section padding for one 4px gap. The
      controls retain their geometry; Logs yields height before these bodies. */
   .combat-fit > div {
@@ -247,23 +354,9 @@
     max-height: max(180px, calc(100dvh - 680px));
   }
 
-  .notice-warn {
-    @apply relative block rounded-notice bg-warn/[0.09] pl-8 pr-3.5 py-[11px] text-muted;
-  }
-
-  .notice-warn::before {
-    content: '';
-    @apply absolute left-3.5 top-[11px] h-2 w-2 rounded-pill bg-warn;
-  }
-
   .notice-warn p {
     font-size: var(--text-data);
     line-height: 1.55;
-  }
-
-  .micro-label {
-    @apply font-sans text-label font-medium leading-[normal] self-center normal-case text-muted;
-    letter-spacing: var(--tracking-micro-label);
   }
 
   /* Disabled is a text state, not a permanent focus ring or a new surface.
@@ -295,10 +388,6 @@
     @apply border-muted bg-muted;
   }
 
-  .panel-idle {
-    @apply text-muted;
-  }
-
   .panel-idle .text-ink:not(h2),
   .panel-idle .text-ok,
   .panel-idle .text-bad,
@@ -307,22 +396,17 @@
   .panel-idle .text-special {
     @apply text-muted;
   }
-}
 
-/* The fixed production window is 1440×900; this is the smaller audit viewport
-   fallback, not a change of mode. One reachable scroll per tool, never spill. */
-@media (max-height: 850px) {
-  [data-design-tool-body] {
-    flex-shrink: 1;
-    flex-basis: 0;
+  /* Tailwind 3 also extended the two rule groups above to every variant of the same utilities
+     the app uses. Keep those variants muted so hover never re-inks idle or disabled text. */
+  .idle-control:disabled .hover\:text-ink:hover,
+  .idle-control:disabled .disabled\:text-on-accent:disabled,
+  .panel-idle .hover\:text-ink:hover:not(h2),
+  .panel-idle .hover\:text-bad:hover,
+  .panel-idle .button-tonal-bad:hover:not(:disabled):not(h2) {
+    @apply text-muted;
   }
 
-  .combat-fit {
-    overflow-y: auto;
-  }
-}
-
-@layer utilities {
   .button-primary:not(:disabled) {
     @apply bg-accent text-on-accent;
   }
@@ -419,6 +503,81 @@
 
   .font-mono {
     font-variant-numeric: tabular-nums;
+  }
+
+  @tailwind utilities;
+
+  /* Tailwind 4 also transitions outline-color and gradient stops, which fades the focus ring in
+     from currentColor. Keep the approved behavior: the accent ring appears immediately. */
+  .transition-colors {
+    transition-property:
+      color, background-color, border-color, text-decoration-color, fill, stroke;
+  }
+
+  /* Tailwind 3 parity: outline-none (now outline-hidden) was a transparent 2px outline rather
+     than outline-style: none. Both are invisible; this keeps the computed values identical. */
+  .outline-hidden,
+  .focus\:outline-hidden:focus {
+    outline: 2px solid transparent;
+    outline-offset: 2px;
+  }
+
+  /* Tailwind 3 parity for space-y-*: v4 puts margin-bottom on every child but the last, so a
+     hidden first child drops the gap. Restore the v3 rule (margin-top on following visible
+     siblings) and cancel v4's margin at zero specificity, like v4's own rule. Only these values
+     are allowed; scripts/check-design.mjs rejects any other space-* utility. */
+  :where(
+    .space-y-0\.5 > :not(:last-child),
+    .space-y-1 > :not(:last-child),
+    .space-y-1\.5 > :not(:last-child),
+    .space-y-2 > :not(:last-child),
+    .space-y-3 > :not(:last-child),
+    .space-y-4 > :not(:last-child)
+  ) {
+    margin-block-end: 0;
+  }
+
+  .space-y-0\.5 > :not([hidden]) ~ :not([hidden]) {
+    margin-top: 0.125rem;
+    margin-bottom: 0;
+  }
+
+  .space-y-1 > :not([hidden]) ~ :not([hidden]) {
+    margin-top: 0.25rem;
+    margin-bottom: 0;
+  }
+
+  .space-y-1\.5 > :not([hidden]) ~ :not([hidden]) {
+    margin-top: 0.375rem;
+    margin-bottom: 0;
+  }
+
+  .space-y-2 > :not([hidden]) ~ :not([hidden]) {
+    margin-top: 0.5rem;
+    margin-bottom: 0;
+  }
+
+  .space-y-3 > :not([hidden]) ~ :not([hidden]) {
+    margin-top: 0.75rem;
+    margin-bottom: 0;
+  }
+
+  .space-y-4 > :not([hidden]) ~ :not([hidden]) {
+    margin-top: 1rem;
+    margin-bottom: 0;
+  }
+}
+
+/* The fixed production window is 1440×900; this is the smaller audit viewport
+   fallback, not a change of mode. One reachable scroll per tool, never spill. */
+@media (max-height: 850px) {
+  [data-design-tool-body] {
+    flex-shrink: 1;
+    flex-basis: 0;
+  }
+
+  .combat-fit {
+    overflow-y: auto;
   }
 }
 
