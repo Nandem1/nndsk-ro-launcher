@@ -34,19 +34,85 @@ pub fn verify_process_identity(identity: &ProcessIdentity) -> bool {
 /// `false` means the process exited or the PID was reused before the signal. Callers must treat
 /// that as an already-finished target, never as permission to signal the new process.
 pub fn signal_process_identity(identity: &ProcessIdentity, signal: i32) -> io::Result<bool> {
+    match PidFd::open(identity.pid) {
+        Ok(Some(pidfd)) => pidfd.signal_if_identity(identity, signal),
+        Ok(None) => Ok(false),
+        // Kernels before 5.3, seccomp sandboxes, or a thread id: keep the verified kill(2) path.
+        Err(error)
+            if matches!(
+                error.raw_os_error(),
+                Some(libc::ENOSYS | libc::EPERM | libc::EINVAL)
+            ) =>
+        {
+            legacy_signal_process_identity(identity, signal)
+        }
+        Err(error) => Err(error),
+    }
+}
+
+/// A pidfd refers to one process instance for its whole lifetime, so a signal sent through it
+/// can never reach a later process that reuses the PID.
+struct PidFd(std::os::fd::OwnedFd);
+
+impl PidFd {
+    /// `Ok(None)` when no process has this PID any more.
+    fn open(pid: u32) -> io::Result<Option<Self>> {
+        use std::os::fd::FromRawFd;
+        let fd = unsafe { libc::syscall(libc::SYS_pidfd_open, pid as libc::pid_t, 0) };
+        if fd < 0 {
+            let error = io::Error::last_os_error();
+            return if error.raw_os_error() == Some(libc::ESRCH) {
+                Ok(None)
+            } else {
+                Err(error)
+            };
+        }
+        Ok(Some(Self(unsafe {
+            std::os::fd::OwnedFd::from_raw_fd(fd as std::os::fd::RawFd)
+        })))
+    }
+
+    /// Verifies `(pid, start_time)` after the pidfd is pinned: if the PID had already been reused
+    /// when it was opened, the start time differs and nothing is signalled.
+    fn signal_if_identity(&self, identity: &ProcessIdentity, signal: i32) -> io::Result<bool> {
+        if !verify_process_identity(identity) {
+            return Ok(false);
+        }
+        self.send(signal)
+    }
+
+    fn send(&self, signal: i32) -> io::Result<bool> {
+        use std::os::fd::AsRawFd;
+        let rc = unsafe {
+            libc::syscall(
+                libc::SYS_pidfd_send_signal,
+                self.0.as_raw_fd(),
+                signal,
+                std::ptr::null::<libc::siginfo_t>(),
+                0,
+            )
+        };
+        signal_result(rc as i32)
+    }
+}
+
+fn legacy_signal_process_identity(identity: &ProcessIdentity, signal: i32) -> io::Result<bool> {
     if !verify_process_identity(identity) {
         return Ok(false);
     }
-    let rc = unsafe { libc::kill(identity.pid as libc::pid_t, signal) };
+    signal_result(unsafe { libc::kill(identity.pid as libc::pid_t, signal) })
+}
+
+/// `Ok(false)` for ESRCH: the target already exited and was reaped.
+fn signal_result(rc: i32) -> io::Result<bool> {
     if rc == 0 {
-        Ok(true)
+        return Ok(true);
+    }
+    let error = io::Error::last_os_error();
+    if error.raw_os_error() == Some(libc::ESRCH) {
+        Ok(false)
     } else {
-        let error = io::Error::last_os_error();
-        if error.raw_os_error() == Some(libc::ESRCH) {
-            Ok(false)
-        } else {
-            Err(error)
-        }
+        Err(error)
     }
 }
 
@@ -542,6 +608,25 @@ mod tests {
         assert!(!verify_process_identity(&stale));
         assert!(!signal_process_identity(&stale, 0).unwrap());
         assert!(signal_process_identity(&identity, 0).unwrap());
+    }
+
+    #[test]
+    fn pidfd_signal_cannot_reach_a_reaped_process_or_its_pid_successor() {
+        let mut child = std::process::Command::new("/usr/bin/sleep")
+            .arg("30")
+            .spawn()
+            .expect("spawn sleep");
+        let identity = capture_process_identity(child.id()).expect("child identity");
+        let pidfd = PidFd::open(identity.pid)
+            .expect("pidfd_open")
+            .expect("child alive");
+        assert!(pidfd.signal_if_identity(&identity, 0).unwrap());
+        child.kill().unwrap();
+        child.wait().unwrap();
+        // The PID is free (and may already belong to another process); the pidfd still names the
+        // reaped child, so the kernel refuses the signal instead of retargeting it.
+        assert!(!pidfd.send(0).unwrap());
+        assert!(!signal_process_identity(&identity, 0).unwrap());
     }
 
     #[test]
