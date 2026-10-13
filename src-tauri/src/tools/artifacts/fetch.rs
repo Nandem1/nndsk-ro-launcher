@@ -103,6 +103,9 @@ fn pinned_download_client() -> Result<reqwest::Client, String> {
         .https_only(true)
         .redirect(reqwest::redirect::Policy::limited(10))
         .connect_timeout(std::time::Duration::from_secs(15))
+        // A stalled body fails after a minute without bytes instead of waiting for the full
+        // 30-minute budget.
+        .read_timeout(std::time::Duration::from_secs(60))
         .timeout(std::time::Duration::from_secs(1800))
         .build()
         .map_err(|error| format!("No se pudo preparar HTTP: {error}"))
