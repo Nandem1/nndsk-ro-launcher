@@ -128,7 +128,8 @@ guiadas. Preparación/reset de prefixes, importación de artefactos y herramient
 servidor conservan sus propios contratos; aún pueden entrar antes de que el cierre
 de sesiones de salida los rechace. Según `FINAL_HARDENING_PLAN.md`, F-02 puede
 integrarse primero, pero no debe publicarse una estable sin la recuperación F-05/F-06.
-La exclusividad entre procesos (F-04) sigue pendiente.
+F-04 impide un segundo desktop sobre la misma raíz de datos; los guards por recurso
+siguen coordinando la CLI de importación.
 
 El updater sustituye el fichero `APPIMAGE` en su sitio. No llama a `ail-cli`.
 La entrada de escritorio de AppImageLauncher sigue apuntando a la misma ruta.
@@ -195,5 +196,63 @@ padre**, conserva bytes y modo nuevos. También se prueba un short write real co
 Esto califica interrupción de proceso/SIGKILL en directorios desechables, **no**
 pérdida de alimentación: el orden de fsync está implementado pero no calificado
 contra power-loss. No es una calificación E2E de AppImages firmados N-1 → N.
-F-04 aún debe excluir dos procesos launcher que compitan por el mismo destino;
-este cambio no añade un lock global.
+La propiedad de instancia F-04 excluye dos desktops sobre la misma raíz de datos
+antes de que cualquiera pueda competir por este temporal; no se añade otro mutex
+para AppImage.
+
+## Propiedad de instancia desktop (F-04)
+
+La entrada desktop adquiere `OperationGuard("instance", app_data_dir())` antes de
+configurar WebKit, construir `Builder`, `GameState`, repositorios, updater o
+diagnósticos. La autoridad existente `utils/paths.rs` define la raíz como
+`$HOME/.local/share/ro-launcher`: allí viven settings, servidores, instalaciones,
+runtime y `locks/`. CWD, ejecutable, AppImage, servidor y prefix no eligen la clave.
+`XDG_DATA_HOME` no sustituye esta raíz. La normalización existente de OperationGuard
+resuelve aliases de HOME incluso antes de crear los padres ausentes.
+
+Un guard local envuelve el callback completo de inicialización y `.run()`, incluido
+`RunEvent::Exit`, la limpieza de F-02 y el reinicio. Los locks siguen siendo registros
+POSIX exclusivos (`fcntl(F_SETLK)`), por proceso, con descriptor `FD_CLOEXEC`.
+No se heredan con fork ni sobreviven a la muerte del dueño, incluido SIGKILL.
+Los archivos `locks/<sha256>.lock` no se truncan ni eliminan: un archivo persistente
+no representa propiedad persistente y todos los participantes abren el mismo inode.
+
+El sucesor puede arrancar antes de la muerte de su predecesor. En la dependencia
+bloqueada Tauri 2.11.2, `app.rs:1422–1428` ejecuta nuestro callback de salida y
+`cleanup_before_exit()` **antes** de `process::restart`; `process.rs:74–91` hace
+`Command::spawn()` y enseguida `exit(0)`. Por eso se permite **un segundo** de handoff,
+con reintentos cada 25 ms y tiempo monotónico (`Instant`). Este margen cubre la
+planificación del spawn/exit final, no la duración de la limpieza previa. No garantiza
+el handoff si el predecesor queda suspendido después del spawn durante más de un
+segundo. Los fallbacks de restart también usan ese mismo spawn/exit; F-02 conserva
+su limitación de entrega del callback en esos fallbacks.
+
+Solo `Busy` se reintenta; los errores de filesystem/permisos fallan inmediatamente
+y no se clasifican como otra instancia. Si otro desktop conserva la raíz al vencer
+el plazo, el perdedor escribe `RO-Launcher ya está abierto para <raíz>` a stderr y
+sale con código 1 antes de inicializar estado, diagnósticos o ventanas. No roba el
+lock, no termina al dueño ni agrega IPC para enfocar su ventana.
+
+`--import-runtime /ruta/absoluta/archive.tar.zst` despacha antes de la entrada desktop
+y conserva únicamente sus guards runtime/artefactos. La nueva propiedad no cambia
+el gate/candidato de F-01, la reserva y limpieza de F-02 ni la activación de F-03.
+La recuperación de prefixes F-05 y de artefactos F-06 permanece pendiente.
+
+El AppImage instalado y `npm run tauri:dev` sobre el mismo HOME deben entrar en
+conflicto. Para desarrollar en paralelo usa un HOME absoluto desechable, además de
+XDG config/cache/data aislados si quieres aislar también las bibliotecas de escritorio:
+
+```bash
+dev_root=$(mktemp -d /tmp/ro-launcher-dev.XXXXXX)
+env HOME="$dev_root" XDG_DATA_HOME="$dev_root/data" \
+  XDG_CONFIG_HOME="$dev_root/config" XDG_CACHE_HOME="$dev_root/cache" \
+  CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}" \
+  RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}" npm run tauri:dev
+```
+
+Raíces distintas pueden coexistir. No hay un selector de raíz en el producto, pero
+HOME aislados pueden ejecutar el mismo fichero AppImage. F-04 no serializa updates
+de ese fichero entre raíces diferentes: para desktops instalados aislados usa
+copias AppImage separadas. El desarrollo sin empaquetar no activa AppImages.
+La exclusividad es propiedad cooperativa del producto, no una defensa frente a un
+proceso malicioso del mismo usuario que borre o sustituya los archivos de lock.

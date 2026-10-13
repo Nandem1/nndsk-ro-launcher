@@ -279,6 +279,8 @@ packaging also require a real `npm run tauri:dev` smoke test. Validate both the 
 and any server-specific Wine path touched. Do not treat frontend-only `npm run dev` as a desktop
 integration test.
 
+Desktop `tauri:dev` and an installed AppImage must conflict on the same data root; use a disposable absolute `HOME` for concurrent development (`XDG_DATA_HOME` alone does not change the launcher's root).
+
 For packaging/release-sensitive work:
 
 ```bash

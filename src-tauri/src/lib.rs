@@ -66,6 +66,14 @@ async fn show_main_window(app: tauri::AppHandle) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    if let Err(error) = utils::with_desktop_instance(&utils::app_data_dir(), run_desktop) {
+        // A losing process must not initialize/rotate shared diagnostics or build Tauri.
+        eprintln!("[ro-launcher] [instance] {error}");
+        std::process::exit(1);
+    }
+}
+
+fn run_desktop() {
     configure_linux_webview_env();
 
     let memory = tools::memory_sessions::MemorySessionRegistry::new();
