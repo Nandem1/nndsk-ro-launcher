@@ -4,6 +4,11 @@ import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { sidecarOrderError } from './release-sidecar-order.mjs'
 import { qualityCiTriggerError } from './quality-ci-trigger.mjs'
+import {
+  hiddenFailureErrors,
+  releaseWorkflowErrors,
+  unpinnedActionErrors,
+} from './release-workflow-policy.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const EXPECTED_ENDPOINT =
@@ -51,10 +56,19 @@ const tauriConf = readJson(join(root, 'src-tauri', 'tauri.conf.json'))
 const cargoToml = readFileSync(join(root, 'src-tauri', 'Cargo.toml'), 'utf8')
 const cargoVersion = cargoPackageVersion(cargoToml)
 
+const packageLock = readJson(join(root, 'package-lock.json'))
+const cargoLock = readFileSync(join(root, 'Cargo.lock'), 'utf8')
+const cargoLockLauncher = cargoLock.match(
+  /\[\[package\]\]\nname = "ro-launcher"\nversion = "([^"]+)"/,
+)
+
 const versions = {
   'package.json': packageJson.version,
+  'package-lock.json': packageLock.version,
+  'package-lock.json packages[""]': packageLock.packages?.['']?.version,
   'src-tauri/tauri.conf.json': tauriConf.version,
   'src-tauri/Cargo.toml': cargoVersion,
+  'Cargo.lock ro-launcher': cargoLockLauncher?.[1],
 }
 
 const unique = new Set(Object.values(versions))
@@ -175,18 +189,25 @@ const releaseYaml = readFileSync(
 )
 const sidecarError = sidecarOrderError(releaseYaml)
 if (sidecarError) fail(sidecarError)
-if (releaseYaml.includes('includeUpdaterJson')) {
-  fail('release.yml must use uploadUpdaterJson, not includeUpdaterJson')
-}
-if (!releaseYaml.includes('uploadUpdaterJson: true')) {
-  fail(
-    'release.yml must set uploadUpdaterJson: true so latest.json is attached',
-  )
-}
+const releaseErrors = releaseWorkflowErrors(releaseYaml)
+if (releaseErrors.length > 0) fail(releaseErrors.join('; '))
 
-const ciYaml = readFileSync(join(root, '.github', 'workflows', 'ci.yml'), 'utf8')
+const ciYaml = readFileSync(
+  join(root, '.github', 'workflows', 'ci.yml'),
+  'utf8',
+)
 const ciTriggerError = qualityCiTriggerError(ciYaml)
 if (ciTriggerError) fail(ciTriggerError)
+
+const workflowFiles = {}
+for (const file of walkFiles(join(root, '.github'))) {
+  if (/\.ya?ml$/.test(file)) workflowFiles[file] = readFileSync(file, 'utf8')
+}
+const workflowErrors = [
+  ...unpinnedActionErrors(workflowFiles),
+  ...hiddenFailureErrors(workflowFiles),
+]
+if (workflowErrors.length > 0) fail(workflowErrors.join('; '))
 
 const mainWindow = tauriConf.app?.windows?.[0]
 if (!mainWindow || mainWindow.decorations !== false) {

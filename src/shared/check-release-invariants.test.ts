@@ -4,6 +4,12 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { sidecarOrderError } from '../../scripts/release-sidecar-order.mjs'
 import { qualityCiTriggerError } from '../../scripts/quality-ci-trigger.mjs'
+import {
+  hiddenFailureErrors,
+  releaseWorkflowErrors,
+  unpinnedActionErrors,
+  workflowJobs,
+} from '../../scripts/release-workflow-policy.mjs'
 
 const root = process.cwd()
 const script = join(root, 'scripts/check-release-invariants.mjs')
@@ -25,7 +31,7 @@ describe('sidecarOrderError', () => {
       - name: Build sidecars
         run: cargo build -p ro-inputd -p ro-sessiond --release
       - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
-      - uses: tauri-apps/tauri-action@v1
+      - run: npx tauri build --bundles appimage
 `
     expect(sidecarOrderError(broken)).toMatch(/debug sidecars/)
   })
@@ -36,8 +42,76 @@ describe('sidecarOrderError', () => {
       'utf8',
     )
     expect(sidecarOrderError(yaml)).toBeNull()
-    expect(yaml).toMatch(/uploadUpdaterJson:\s*true/)
-    expect(yaml).not.toMatch(/includeUpdaterJson/)
+  })
+})
+
+describe('releaseWorkflowErrors', () => {
+  const release = readFileSync(
+    join(root, '.github/workflows/release.yml'),
+    'utf8',
+  )
+
+  it('accepts the current build, sign and publish split', () => {
+    expect(releaseWorkflowErrors(release)).toEqual([])
+    expect(Object.keys(workflowJobs(release))).toEqual([
+      'release-config',
+      'build',
+      'sign',
+      'publish',
+    ])
+  })
+
+  it('rejects the signing key leaking into the build job', () => {
+    const leaked = release.replace(
+      "          DISCORD_APPLICATION_ID: ''\n",
+      "          DISCORD_APPLICATION_ID: ''\n          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}\n",
+    )
+    expect(leaked).not.toBe(release)
+    expect(releaseWorkflowErrors(leaked).join('\n')).toMatch(
+      /job build must not reference the signing key/,
+    )
+  })
+
+  it('rejects package code running beside the private key', () => {
+    const noisy = release.replace(
+      './node_modules/.bin/tauri signer sign',
+      'npm run build && ./node_modules/.bin/tauri signer sign',
+    )
+    expect(noisy).not.toBe(release)
+    expect(releaseWorkflowErrors(noisy).join('\n')).toMatch(/must not run npm/)
+  })
+
+  it('rejects returning to in-build signing through tauri-action', () => {
+    const legacy = `${release}\n      - uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f\n`
+    expect(releaseWorkflowErrors(legacy).join('\n')).toMatch(/tauri-action/)
+  })
+
+  it('rejects publishing without the smoke test or the hash re-check', () => {
+    const untested = release
+      .replace('scripts/smoke-release-artifact.sh', 'true')
+      .replaceAll('needs.build.outputs.sha256', 'needs.build.outputs.other')
+    const errors = releaseWorkflowErrors(untested).join('\n')
+    expect(errors).toMatch(/smoke-test/)
+    expect(errors).toMatch(/re-check the tested AppImage SHA-256/)
+  })
+})
+
+describe('workflow hygiene', () => {
+  it('rejects mutable action tags and hidden failures', () => {
+    const yaml = `
+jobs:
+  audit:
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/linux-build-deps
+      - run: cargo audit || true
+      - run: RO_YAMA_ALLOW_UNVALIDATED=1 cargo test
+`
+    expect(unpinnedActionErrors({ 'x.yml': yaml })).toEqual([
+      'x.yml: action actions/checkout@v4 must be pinned to a full commit SHA',
+    ])
+    expect(hiddenFailureErrors({ 'x.yml': yaml })).toHaveLength(3)
   })
 })
 

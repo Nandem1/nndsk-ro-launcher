@@ -79,11 +79,11 @@ git tag -a vX.Y.Z -m "RO-Launcher X.Y.Z"
 git push origin vX.Y.Z
 ```
 
-7. Watch `.github/workflows/release.yml` on that tag. Environment `release` must supply `RO_LAUNCHER_DISCORD_APPLICATION_ID` and `TAURI_SIGNING_PRIVATE_KEY`. The job fails closed unless `ci.yml` (both `quality` and `release-cache`) is green on `main` for the tagged commit, so wait for that whole run before tagging. It reruns only static checks and restores the release cache that `release-cache` saved.
-8. Open the **draft** GitHub Release. Check AppImage, `.sig`, `latest.json`, sidecar layout, SHA-256 evidence. Fill user-facing notes before asking the user to publish. Empty `notes` in `latest.json` is what the in-app updater shows as detail.
+7. Watch `.github/workflows/release.yml` on that tag. Environment `release` must supply `RO_LAUNCHER_DISCORD_APPLICATION_ID` and `TAURI_SIGNING_PRIVATE_KEY`. The `build` job fails closed unless `ci.yml` (both `quality` and `release-cache`) is green on `main` for the tagged commit, so wait for that whole run before tagging. It reruns static checks and the dependency audit policy, builds an unsigned AppImage and smoke-tests those exact bytes. Only the `sign` job sees the key; `publish` verifies the signature and creates the draft.
+8. Open the **draft** GitHub Release. Check AppImage, `.sig`, `latest.json`, `release-smoke.txt`, SHA-256 evidence. Fill user-facing notes before asking the user to publish. Empty `notes` in `latest.json` is what the in-app updater shows as detail.
 9. Stop. The user publishes the draft.
 
-If `release.yml` fails before GitHub creates a draft, delete the unused remote tag after the user agrees, fix the tree, and tag the same X.Y.Z again. If a draft or published release already exists for that tag, bump instead.
+If `publish` fails after creating the draft, ask the user before deleting that draft and rerunning the job. If `release.yml` fails before GitHub creates a draft, delete the unused remote tag after the user agrees, fix the tree, and tag the same X.Y.Z again. If a draft or published release already exists for that tag, bump instead.
 
 ## Stop
 

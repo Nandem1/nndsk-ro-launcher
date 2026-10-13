@@ -1,23 +1,62 @@
 name: Release
 
+# build (no secrets) -> smoke the exact AppImage -> sign (only job with the key) -> publish draft.
+#
+# The AppImage that passes the smoke test is uploaded once as a workflow artifact and its SHA-256
+# travels through job outputs. sign and publish re-check that hash, so the published bytes are the
+# tested bytes. The signing key is referenced in exactly one step of the sign job, which runs only
+# the Tauri CLI signer; no npm install script, build.rs, Vite or cargo build runs with it.
+#
+# Every `uses:` is pinned to a full commit SHA. To update one, resolve the tag you reviewed and
+# replace both the SHA and the trailing comment, for example:
+#   git ls-remote https://github.com/actions/checkout 'refs/tags/v4^{}' 'refs/tags/v4'
+# Use the peeled `^{}` commit when the tag is annotated. See docs/features/UPDATER.md.
+
 on:
   push:
     tags: ['v*.*.*']
 
-permissions:
-  contents: write
-  actions: read
+permissions: {}
 
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  appimage:
+  # Reads the public Discord Application ID from the `release` environment. It runs no repository
+  # code and no third-party action, and references no secret.
+  release-config:
     runs-on: ubuntu-24.04
     environment: release
+    permissions: {}
+    outputs:
+      discord_application_id: ${{ steps.config.outputs.discord_application_id }}
+    steps:
+      - id: config
+        env:
+          DISCORD_ID: ${{ vars.RO_LAUNCHER_DISCORD_APPLICATION_ID }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$DISCORD_ID" =~ ^[0-9]+$ ]]; then
+            echo "::error::release environment variable RO_LAUNCHER_DISCORD_APPLICATION_ID must be numeric"
+            exit 1
+          fi
+          echo "discord_application_id=$DISCORD_ID" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: release-config
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      version: ${{ steps.artifact.outputs.version }}
+      appimage: ${{ steps.artifact.outputs.appimage }}
+      sha256: ${{ steps.artifact.outputs.sha256 }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       # The full quality gate (tests included) already ran in ci.yml for this commit.
       # Require that evidence instead of repeating it; it also guarantees the release
@@ -56,15 +95,15 @@ jobs:
 
       - name: Fail closed on release environment
         env:
-          RO_LAUNCHER_DISCORD_APPLICATION_ID: ${{ vars.RO_LAUNCHER_DISCORD_APPLICATION_ID }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          RO_LAUNCHER_DISCORD_APPLICATION_ID: ${{ needs.release-config.outputs.discord_application_id }}
         run: node scripts/require-release-env.mjs
 
       - run: node scripts/check-release-invariants.mjs
       - name: Tag matches version files
         run: node scripts/check-release-invariants.mjs --tag "${GITHUB_REF_NAME}"
 
+      - name: Runtime dependency audit (npm)
+        run: node scripts/dependency-audit-policy.mjs npm
       - run: npm ci
       - run: npm run build
       - run: npm run lint
@@ -73,57 +112,173 @@ jobs:
       - name: Build sidecars
         run: cargo build -p ro-inputd -p ro-sessiond
       - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+      - name: RustSec audit
+        run: |
+          cargo install cargo-audit --locked --version 0.22.2
+          node scripts/dependency-audit-policy.mjs cargo
       - name: Build release sidecars
         run: cargo build -p ro-inputd -p ro-sessiond --release
 
-      - uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1
+      # Unsigned on purpose: the updater signature is produced by the sign job. Overriding
+      # createUpdaterArtifacts only skips the in-build signer; the AppImage bytes are the same
+      # updater artifact that tauri build would have signed.
+      - name: Build unsigned AppImage
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          RO_LAUNCHER_DISCORD_APPLICATION_ID: ${{ vars.RO_LAUNCHER_DISCORD_APPLICATION_ID }}
+          RO_LAUNCHER_DISCORD_APPLICATION_ID: ${{ needs.release-config.outputs.discord_application_id }}
           DISCORD_APPLICATION_ID: ''
           NO_STRIP: 'true'
-        with:
-          tagName: ${{ github.ref_name }}
-          releaseName: 'RO-Launcher __VERSION__'
-          releaseDraft: true
-          uploadUpdaterJson: true
-          args: '--bundles appimage'
+        run: npx --no-install tauri build --bundles appimage --config '{"bundle":{"createUpdaterArtifacts":false}}'
 
-      - name: Human SHA-256 evidence and sidecar layout
+      - name: Smoke-test the AppImage that will be published
+        id: artifact
         run: |
           set -euo pipefail
-          cd target/release/bundle/appimage
+          version=$(node -p "require('./package.json').version")
+          appimage="RO-Launcher_${version}_amd64.AppImage"
           shopt -s nullglob
-          images=(RO-Launcher_*_amd64.AppImage)
-          if [[ ${#images[@]} -ne 1 ]]; then
-            echo "expected exactly one AppImage, found: ${images[*]:-none}" >&2
+          images=(target/release/bundle/appimage/RO-Launcher_*_amd64.AppImage)
+          if [[ ${#images[@]} -ne 1 || "${images[0]}" != "target/release/bundle/appimage/$appimage" ]]; then
+            echo "::error::expected exactly $appimage, found: ${images[*]:-none}"
             exit 1
           fi
-          appimage="${images[0]}"
-          test -s "${appimage}.sig"
-          test -s "$appimage"
-          sha256sum "$appimage" > RO-Launcher_amd64.AppImage.sha256
-          sha256sum -c RO-Launcher_amd64.AppImage.sha256
-          work=$(mktemp -d)
-          trap 'rm -rf "$work"' EXIT
-          cd "$work"
-          "$GITHUB_WORKSPACE/target/release/bundle/appimage/$appimage" --appimage-extract >/dev/null
-          test -x squashfs-root/usr/bin/ro-launcher
-          test -x squashfs-root/usr/bin/ro-inputd
-          test -x squashfs-root/usr/bin/ro-sessiond
+          if [[ -e "${images[0]}.sig" ]]; then
+            echo "::error::the build job must not produce an updater signature"
+            exit 1
+          fi
+          mkdir dist-release
+          cp "${images[0]}" "dist-release/$appimage"
+          scripts/smoke-release-artifact.sh "dist-release/$appimage" dist-release/release-smoke.txt
+          (cd dist-release && sha256sum "$appimage" > RO-Launcher_amd64.AppImage.sha256)
+          sha256=$(cut -d' ' -f1 dist-release/RO-Launcher_amd64.AppImage.sha256)
           {
+            echo "version=$version"
             echo "appimage=$appimage"
-            echo "sig=${appimage}.sig"
-            ls -la squashfs-root/usr/bin/ro-launcher squashfs-root/usr/bin/ro-inputd squashfs-root/usr/bin/ro-sessiond
-          } > "$GITHUB_WORKSPACE/target/release/bundle/appimage/sidecar-layout.txt"
+            echo "sha256=$sha256"
+          } >> "$GITHUB_OUTPUT"
 
-      - name: Upload SHA-256 evidence
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: tested-appimage
+          path: dist-release/
+          if-no-files-found: error
+          retention-days: 7
+
+  sign:
+    needs: build
+    runs-on: ubuntu-24.04
+    environment: release
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+
+      # Installs the lockfile-pinned Tauri CLI. --ignore-scripts: no dependency code runs here.
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: tested-appimage
+          path: dist-release
+
+      - name: Require the tested bytes
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPIMAGE: ${{ needs.build.outputs.appimage }}
+          SHA256: ${{ needs.build.outputs.sha256 }}
+        run: echo "${SHA256}  dist-release/${APPIMAGE}" | sha256sum -c -
+
+      # The only step that receives the private key. It runs the signer and nothing else.
+      - name: Sign updater artifact
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPIMAGE: ${{ needs.build.outputs.appimage }}
+          VERSION: ${{ needs.build.outputs.version }}
         run: |
-          gh release upload "${GITHUB_REF_NAME}" \
-            target/release/bundle/appimage/RO-Launcher_amd64.AppImage.sha256 \
-            target/release/bundle/appimage/sidecar-layout.txt \
-            --clobber
+          set -euo pipefail
+          if [[ -z "${TAURI_SIGNING_PRIVATE_KEY//[[:space:]]/}" ]]; then
+            echo "::error::TAURI_SIGNING_PRIVATE_KEY must be non-empty in the release environment"
+            exit 1
+          fi
+          ./node_modules/.bin/tauri signer sign --app-version "$VERSION" "dist-release/$APPIMAGE" > /dev/null
+          test -s "dist-release/$APPIMAGE.sig"
+
+      - name: Verify signature against the embedded updater pubkey
+        env:
+          APPIMAGE: ${{ needs.build.outputs.appimage }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          node scripts/updater-release.mjs verify \
+            --file "dist-release/$APPIMAGE" --sig "dist-release/$APPIMAGE.sig" --version "$VERSION"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: updater-signature
+          path: dist-release/${{ needs.build.outputs.appimage }}.sig
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: [build, sign]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: tested-appimage
+          path: dist-release
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: updater-signature
+          path: dist-release
+
+      - name: Verify tested bytes and updater signature
+        env:
+          APPIMAGE: ${{ needs.build.outputs.appimage }}
+          SHA256: ${{ needs.build.outputs.sha256 }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -euo pipefail
+          echo "${SHA256}  dist-release/${APPIMAGE}" | sha256sum -c -
+          (cd dist-release && sha256sum -c RO-Launcher_amd64.AppImage.sha256)
+          node scripts/updater-release.mjs verify \
+            --file "dist-release/$APPIMAGE" --sig "dist-release/$APPIMAGE.sig" --version "$VERSION"
+
+      # Mirrors the previous tauri-action output: a draft named "RO-Launcher X.Y.Z" with the
+      # AppImage, its .sig, latest.json (linux-x86_64 and linux-x86_64-appimage pointing at the
+      # asset API url) and human SHA-256/smoke evidence. Fails if a release already exists.
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APPIMAGE: ${{ needs.build.outputs.appimage }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          gh release create "$tag" --repo "$GITHUB_REPOSITORY" --draft --verify-tag \
+            --title "RO-Launcher ${VERSION}" --notes ''
+          gh release upload "$tag" --repo "$GITHUB_REPOSITORY" \
+            "dist-release/$APPIMAGE" \
+            "dist-release/$APPIMAGE.sig" \
+            dist-release/RO-Launcher_amd64.AppImage.sha256 \
+            dist-release/release-smoke.txt
+          url=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets \
+            --jq ".assets[] | select(.name == \"$APPIMAGE\") | .apiUrl")
+          node scripts/updater-release.mjs manifest \
+            --file "dist-release/$APPIMAGE" --sig "dist-release/$APPIMAGE.sig" \
+            --version "$VERSION" --url "$url" --out dist-release/latest.json
+          gh release upload "$tag" --repo "$GITHUB_REPOSITORY" dist-release/latest.json

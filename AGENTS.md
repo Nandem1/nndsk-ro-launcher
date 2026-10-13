@@ -88,16 +88,24 @@ installed AppImages. Do not publish the draft. Do not run `npm version`. Do not 
 versions. Do not move a published tag.
 
 Quality CI (`.github/workflows/ci.yml`) runs on `main` and pull requests. It must not run on
-`v*.*.*` tags. `release.yml` does not repeat the tests: it refuses to run unless `ci.yml` has a
-green push run on `main` for the tagged commit, then keeps only the static checks (lint, format,
-fmt, clippy) before the signed AppImage. Its Rust cache is warmed by the `release-cache` job of
-`ci.yml` on `main`, because a tag cannot restore a cache saved by another tag. Linux build
+`v*.*.*` tags. `release.yml` does not repeat the unit and frontend suites: it refuses to run
+unless `ci.yml` has a green push run on `main` for the tagged commit, then keeps the static checks
+(lint, format, fmt, clippy), the dependency audit policy and the smoke test of the exact AppImage
+it publishes. Its Rust cache is warmed by the `release-cache` job of `ci.yml` on `main`, because a
+tag cannot restore a cache saved by another tag. Linux build
 packages come from `.github/actions/linux-build-deps`.
 
 The guest webview must not receive `updater:default` or `updater:allow-*`.
-`scripts/check-release-invariants.mjs` is the gate for version drift, the updater endpoint, the
-pubkey shape, sidecar build order, `uploadUpdaterJson`, quality CI triggers, and the undecorated
-Linux window.
+`release.yml` builds and smoke-tests an unsigned AppImage without secrets
+(`scripts/smoke-release-artifact.sh` runs the extracted sidecars, including `orphan_reparent`
+against the bundled `ro-sessiond` under Yama=1), signs those exact bytes in a separate job that is
+the only one receiving `TAURI_SIGNING_PRIVATE_KEY`, and publishes the draft and `latest.json` from
+a job without the key after `scripts/updater-release.mjs` verifies the signature and `version:`.
+`scripts/check-release-invariants.mjs` is the gate for version drift (including both lockfiles),
+the updater endpoint, the pubkey shape, sidecar build order, signing isolation, SHA-pinned actions,
+no `continue-on-error`/`|| true`/Yama opt-out in workflows, quality CI triggers, and the undecorated
+Linux window. `scripts/dependency-audit-policy.mjs` blocks runtime npm advisories (moderate+), any
+critical and every RustSec vulnerability, and reports the rest.
 
 Keep feature logic in its domain. Move code to `shared` or `utils` only when at least two domains
 truly share the abstraction. Do not put business logic in React components or Tauri command

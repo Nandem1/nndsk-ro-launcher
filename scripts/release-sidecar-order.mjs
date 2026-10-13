@@ -1,13 +1,13 @@
 const DEBUG_SIDECARS = /cargo build -p ro-inputd -p ro-sessiond(?! --release)/
 const RELEASE_SIDECARS = 'cargo build -p ro-inputd -p ro-sessiond --release'
 const CLIPPY = 'cargo clippy --workspace'
-const TAURI_ACTION = 'tauri-apps/tauri-action'
+const APPIMAGE_BUILD = 'tauri build --bundles appimage'
 
 export function sidecarOrderError(yaml) {
   const debug = yaml.search(DEBUG_SIDECARS)
   const clippy = yaml.indexOf(CLIPPY)
   const release = yaml.indexOf(RELEASE_SIDECARS)
-  const tauri = yaml.indexOf(TAURI_ACTION)
+  const bundle = yaml.indexOf(APPIMAGE_BUILD)
   if (debug < 0) {
     return 'release.yml must build debug sidecars (no --release) before clippy'
   }
@@ -15,13 +15,13 @@ export function sidecarOrderError(yaml) {
     return 'release.yml must run cargo clippy'
   }
   if (release < 0) {
-    return 'release.yml must build --release sidecars before tauri-action'
+    return 'release.yml must build --release sidecars before the AppImage'
   }
-  if (tauri < 0) {
-    return 'release.yml must run tauri-action'
+  if (bundle < 0) {
+    return 'release.yml must run tauri build --bundles appimage'
   }
-  if (!(debug < clippy && clippy < release && release < tauri)) {
-    return 'release.yml sidecar order must be debug build, clippy, --release build, tauri-action'
+  if (!(debug < clippy && clippy < release && release < bundle)) {
+    return 'release.yml sidecar order must be debug build, clippy, --release build, AppImage build'
   }
   return null
 }

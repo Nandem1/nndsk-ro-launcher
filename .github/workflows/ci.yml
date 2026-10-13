@@ -50,7 +50,8 @@ jobs:
 
   # A tag can only restore caches saved on its own ref or on the default branch, so the
   # release build cache must be produced here. This job compiles exactly what release.yml
-  # compiles (debug sidecars + clippy, release sidecars, release app) under the cache key
+  # compiles (debug sidecars + clippy, cargo-audit, release sidecars, release app, smoke suite)
+  # under the cache key
   # that release.yml restores. release.yml refuses to run unless this whole workflow is
   # green for the tagged commit, so the cache is always saved before a tag uses it.
   release-cache:
@@ -83,4 +84,9 @@ jobs:
       - name: Build release sidecars
         run: cargo build -p ro-inputd -p ro-sessiond --release
       - name: Build release app without bundling
-        run: npx tauri build --no-bundle
+        run: npx tauri build --no-bundle --config '{"bundle":{"createUpdaterArtifacts":false}}'
+      # release.yml installs cargo-audit and runs the orphan_reparent suite against the
+      # sidecar extracted from the AppImage; warm both here.
+      - run: cargo install cargo-audit --locked --version 0.22.2
+      - name: Build release smoke suite
+        run: cargo test -p ro-sessiond --all-features --test orphan_reparent --no-run
