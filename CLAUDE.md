@@ -83,7 +83,8 @@ repository script, and inspect the installed process tree separately from develo
 - Process identity is `(pid, start_time)` and must be revalidated before memory access or signals.
 - Multi-client leases are real; one client must not tear down another client or its prefix.
 - Sanitize AppImage variables before external Wine, Proton, UMU, or sidecar processes.
-- `ro-sessiond` is on by default; `RO_LAUNCHER_SESSION_SUPERVISOR=0` is release rollback only.
+- `ro-sessiond` is mandatory; supervisor startup failure rejects the operation. Release recovery
+  means reinstalling the previous AppImage.
 - Do not weaken Yama or require `sudo`; memory acceptance is performed with `ptrace_scope=1`.
 - Preserve user data, unrelated worktree changes, exact errors, and evidence needed to explain every
   runtime decision.

@@ -119,14 +119,13 @@ data is removed or a reset backup restored. Removal still requires the original
 empty-managed-prefix authority; custom or unknown non-empty roots are preserved.
 Cleanup failure is appended to the primary error, not substituted for it.
 
-With the default supervisor, setup diagnostics retain the first explicit runner
+With the mandatory supervisor, setup diagnostics retain the first explicit runner
 `ERROR:` candidate plus eight
 recent redacted lines, bounded to 1024 characters each. They are labeled diagnostic
 output, not asserted to be causal Wine errors. They survive exit/stderr ordering
 and quiescence; a new operation starts with a fresh window. The frontend stops on
 the setup rejection and does not run a final check that overwrites its cause.
-The `RO_LAUNCHER_SESSION_SUPERVISOR=0` rollback retains its existing logging;
-the new bounded capture is not claimed for that disabled-supervisor path.
+Supervisor startup failure rejects setup; there is no direct runner fallback.
 
 ## Host capabilities and providers
 

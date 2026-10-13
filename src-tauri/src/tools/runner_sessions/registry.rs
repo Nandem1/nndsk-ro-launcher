@@ -89,18 +89,46 @@ pub struct ProcessExit {
     pub signal: Option<i32>,
 }
 
-#[allow(dead_code)]
-pub enum SessionOwnership {
-    Direct,
-    Supervised(ClientLease),
-}
-
 pub struct ClientRuntimeGuard {
     #[allow(dead_code)]
-    pub session: SessionOwnership,
+    #[cfg(not(test))]
+    pub(crate) session: ClientLease,
+    #[allow(dead_code)]
+    #[cfg(test)]
+    pub(crate) session: Option<ClientLease>,
     pub memory: Option<MemoryLease>,
     pub memory_access: Option<MemoryAccess>,
     pub profile_memory: Option<ProfileMemory>,
+}
+
+impl ClientRuntimeGuard {
+    pub fn new(
+        session: ClientLease,
+        memory: Option<MemoryLease>,
+        memory_access: Option<MemoryAccess>,
+        profile_memory: Option<ProfileMemory>,
+    ) -> Self {
+        Self {
+            #[cfg(not(test))]
+            session,
+            #[cfg(test)]
+            session: Some(session),
+            memory,
+            memory_access,
+            profile_memory,
+        }
+    }
+
+    /// State-only fixtures do not launch a runner or pretend to own a real session.
+    #[cfg(test)]
+    pub(crate) fn fixture() -> Self {
+        Self {
+            session: None,
+            memory: None,
+            memory_access: None,
+            profile_memory: None,
+        }
+    }
 }
 
 impl std::fmt::Debug for ClientRuntimeGuard {
@@ -236,8 +264,6 @@ fn merge_redactions(current: &mut Vec<String>, incoming: &[String]) {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SessionState {
-    #[allow(dead_code)]
-    Starting,
     Ready,
     Stopping,
     Stopped,
@@ -449,11 +475,6 @@ impl RunnerSessionRegistry {
                             }
                         }
                         SessionState::Stopping => Some(ShutdownCause::Forced),
-                        SessionState::Starting => {
-                            return Err(SessionError::internal(
-                                "El entorno todavía se está preparando",
-                            ));
-                        }
                         SessionState::Stopped | SessionState::Failed => {
                             self.remove_session_if_same(&prefix_key, &existing);
                             None
@@ -780,11 +801,10 @@ impl RunnerSessionRegistry {
             match *state {
                 SessionState::Stopped | SessionState::Failed => return Ok(()),
                 SessionState::Stopping => true,
-                SessionState::Ready | SessionState::Starting => {
+                SessionState::Ready => {
                     if let ShutdownCause::Idle { generation } = cause {
                         if session.idle_generation.load(Ordering::SeqCst) != generation
                             || !session.is_quiet()
-                            || *state != SessionState::Ready
                         {
                             return Ok(());
                         }
@@ -1175,6 +1195,133 @@ mod integration {
     }
 
     #[tokio::test]
+    async fn retired_supervisor_env_subprocess() {
+        const CHILD: &str = "RO_F07_SUPERVISOR_TEST_CHILD";
+        if std::env::var_os(CHILD).is_none() {
+            let home = test_prefix();
+            let child = tokio::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "tools::runner_sessions::registry::integration::retired_supervisor_env_subprocess", "--nocapture"])
+                .env_clear()
+                .env("HOME", &home)
+                .env("XDG_DATA_HOME", home.join(".local/share"))
+                .env("PATH", "/usr/bin:/bin")
+                .env(CHILD, "1")
+                .env("RO_LAUNCHER_SESSION_SUPERVISOR", "0")
+                .kill_on_drop(true)
+                .output();
+            let output = tokio::time::timeout(Duration::from_secs(60), child)
+                .await
+                .unwrap()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            std::fs::remove_dir_all(home).unwrap();
+            return;
+        }
+        let prefix = test_prefix();
+        let ctx = test_wine_context(&prefix);
+        let game = GameProcessHandle::new();
+        let anchor = placeholder_anchor();
+        for sidecar in [prefix.join("missing-sessiond"), PathBuf::from("/bin/false")] {
+            let registry = RunnerSessionRegistry::with_sidecar_for_test(sidecar);
+            let error = match crate::tools::runner_sessions::RunnerOperation::begin(
+                None, &registry, &game, &ctx, &anchor,
+            )
+            .await
+            {
+                Ok(_) => panic!("unavailable supervisor must fail closed, even with env=0"),
+                Err(error) => error,
+            };
+            assert!(!error.is_empty());
+            assert!(registry.plan_id_for_prefix(&prefix).is_none());
+            assert!(ro_tools_linux::find_prefix_processes(&ctx.prefix).is_empty());
+            assert!(registry.shutdown_all().await.is_empty());
+        }
+        let registry = RunnerSessionRegistry::with_sidecar_for_test(
+            workspace_debug_sessiond().expect("build ro-sessiond first"),
+        );
+        let op = crate::tools::runner_sessions::RunnerOperation::begin(
+            None, &registry, &game, &ctx, &anchor,
+        )
+        .await
+        .unwrap();
+        let supervisor = op.lease().supervisor_identity();
+        assert!(verify_process_identity(&supervisor));
+        assert_eq!(
+            ro_tools_linux::read_ppid(supervisor.pid),
+            Ok(std::process::id())
+        );
+        assert_eq!(
+            registry.plan_id_for_prefix(&prefix),
+            Some(anchor.plan_id.clone())
+        );
+        assert_eq!(
+            op.run(
+                test_invocation(&prefix, "/bin/sh", &["-c", "exit 17"]),
+                "fixture"
+            )
+            .await
+            .unwrap(),
+            17
+        );
+        let mut first = op
+            .spawn(test_invocation(&prefix, "/bin/sleep", &["60"]), &[])
+            .await
+            .unwrap();
+        let mut second = op
+            .spawn(test_invocation(&prefix, "/bin/sleep", &["60"]), &[])
+            .await
+            .unwrap();
+        let memory = crate::tools::memory_sessions::MemorySessionRegistry::new();
+        let mut runtimes = Vec::new();
+        for (id, process) in [("first", &first), ("second", &second)] {
+            let identity = process.controller_identity();
+            assert_eq!(ro_tools_linux::read_ppid(identity.pid), Ok(supervisor.pid));
+            assert!(is_descendant_of(identity.pid, supervisor.pid));
+            let lease = memory
+                .register(
+                    identity,
+                    crate::tools::memory_sessions::MemoryAncestor::Supervisor(supervisor),
+                )
+                .unwrap();
+            let access = memory.get(&identity).unwrap().access();
+            assert_ne!(access, MemoryAccess::OutsideSupervisor);
+            assert_ne!(access, MemoryAccess::YamaDenied);
+            runtimes.push(ClientRuntimeGuard::new(
+                registry.attach_client(op.lease(), id).unwrap(),
+                Some(lease),
+                Some(access),
+                None,
+            ));
+        }
+        let session = registry.get_session(prefix.to_str().unwrap()).unwrap();
+        assert_eq!(session.client_leases.load(Ordering::SeqCst), 2);
+        drop(op);
+        assert_eq!(session.operation_leases.load(Ordering::SeqCst), 0);
+        first.terminate().await.unwrap();
+        drop(runtimes.remove(0));
+        assert_eq!(session.client_leases.load(Ordering::SeqCst), 1);
+        assert!(memory.get(&first.controller_identity()).is_none());
+        assert!(memory.get(&second.controller_identity()).is_some());
+        assert!(verify_process_identity(&second.controller_identity()));
+        assert!(verify_process_identity(&supervisor));
+        assert_eq!(
+            registry.plan_id_for_prefix(&prefix),
+            Some(anchor.plan_id.clone())
+        );
+        second.terminate().await.unwrap();
+        drop(runtimes);
+        assert_eq!(session.client_leases.load(Ordering::SeqCst), 0);
+        assert!(registry.shutdown_all().await.is_empty());
+        assert!(!verify_process_identity(&supervisor));
+        assert!(ro_tools_linux::find_prefix_processes(&ctx.prefix).is_empty());
+    }
+
+    #[tokio::test]
     async fn first_run_supervisor_accepts_missing_data_and_prefix_parents_without_creating_them() {
         const CHILD: &str = "RO_FIRST_RUN_TEST_CHILD";
         if std::env::var_os(CHILD).is_none() {
@@ -1207,7 +1354,7 @@ mod integration {
             RunnerSessionRegistry::with_sidecar_for_test(workspace_debug_sessiond().unwrap());
         let ctx = test_wine_context(&prefix);
         let game = GameProcessHandle::new();
-        let mut op = crate::tools::runner_sessions::RunnerOperation::begin(
+        let op = crate::tools::runner_sessions::RunnerOperation::begin(
             None,
             &registry,
             &game,
@@ -1231,6 +1378,7 @@ mod integration {
         );
         invocation.cwd = home.clone();
         assert_eq!(op.run(invocation, "bootstrap fixture").await.unwrap(), 0);
+        let op = op.into_cleanup();
         op.quiesce().await.unwrap();
         assert!(op
             .annotate_failure("initialization failed".into())
@@ -1252,7 +1400,7 @@ mod integration {
         // A failed/cancelled setup can retry with the same still-missing directory.
         let retry =
             RunnerSessionRegistry::with_sidecar_for_test(workspace_debug_sessiond().unwrap());
-        let mut op = crate::tools::runner_sessions::RunnerOperation::begin(
+        let op = crate::tools::runner_sessions::RunnerOperation::begin(
             None,
             &retry,
             &game,
@@ -1261,6 +1409,7 @@ mod integration {
         )
         .await
         .unwrap();
+        let op = op.into_cleanup();
         op.quiesce().await.unwrap();
         assert_eq!(op.annotate_failure("retry failure".into()), "retry failure");
         assert!(!data.exists());
@@ -1330,7 +1479,7 @@ mod integration {
             .await
             .unwrap();
         process.wait().await.unwrap();
-        let supervisor = op.lease().unwrap().supervisor_identity();
+        let supervisor = op.lease().supervisor_identity();
         let observed: Vec<_> = std::fs::read_dir("/proc")
             .unwrap()
             .flatten()
@@ -1368,7 +1517,7 @@ mod integration {
         let ctx = test_wine_context(&prefix);
         let game = GameProcessHandle::new();
         let anchor = placeholder_anchor();
-        let mut first = crate::tools::runner_sessions::RunnerOperation::begin(
+        let first = crate::tools::runner_sessions::RunnerOperation::begin(
             None, &registry, &game, &ctx, &anchor,
         )
         .await
@@ -1386,6 +1535,7 @@ mod integration {
             )
             .await
             .unwrap();
+        let first = first.into_cleanup();
         assert!(first.quiesce().await.is_err());
         assert!(first.quiesce().await.is_err());
         assert!(verify_process_identity(&process.controller_identity()));
@@ -1793,12 +1943,12 @@ mod integration {
         let game = GameProcessHandle::new();
         let first = golden_plan_anchor("wine716ManagedDxvk");
         let second = golden_plan_anchor("wine716DgVoodooDxvk");
-        let mut op = crate::tools::runner_sessions::RunnerOperation::begin(
+        let op = crate::tools::runner_sessions::RunnerOperation::begin(
             None, &registry, &game, &ctx, &first,
         )
         .await
         .unwrap();
-        let identity = op.lease().unwrap().supervisor_identity();
+        let identity = op.lease().supervisor_identity();
         op.run_ok(
             test_invocation(&prefix, "/usr/bin/sleep", &["0.1"]),
             "preparation",
@@ -1806,7 +1956,6 @@ mod integration {
         .await
         .unwrap();
         op.quiesce().await.unwrap();
-        assert!(op.lease().is_none());
         assert!(!verify_process_identity(&identity));
         assert!(!registry.has_session(prefix.to_string_lossy().as_ref()));
         let next = registry

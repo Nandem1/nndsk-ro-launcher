@@ -2,24 +2,16 @@ use ro_tools_linux::{
     capture_process_identity, find_prefix_processes, is_descendant_of, is_prefix_leftover_process,
     verify_process_identity, ProcessIdentity,
 };
-use std::sync::Once;
 use tauri::AppHandle;
-use tokio::process::Child;
 
 use crate::state::GameProcessHandle;
-use crate::utils::{pipe_output, RunnerInvocation, WineContext};
+use crate::utils::{RunnerInvocation, WineContext};
 
-use super::diagnostics::emit_session_line;
 use super::diagnostics::{FailureOutput, RunnerOutputHub};
 use crate::tools::runtime::SessionAnchorV2;
 use std::sync::{Arc, Mutex};
 
-use super::{
-    session_supervisor_enabled, OperationLease, ProcessExit, RunnerSessionRegistry,
-    SupervisedProcess,
-};
-
-static ROLLBACK_LOG_ONCE: Once = Once::new();
+use super::{OperationLease, ProcessExit, RunnerSessionRegistry, SupervisedProcess};
 
 /// Called while an exclusive prefix guard is held: no other launcher program can enter.
 /// Wine services may persist, but a tool or its handoff child keeps ownership until it exits.
@@ -72,10 +64,9 @@ pub struct RunnerOperation {
     app: Option<AppHandle>,
     sessions: RunnerSessionRegistry,
     ctx: WineContext,
-    lease: Option<OperationLease>,
-    supervised: bool,
-    output: Option<Arc<RunnerOutputHub>>,
-    failure_output: Option<Arc<Mutex<FailureOutput>>>,
+    lease: OperationLease,
+    output: Arc<RunnerOutputHub>,
+    failure_output: Arc<Mutex<FailureOutput>>,
 }
 
 impl RunnerOperation {
@@ -92,32 +83,18 @@ impl RunnerOperation {
                 reasons.join(" · ")
             ));
         }
-        let lease = if session_supervisor_enabled() {
-            let result = match app {
-                Some(app) => sessions.begin_operation(app, ctx, game, anchor).await,
-                None => sessions.begin_operation_opt(None, ctx, game, anchor).await,
-            };
-            Some(result.map_err(|error| error.message)?)
-        } else {
-            if let Some(app) = app {
-                ROLLBACK_LOG_ONCE.call_once(|| {
-                    emit_session_line(
-                        Some(app),
-                        "supervisor=disabled rollback=RO_LAUNCHER_SESSION_SUPERVISOR=0",
-                    );
-                });
-            }
-            None
-        };
-        let supervised = lease.is_some();
-        let output = lease.as_ref().map(OperationLease::output);
-        let failure_output = output.as_ref().map(|hub| hub.subscribe());
+        let lease = match app {
+            Some(app) => sessions.begin_operation(app, ctx, game, anchor).await,
+            None => sessions.begin_operation_opt(None, ctx, game, anchor).await,
+        }
+        .map_err(|error| error.message)?;
+        let output = lease.output();
+        let failure_output = output.subscribe();
         Ok(Self {
             app: app.cloned(),
             sessions: sessions.clone(),
             ctx: ctx.clone(),
             lease,
-            supervised,
             output,
             failure_output,
         })
@@ -127,15 +104,8 @@ impl RunnerOperation {
         &self.ctx
     }
 
-    pub fn lease(&self) -> Option<&OperationLease> {
-        self.lease.as_ref()
-    }
-
-    pub(crate) fn annotate_failure(&self, primary: String) -> String {
-        self.failure_output
-            .as_ref()
-            .map(|output| output.lock().unwrap().annotate(primary.clone()))
-            .unwrap_or(primary)
+    pub fn lease(&self) -> &OperationLease {
+        &self.lease
     }
 
     pub async fn run(
@@ -143,27 +113,13 @@ impl RunnerOperation {
         invocation: RunnerInvocation,
         error_context: &str,
     ) -> Result<i32, String> {
-        if let Some(lease) = &self.lease {
-            let mut process = self
-                .sessions
-                .launch(self.app.as_ref(), lease, invocation, &[])
-                .await
-                .map_err(|error| error.message)?;
-            let exit = process.wait().await.map_err(|error| error.message)?;
-            return Ok(exit_code_from_process_exit(&exit, error_context));
-        }
-
-        // Path directo: rollback de una release (`RO_LAUNCHER_SESSION_SUPERVISOR=0`); se elimina cuando desaparezca la variable.
-        let mut cmd = invocation.into_command();
-        pipe_output(&mut cmd);
-        let mut child = cmd
-            .spawn()
-            .map_err(|error| format!("Error al ejecutar {error_context}: {error}"))?;
-        if let Some(app) = self.app.as_ref() {
-            crate::utils::drain_and_log(app, &mut child).await;
-        }
-        let status = child.wait().await.map_err(|e| e.to_string())?;
-        Ok(status.code().unwrap_or(-1))
+        let mut process = self
+            .sessions
+            .launch(self.app.as_ref(), &self.lease, invocation, &[])
+            .await
+            .map_err(|error| error.message)?;
+        let exit = process.wait().await.map_err(|error| error.message)?;
+        Ok(exit_code_from_process_exit(&exit, error_context))
     }
 
     pub async fn run_ok(
@@ -200,46 +156,27 @@ impl RunnerOperation {
         }
     }
 
-    /// Quiesces every process owned by this prefix before completing setup or restoring files.
-    ///
-    /// In supervised mode this consumes the operation lease and closes the whole sidecar, whose
-    /// `Stopped` event is only emitted after `waitpid` reaches `ECHILD`. Direct rollback retains the
-    /// legacy wineserver shutdown plus an explicit prefix-process check.
-    pub async fn quiesce(&mut self) -> Result<(), String> {
-        if self.supervised {
-            // Repeated cleanup must never switch to a prefix-wide direct shutdown.
-            drop(self.lease.take());
-            if self
-                .sessions
-                .plan_id_for_prefix(std::path::Path::new(&self.ctx.prefix))
-                .is_some()
-            {
-                self.sessions
-                    .shutdown_prefix(&self.ctx)
-                    .await
-                    .map_err(|error| error.message)?;
-            }
-            // ControllerExited and stderr are separate streams. After Stopped/child wait,
-            // wait for stderr EOF before formatting the failure so late causes are retained.
-            if let Some(output) = &self.output {
-                let _ =
-                    tokio::time::timeout(std::time::Duration::from_secs(1), output.wait_closed())
-                        .await;
-            }
-        } else if !find_prefix_processes(&self.ctx.prefix).is_empty() {
-            self.run_shutdown_ok(
-                self.ctx.resolved.shutdown_invocation(&self.ctx.prefix)?,
-                "apagado del entorno incompleto",
-            )
-            .await?;
+    /// End execution ownership before shutdown; cleanup cannot launch more commands.
+    pub(crate) fn into_cleanup(self) -> RunnerCleanup {
+        let Self {
+            sessions,
+            ctx,
+            lease,
+            output,
+            failure_output,
+            ..
+        } = self;
+        drop(lease);
+        RunnerCleanup {
+            sessions,
+            ctx,
+            output,
+            failure_output,
         }
+    }
 
-        let remaining = find_prefix_processes(&self.ctx.prefix).len();
-        if remaining == 0 {
-            Ok(())
-        } else {
-            Err(format!("quedan {remaining} proceso(s) usando el entorno"))
-        }
+    pub async fn quiesce(self) -> Result<(), String> {
+        self.into_cleanup().quiesce().await
     }
 
     pub async fn spawn(
@@ -247,82 +184,71 @@ impl RunnerOperation {
         invocation: RunnerInvocation,
         redactions: &[String],
     ) -> Result<SpawnedRunner, String> {
-        if let Some(lease) = &self.lease {
-            let process = self
-                .sessions
-                .launch(self.app.as_ref(), lease, invocation, redactions)
+        let process = self
+            .sessions
+            .launch(self.app.as_ref(), &self.lease, invocation, redactions)
+            .await
+            .map_err(|error| error.message)?;
+        Ok(SpawnedRunner(process))
+    }
+}
+
+/// Shutdown and diagnostics retained after the mandatory execution lease is released.
+/// This phase supports repeated cleanup without representing a runnable operation.
+pub(crate) struct RunnerCleanup {
+    sessions: RunnerSessionRegistry,
+    ctx: WineContext,
+    output: Arc<RunnerOutputHub>,
+    failure_output: Arc<Mutex<FailureOutput>>,
+}
+
+impl RunnerCleanup {
+    pub(crate) fn annotate_failure(&self, primary: String) -> String {
+        self.failure_output.lock().unwrap().annotate(primary)
+    }
+
+    pub(crate) async fn quiesce(&self) -> Result<(), String> {
+        if self
+            .sessions
+            .plan_id_for_prefix(std::path::Path::new(&self.ctx.prefix))
+            .is_some()
+        {
+            self.sessions
+                .shutdown_prefix(&self.ctx)
                 .await
                 .map_err(|error| error.message)?;
-            return Ok(SpawnedRunner::Supervised(process));
         }
-
-        // Path directo: rollback de una release (`RO_LAUNCHER_SESSION_SUPERVISOR=0`); se elimina cuando desaparezca la variable.
-        let mut cmd = invocation.into_command();
-        pipe_output(&mut cmd);
-        let child = cmd
-            .spawn()
-            .map_err(|error| format!("Error al iniciar el runner: {error}"))?;
-        Ok(SpawnedRunner::Direct(child))
+        // ControllerExited and stderr are separate streams. EOF retains late failure causes.
+        // Best effort and bounded: a diagnostic pipe must not prevent filesystem cleanup.
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(1), self.output.wait_closed())
+            .await;
+        let remaining = find_prefix_processes(&self.ctx.prefix).len();
+        if remaining == 0 {
+            Ok(())
+        } else {
+            Err(format!("quedan {remaining} proceso(s) usando el entorno"))
+        }
     }
 }
 
-pub enum SpawnedRunner {
-    Direct(Child),
-    Supervised(SupervisedProcess),
-}
+pub struct SpawnedRunner(SupervisedProcess);
 
 impl SpawnedRunner {
-    pub fn controller_identity(&self) -> Option<ro_tools_linux::ProcessIdentity> {
-        match self {
-            Self::Direct(child) => child
-                .id()
-                .and_then(ro_tools_linux::capture_process_identity),
-            Self::Supervised(process) => Some(process.controller_identity()),
-        }
+    pub fn controller_identity(&self) -> ProcessIdentity {
+        self.0.controller_identity()
     }
-    pub fn controller_pid(&self) -> Option<u32> {
-        match self {
-            Self::Direct(child) => child.id(),
-            Self::Supervised(process) => Some(process.controller_pid()),
-        }
+
+    pub fn controller_pid(&self) -> u32 {
+        self.0.controller_pid()
     }
 
     pub async fn wait(&mut self) -> Result<i32, String> {
-        match self {
-            Self::Direct(child) => {
-                let status = child.wait().await.map_err(|error| error.to_string())?;
-                Ok(status.code().unwrap_or(-1))
-            }
-            Self::Supervised(process) => {
-                let exit = process.wait().await.map_err(|error| error.message)?;
-                Ok(exit.exit_code.unwrap_or(-1))
-            }
-        }
+        let exit = self.0.wait().await.map_err(|error| error.message)?;
+        Ok(exit.exit_code.unwrap_or(-1))
     }
 
     pub async fn terminate(&mut self) -> Result<(), String> {
-        match self {
-            Self::Direct(child) => {
-                if child.try_wait().ok().flatten().is_none() {
-                    if let Some(identity) = child
-                        .id()
-                        .and_then(ro_tools_linux::capture_process_identity)
-                    {
-                        if let Err(error) =
-                            ro_tools_linux::signal_process_identity(&identity, libc::SIGKILL)
-                        {
-                            crate::utils::report(
-                                "runner",
-                                format!("SIGKILL a pid {} falló: {error}", identity.pid),
-                            );
-                        }
-                    }
-                }
-                let _ = child.wait().await;
-                Ok(())
-            }
-            Self::Supervised(process) => process.terminate().await.map_err(|e| e.message),
-        }
+        self.0.terminate().await.map_err(|e| e.message)
     }
 
     pub fn try_exit_code(&mut self) -> Option<i32> {
@@ -331,38 +257,7 @@ impl SpawnedRunner {
     }
 
     pub fn try_exit_status(&mut self) -> Option<ProcessExit> {
-        match self {
-            Self::Direct(child) => child.try_wait().ok().flatten().map(|status| {
-                #[cfg(unix)]
-                {
-                    use std::os::unix::process::ExitStatusExt;
-                    ProcessExit {
-                        exit_code: status.code(),
-                        signal: status.signal(),
-                    }
-                }
-                #[cfg(not(unix))]
-                {
-                    ProcessExit {
-                        exit_code: status.code(),
-                        signal: None,
-                    }
-                }
-            }),
-            Self::Supervised(process) => process.try_exit(),
-        }
-    }
-
-    pub fn take_direct_stdout_stderr(
-        &mut self,
-    ) -> (
-        Option<tokio::process::ChildStdout>,
-        Option<tokio::process::ChildStderr>,
-    ) {
-        match self {
-            Self::Direct(child) => (child.stdout.take(), child.stderr.take()),
-            Self::Supervised(_) => (None, None),
-        }
+        self.0.try_exit()
     }
 }
 

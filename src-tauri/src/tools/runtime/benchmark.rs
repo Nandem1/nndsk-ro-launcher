@@ -879,6 +879,17 @@ mod tests {
     }
 
     #[test]
+    fn historical_benchmark_supervisor_false_remains_readable() {
+        let mut record = sample_run(BenchmarkArm::A, "scene", BenchmarkVisualCheck::Passed);
+        record.flags.supervisor = false;
+        let json = serde_json::to_value(&record).unwrap();
+        assert_eq!(json["schemaVersion"], 1);
+        assert_eq!(json["flags"]["supervisor"], false);
+        let loaded: RuntimeBenchmarkRunV1 = serde_json::from_value(json).unwrap();
+        assert!(!loaded.flags.supervisor);
+    }
+
+    #[test]
     fn scene_mismatch_is_incomparable() {
         let left = sample_run(BenchmarkArm::A, "scene-a", BenchmarkVisualCheck::Passed);
         let right = sample_run(BenchmarkArm::B, "scene-b", BenchmarkVisualCheck::Passed);

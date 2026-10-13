@@ -15,14 +15,12 @@ use crate::state::{GameProcessHandle, GameState, LaunchReservation};
 use crate::tools::autobuff::AutobuffHandle;
 use crate::tools::autopot::{load_profiles, resolve_profile, AutopotHandle};
 use crate::tools::input::InputGateway;
-use crate::tools::memory_sessions::{
-    launcher_memory_ancestor, MemoryAncestor, MemorySessionRegistry,
-};
+use crate::tools::memory_sessions::{MemoryAncestor, MemorySessionRegistry};
 use crate::tools::prefix::{DxvkProvision, MANAGED_DXVK_COMPONENT};
 use crate::tools::presence::{overrides_from_autopot, PresenceHandle};
 use crate::tools::runner_sessions::{
     path_log_token, prefix_log_token, ClientRuntimeGuard, RunnerOperation, RunnerSessionRegistry,
-    SessionOwnership, SpawnedRunner,
+    SpawnedRunner,
 };
 use crate::tools::runners::ensure_selected_runtime;
 use crate::tools::runtime::{
@@ -39,7 +37,6 @@ use crate::tools::server_tools;
 use crate::tools::spammer::SpammerHandle;
 use crate::utils::audio;
 use crate::utils::gecko::install_gecko_for_runner;
-use crate::utils::process::drain_game_streams_redacted;
 use crate::utils::{
     emit_tool_log_opt, required_game_dir, resolve_server_wine_context_with_runner,
     validate_runtime_prefix, work_dir_from_exe, ExitEvent, OperationGuard, EVENT_GAME_CLIENT,
@@ -291,7 +288,7 @@ pub async fn launch_game(
         return Err("El lanzamiento fue cancelado por el usuario".to_string());
     }
 
-    let supervised_session = op.lease().is_some();
+    let supervisor_identity = op.lease().supervisor_identity();
     let timeout = if is_patcher {
         PATCHER_LAUNCH_TIMEOUT
     } else {
@@ -325,35 +322,8 @@ pub async fn launch_game(
     }
 
     let mut spawned = op.spawn(invocation, &redaction_values).await?;
-    let controller_pid = spawned
-        .controller_pid()
-        .ok_or_else(|| "El runner no informó su PID".to_string())?;
-    let Some(controller_identity) = spawned.controller_identity() else {
-        let _ = spawned.terminate().await;
-        enqueue_unreached_observation(
-            observation_id.clone(),
-            operational_profile_plan.as_ref(),
-            &server,
-            &client_id,
-            is_patcher,
-            &anchor,
-            &ctx,
-            dgvoodoo_configured,
-            &game_dir,
-            None,
-            op.lease().map(|lease| lease.supervisor_identity()),
-            supervised_session,
-            classify_run_outcome(OutcomeInput {
-                reached_running: false,
-                stop_requested: false,
-                startup_timeout: false,
-                startup_failure: Some(StartupFailureClass::ControllerIdentityMissing),
-                controller_exit_before_terminate: None,
-                controller_exit_after_terminate: -1,
-            }),
-        );
-        return Err("El proceso controlador terminó antes de poder identificarlo".to_string());
-    };
+    let controller_pid = spawned.controller_pid();
+    let controller_identity = spawned.controller_identity();
     if let Err(error) = game.mark_controller(reservation, controller_identity) {
         let _ = spawned.terminate().await;
         return Err(error);
@@ -362,23 +332,11 @@ pub async fn launch_game(
     emit_tool_log_opt(
         Some(&app),
         format!(
-            "[Launch] controller={controller_pid} runner={} prefix={} supervised={supervised_session}",
+            "[Launch] controller={controller_pid} runner={} prefix={} supervised=true",
             ctx.resolved.kind_label(),
             prefix_log_token(std::path::Path::new(&ctx.prefix))
         ),
     );
-
-    let output_task = if matches!(spawned, SpawnedRunner::Direct(_)) {
-        let (stdout, stderr) = spawned.take_direct_stdout_stderr();
-        Some(tokio::spawn(drain_game_streams_redacted(
-            app.clone(),
-            stdout,
-            stderr,
-            redaction_values,
-        )))
-    } else {
-        None
-    };
 
     let search = ProcessSearch {
         controller_pid,
@@ -400,9 +358,6 @@ pub async fn launch_game(
         Ok(identity) => identity,
         Err(error) => {
             let _ = spawned.terminate().await;
-            if let Some(task) = output_task {
-                let _ = task.await;
-            }
             let stop_requested = error.contains("cancelado por el usuario");
             let startup_timeout = error.contains("dentro de");
             enqueue_unreached_observation(
@@ -416,8 +371,7 @@ pub async fn launch_game(
                 dgvoodoo_configured,
                 &game_dir,
                 Some(controller_identity),
-                op.lease().map(|lease| lease.supervisor_identity()),
-                supervised_session,
+                Some(supervisor_identity),
                 classify_run_outcome(OutcomeInput {
                     reached_running: false,
                     stop_requested,
@@ -441,17 +395,11 @@ pub async fn launch_game(
         identity: Some(identity),
         app: Some(app.clone()),
     };
-    let memory_ancestor = match op.lease() {
-        Some(lease) => MemoryAncestor::Supervisor(lease.supervisor_identity()),
-        None => launcher_memory_ancestor(),
-    };
+    let memory_ancestor = MemoryAncestor::Supervisor(supervisor_identity);
     let memory_lease = match memory.register(identity, memory_ancestor) {
         Ok(lease) => lease,
         Err(error) => {
             let _ = spawned.terminate().await;
-            if let Some(task) = output_task {
-                let _ = task.await;
-            }
             return Err(error);
         }
     };
@@ -465,25 +413,15 @@ pub async fn launch_game(
         .get(&identity)
         .map(|session| session.profile_memory(Some(hp_base)));
 
-    let runtime = match op.lease() {
-        Some(lease) => {
-            let client_lease = sessions
-                .attach_client(lease, &client_id)
-                .map_err(|error| error.message)?;
-            ClientRuntimeGuard {
-                session: SessionOwnership::Supervised(client_lease),
-                memory: Some(memory_lease),
-                memory_access: Some(memory_access),
-                profile_memory,
-            }
-        }
-        None => ClientRuntimeGuard {
-            session: SessionOwnership::Direct,
-            memory: Some(memory_lease),
-            memory_access: Some(memory_access),
-            profile_memory,
-        },
-    };
+    let client_lease = sessions
+        .attach_client(op.lease(), &client_id)
+        .map_err(|error| error.message)?;
+    let runtime = ClientRuntimeGuard::new(
+        client_lease,
+        Some(memory_lease),
+        Some(memory_access),
+        profile_memory,
+    );
 
     let snapshot = match game.mark_running(
         reservation,
@@ -495,25 +433,19 @@ pub async fn launch_game(
         Ok(snapshot) => snapshot,
         Err(error) => {
             let _ = spawned.terminate().await;
-            if let Some(task) = output_task {
-                let _ = task.await;
-            }
             return Err(error);
         }
     };
-    let supervisor_identity = op.lease().map(|lease| lease.supervisor_identity());
     drop(op);
 
-    if supervised_session {
-        let client_ppid = read_ppid(identity.pid).unwrap_or(0);
-        emit_tool_log_opt(
-            Some(&app),
-            format!(
-                "[Launch] client={} ppid={} supervised=true handoff=none",
-                identity.pid, client_ppid
-            ),
-        );
-    }
+    let client_ppid = read_ppid(identity.pid).unwrap_or(0);
+    emit_tool_log_opt(
+        Some(&app),
+        format!(
+            "[Launch] client={} ppid={} supervised=true handoff=none",
+            identity.pid, client_ppid
+        ),
+    );
     emit_tool_log_opt(
         Some(&app),
         format!(
@@ -561,8 +493,7 @@ pub async fn launch_game(
             game_dir: Some(game_dir.clone()),
             game_identity: Some(identity),
             controller_identity: Some(controller_identity),
-            supervisor_identity,
-            supervised: supervised_session,
+            supervisor_identity: Some(supervisor_identity),
             plan_availability: if operational_profile_plan.is_some() {
                 PlanAvailability::Resolved
             } else {
@@ -580,8 +511,6 @@ pub async fn launch_game(
         prefix_operation,
         dgvoodoo_operation,
         spawned,
-        output_task,
-        supervised_session,
         ctx,
         game_exe,
         baseline,
@@ -616,7 +545,6 @@ fn enqueue_unreached_observation(
     game_dir: &str,
     controller_identity: Option<ProcessIdentity>,
     supervisor_identity: Option<ProcessIdentity>,
-    supervised: bool,
     outcome: RunOutcome,
 ) {
     let (Some(observation_id), Some((profile, plan))) = (observation_id, plan_pair) else {
@@ -647,7 +575,6 @@ fn enqueue_unreached_observation(
             game_identity: None,
             controller_identity,
             supervisor_identity,
-            supervised,
             plan_availability: PlanAvailability::Resolved,
         },
         ObservationFinishedPayload {
@@ -663,12 +590,19 @@ fn enqueue_unreached_observation(
 
 enum ControllerHandle<'a> {
     Spawned(&'a mut SpawnedRunner),
+    #[cfg(test)]
+    Fixture(&'a mut tokio::process::Child),
 }
 
 impl ControllerHandle<'_> {
     async fn poll_exit_code(&mut self) -> Result<Option<i32>, String> {
         match self {
             Self::Spawned(runner) => Ok(runner.try_exit_code()),
+            #[cfg(test)]
+            Self::Fixture(child) => child
+                .try_wait()
+                .map(|status| status.map(|s| s.code().unwrap_or(-1)))
+                .map_err(|error| error.to_string()),
         }
     }
 }
@@ -682,8 +616,6 @@ fn spawn_exit_task(
     prefix_operation: OperationGuard,
     dgvoodoo_operation: OperationGuard,
     mut controller: SpawnedRunner,
-    output_task: Option<tokio::task::JoinHandle<()>>,
-    supervised_session: bool,
     ctx: crate::utils::WineContext,
     game_exe: String,
     baseline: HashSet<ProcessIdentity>,
@@ -708,7 +640,7 @@ fn spawn_exit_task(
         let mut active_identity = identity;
         let mut seen = baseline;
         seen.insert(active_identity);
-        let controller_pid = controller.controller_pid().unwrap_or(0);
+        let controller_pid = controller.controller_pid();
         let mut handoff_count = 0u32;
         let started_game_identity = identity;
         loop {
@@ -767,23 +699,13 @@ fn spawn_exit_task(
                 let _ = app_for_exit.emit(EVENT_GAME_CLIENT, client_snapshot);
             }
             let client_ppid = read_ppid(replacement.pid).unwrap_or(0);
-            if supervised_session {
-                emit_tool_log_opt(
-                    Some(&app_for_exit),
-                    format!(
-                        "[Launch] client={} ppid={} supervised=true handoff={} -> {}",
-                        replacement.pid, client_ppid, active_identity.pid, replacement.pid
-                    ),
-                );
-            } else {
-                emit_tool_log_opt(
-                    Some(&app_for_exit),
-                    format!(
-                        "[Launch] handoff del cliente PID={} -> PID={}",
-                        active_identity.pid, replacement.pid
-                    ),
-                );
-            }
+            emit_tool_log_opt(
+                Some(&app_for_exit),
+                format!(
+                    "[Launch] client={} ppid={} supervised=true handoff={} -> {}",
+                    replacement.pid, client_ppid, active_identity.pid, replacement.pid
+                ),
+            );
             seen.insert(replacement);
             active_identity = replacement;
             handoff_count += 1;
@@ -814,9 +736,6 @@ fn spawn_exit_task(
                 identity_stale: active_identity != started_game_identity && handoff_count == 0,
                 handoff_count,
             });
-        }
-        if let Some(task) = output_task {
-            let _ = task.await;
         }
 
         // Keep last-client cleanup atomic with admission of a new client or combat tool.
@@ -1113,14 +1032,12 @@ mod tests {
         let reservation = game
             .begin_launch("c1".into(), "srv".into(), "Srv".into())
             .unwrap();
-        let mut spawned = SpawnedRunner::Direct(
-            tokio::process::Command::new("/bin/true")
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .spawn()
-                .expect("spawn true"),
-        );
-        let controller_pid = spawned.controller_pid().expect("controller pid");
+        let mut spawned = tokio::process::Command::new("/bin/true")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn true");
+        let controller_pid = spawned.id().expect("controller pid");
         let _ = spawned.wait().await;
 
         let baseline = HashSet::new();
@@ -1140,7 +1057,7 @@ mod tests {
 
         let started = Instant::now();
         let err = wait_for_game_process(
-            &mut ControllerHandle::Spawned(&mut spawned),
+            &mut ControllerHandle::Fixture(&mut spawned),
             &search,
             Duration::from_secs(5),
             Duration::from_millis(80),

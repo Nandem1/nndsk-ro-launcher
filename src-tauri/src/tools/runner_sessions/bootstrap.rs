@@ -367,19 +367,14 @@ mod tests {
 
     #[test]
     fn registered_client_with_leftover_rejects_without_shutdown() {
-        use crate::tools::runner_sessions::{ClientRuntimeGuard, SessionOwnership};
+        use crate::tools::runner_sessions::ClientRuntimeGuard;
 
         let game = GameProcessHandle::new();
         let reservation = game
             .begin_launch("c1".into(), "srv".into(), "Srv".into())
             .unwrap();
         let registered = identity(42);
-        let runtime = ClientRuntimeGuard {
-            session: SessionOwnership::Direct,
-            memory: None,
-            memory_access: None,
-            profile_memory: None,
-        };
+        let runtime = ClientRuntimeGuard::fixture();
         game.mark_running(reservation, registered, runtime, "test-plan".into(), None)
             .unwrap();
         let leftover = identity(1);

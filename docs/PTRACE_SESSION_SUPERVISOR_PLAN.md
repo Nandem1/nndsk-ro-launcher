@@ -3,13 +3,13 @@
 > El nombre del archivo se conserva por compatibilidad. La implementación quedó cerrada el
 > 15 de septiembre de 2026; este documento describe su contrato operativo vigente.
 
-| Campo               | Estado                                             |
-| ------------------- | -------------------------------------------------- |
-| Plataforma          | Linux; Wine, Proton y UMU                          |
-| Activación          | Default ON                                         |
-| Rollback de release | `RO_LAUNCHER_SESSION_SUPERVISOR=0`                 |
-| Política de host    | `kernel.yama.ptrace_scope=1`, sin cambios globales |
-| Sidecar             | `ro-sessiond`, uno por prefix canónico activo      |
+| Campo                   | Estado                                            |
+| ----------------------- | ------------------------------------------------- |
+| Plataforma              | Linux; Wine, Proton y UMU                          |
+| Activación              | Obligatoria; sin spawn directo alternativo         |
+| Recuperación de release | Reinstalar la AppImage anterior                    |
+| Política de host        | `kernel.yama.ptrace_scope=1`, sin cambios globales  |
+| Sidecar                 | `ro-sessiond`, uno por prefix canónico activo       |
 
 ## 1. Problema y solución
 
@@ -214,8 +214,14 @@ Un handoff de patcher reemplaza la identidad del juego, registra una nueva sesi�
 la anterior sin alterar otros clientes. El stop de un cliente sólo libera sus leases; no apaga input,
 supervisor ni prefix mientras queden owners.
 
-El path directo se conserva exclusivamente como rollback de release con
-`RO_LAUNCHER_SESSION_SUPERVISOR=0`. Desactivar el flag no migra ni borra prefixes.
+El rollback por variable de entorno y su path directo fueron retirados en F-07.
+Si el supervisor no está disponible o no valida su handshake, la operación falla sin
+ejecutar Wine/Proton directamente. La recuperación de una release consiste en reinstalar
+la AppImage anterior; no se migran ni borran prefixes.
+
+Las observaciones v1 conservan `supervisor.enabled` y `flags.sessionSupervisor`, y los
+benchmarks conservan `flags.supervisor`. Los registros nuevos usan `true`; los valores
+históricos `false` siguen siendo legibles y no se normalizan ni requieren migración.
 
 ## 8. Evidencia y regresión
 

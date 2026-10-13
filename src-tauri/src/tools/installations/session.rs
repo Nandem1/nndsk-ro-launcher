@@ -29,9 +29,6 @@ pub fn start(
     sessions: RunnerSessionRegistry,
     id: &str,
 ) -> Result<InstallationDraft, String> {
-    if !crate::tools::runner_sessions::session_supervisor_enabled() {
-        return Err("La instalación guiada requiere el supervisor de sesiones. Retira RO_LAUNCHER_SESSION_SUPERVISOR=0 y vuelve a abrir el launcher".into());
-    }
     dispatch(manager, id, move |manager, draft, cancel| async move {
         crate::utils::PROGRESS_OPERATION_ID
             .scope(
@@ -134,7 +131,7 @@ async fn run(
     })
     .map_err(|error| error.code().to_string())?;
     let anchor = operational_session_anchor(&ctx, Some(&plan));
-    let mut op = RunnerOperation::begin(Some(app), sessions, game, &ctx, &anchor).await?;
+    let op = RunnerOperation::begin(Some(app), sessions, game, &ctx, &anchor).await?;
     let _prefix = OperationGuard::acquire("prefix", Path::new(&ctx.prefix))?;
     let _destination = draft
         .destination_path
@@ -152,7 +149,7 @@ async fn run(
     }
     if crate::tools::runner_sessions::prefix_has_active_programs(
         &ctx.prefix,
-        op.lease().map(|lease| lease.supervisor_identity()),
+        Some(op.lease().supervisor_identity()),
     ) {
         return Err("Todavía hay programas usando este entorno. Ciérralos antes de volver a ejecutar el instalador".into());
     }
@@ -204,14 +201,6 @@ async fn run(
             });
         }
     };
-    let mut drains = tokio::task::JoinSet::new();
-    let (stdout, stderr) = spawned.take_direct_stdout_stderr();
-    if let Some(mut pipe) = stdout {
-        drains.spawn(async move { tokio::io::copy(&mut pipe, &mut tokio::io::sink()).await });
-    }
-    if let Some(mut pipe) = stderr {
-        drains.spawn(async move { tokio::io::copy(&mut pipe, &mut tokio::io::sink()).await });
-    }
     // A failed persistence write must still stop and reap the running process.
     let execution: Result<Option<i32>, String> = async {
         manager.update(&draft.id, |draft| {
@@ -223,7 +212,7 @@ async fn run(
         wait_installer(
             &mut spawned,
             &ctx.prefix,
-            op.lease().map(|lease| lease.supervisor_identity()),
+            Some(op.lease().supervisor_identity()),
             &mut cancel,
         )
         .await
@@ -235,9 +224,6 @@ async fn run(
         Ok(())
     };
     let cleanup = op.quiesce().await;
-    while let Some(result) = drains.join_next().await {
-        let _ = result;
-    }
     termination?;
     cleanup?;
     match execution? {

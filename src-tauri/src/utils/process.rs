@@ -1,9 +1,7 @@
 use tauri::AppHandle;
-use tokio::io::AsyncBufReadExt;
 use tokio::process::Command;
 
-use crate::utils::audio::{self, mmdevapi_recovery_hint};
-use crate::utils::{drain_and_log, pipe_output, should_log_line};
+use crate::utils::{drain_and_log, pipe_output};
 
 #[allow(dead_code)]
 pub async fn run_logged_command(
@@ -36,19 +34,6 @@ pub async fn run_logged_command_ok(
     Ok(())
 }
 
-fn game_stderr_lines(line: &str) -> Vec<String> {
-    let mut out = Vec::new();
-
-    if audio::is_mmdevapi_audio_error(line) {
-        out.push(mmdevapi_recovery_hint().to_string());
-    }
-    if line.contains("err:") || (should_log_line(line) && !line.is_empty()) {
-        out.push(line.to_string());
-    }
-
-    out
-}
-
 pub fn redact_sensitive_values(line: &str, sensitive_values: &[String]) -> String {
     let mut values: Vec<_> = sensitive_values
         .iter()
@@ -62,40 +47,6 @@ pub fn redact_sensitive_values(line: &str, sensitive_values: &[String]) -> Strin
         .fold(line.to_string(), |redacted, value| {
             redacted.replace(value, "<redacted>")
         })
-}
-
-pub async fn drain_game_streams_redacted(
-    app: AppHandle,
-    stdout: Option<tokio::process::ChildStdout>,
-    stderr: Option<tokio::process::ChildStderr>,
-    sensitive_values: Vec<String>,
-) {
-    let stderr_sensitive_values = sensitive_values.clone();
-    let app_out = app.clone();
-    let stdout_task = tokio::spawn(async move {
-        if let Some(stdout) = stdout {
-            let mut lines = tokio::io::BufReader::new(stdout).lines();
-            while let Ok(Some(line)) = lines.next_line().await {
-                let line = redact_sensitive_values(&line, &stderr_sensitive_values);
-                if should_log_line(&line) {
-                    crate::utils::emit_log_opt(Some(&app_out), line);
-                }
-            }
-        }
-    });
-
-    let stderr_task = tokio::spawn(async move {
-        if let Some(stderr) = stderr {
-            let mut lines = tokio::io::BufReader::new(stderr).lines();
-            while let Ok(Some(line)) = lines.next_line().await {
-                let line = redact_sensitive_values(&line, &sensitive_values);
-                for emitted in game_stderr_lines(&line) {
-                    crate::utils::emit_log_opt(Some(&app), emitted);
-                }
-            }
-        }
-    });
-    let _ = tokio::join!(stdout_task, stderr_task);
 }
 
 #[cfg(test)]

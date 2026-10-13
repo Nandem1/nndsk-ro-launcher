@@ -22,6 +22,7 @@ pub enum MemoryBackend {
 #[derive(Clone, Copy)]
 pub enum MemoryAncestor {
     Supervisor(ProcessIdentity),
+    #[cfg(test)]
     Launcher(ProcessIdentity),
 }
 
@@ -58,6 +59,9 @@ impl MemorySession {
         }
         let reader = ProcMemoryReader::open_for_identity(identity)
             .map_err(|error| format!("No se pudo abrir memoria: {error}"))?;
+        #[cfg(not(test))]
+        let MemoryAncestor::Supervisor(ancestor_pid) = ancestor;
+        #[cfg(test)]
         let ancestor_pid = match ancestor {
             MemoryAncestor::Supervisor(id) | MemoryAncestor::Launcher(id) => id,
         };

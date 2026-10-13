@@ -84,6 +84,7 @@ impl MemorySessionRegistry {
     }
 }
 
+#[cfg(test)]
 pub fn launcher_memory_ancestor() -> MemoryAncestor {
     let pid = std::process::id();
     let identity = capture_process_identity(pid).expect("launcher process identity");
