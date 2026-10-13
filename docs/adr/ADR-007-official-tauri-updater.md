@@ -33,6 +33,13 @@ confiar argumentos del WebView y sin romper el contrato multi-cliente (Wine /
    cancelan instalaciones para obtener idle. `RunEvent::Exit` realiza la limpieza.
 5. **Reinicio explícito.** Tras instalar, fase `readyToRestart`. El usuario reinicia;
    no hay auto-restart.
+6. **Activación AppImage en el host.** `Update::download` sigue siendo el único
+   transporte/verificador. El host valida el formato AppImage y escribe un temporal
+   hermano exclusivo; conserva el modo, sincroniza archivo tras chmod, hace un
+   único rename sobre el destino y sincroniza el directorio. El destino antiguo
+   nunca se mueve a un backup. Un fallo después del rename informa la activación
+   sin rollback. [Protocolo y límites de F-03](../features/UPDATER.md#activación-atómica-del-appimage-f-03):
+   SIGKILL probado, power-loss sin calificar, carrera entre procesos pendiente F-04.
 
 ## 3. Consecuencias
 

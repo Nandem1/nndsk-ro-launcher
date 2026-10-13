@@ -4,7 +4,8 @@ use tauri::AppHandle;
 use tauri_plugin_updater::UpdaterExt;
 
 use crate::models::update::{truncate_release_notes, ReleaseSummary};
-use crate::tools::updater::policy::classify_plugin_error;
+use crate::tools::updater::activate::activate_appimage;
+use crate::tools::updater::policy::{classify_plugin_error, packaged_appimage};
 
 #[derive(Debug, Clone)]
 pub enum BackendError {
@@ -94,6 +95,7 @@ impl UpdateBackend for OfficialUpdaterBackend {
         Ok(Box::new(OfficialCandidate {
             update,
             slot: self.slot.clone(),
+            app: self.app.clone(),
         }))
     }
 
@@ -115,6 +117,7 @@ fn release_summary(update: &tauri_plugin_updater::Update) -> ReleaseSummary {
 struct OfficialCandidate {
     update: tauri_plugin_updater::Update,
     slot: Arc<std::sync::Mutex<Option<tauri_plugin_updater::Update>>>,
+    app: AppHandle,
 }
 
 #[async_trait]
@@ -156,7 +159,11 @@ impl UpdateCandidate for OfficialCandidate {
     }
 
     fn install(self: Box<Self>, bytes: &[u8]) -> Result<(), BackendError> {
-        self.update.install(bytes).map_err(classify_plugin_error)
+        // Same host-captured APPIMAGE that the plugin uses for extract_path.
+        // Neither the WebView nor the remote manifest supplies a destination.
+        let target = packaged_appimage(&self.app)
+            .map_err(|e| BackendError::Install(format!("AppImage no disponible: {e:?}")))?;
+        activate_appimage(&target, bytes)
     }
 }
 
