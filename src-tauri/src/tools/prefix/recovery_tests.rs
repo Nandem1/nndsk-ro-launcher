@@ -165,6 +165,26 @@ fn snapshot(dir: &Path) -> BTreeMap<String, String> {
             } else if meta.is_dir() {
                 out.insert(rel, "dir".into());
                 walk(base, &path, out);
+            } else if !meta.is_file() {
+                // FIFOs, sockets and devices are compared by type and mode only. Opening them
+                // could block (a FIFO without a writer) or have side effects.
+                use std::os::unix::fs::FileTypeExt;
+                let kind = meta.file_type();
+                let kind = if kind.is_fifo() {
+                    "fifo"
+                } else if kind.is_socket() {
+                    "socket"
+                } else if kind.is_char_device() {
+                    "char-device"
+                } else if kind.is_block_device() {
+                    "block-device"
+                } else {
+                    "unknown"
+                };
+                out.insert(
+                    rel,
+                    format!("special:{kind}:{:o}", meta.permissions().mode()),
+                );
             } else {
                 // Unreadable files are compared by metadata; their bytes are checked separately.
                 let bytes = fs::read(&path).map_or_else(
@@ -1291,7 +1311,16 @@ impl Home {
 
     /// Run a scenario to completion; returns its `F05-RESULT` lines.
     fn run(&self, scenario: &str) -> Vec<String> {
-        let output = self.command(scenario, None).output().unwrap();
+        self.run_within(scenario, WATCHDOG_TIMEOUT)
+    }
+
+    /// Like `run`, but a child still running after `timeout` is SIGKILLed so a blocked scenario
+    /// fails the test instead of hanging it.
+    fn run_within(&self, scenario: &str, timeout: Duration) -> Vec<String> {
+        let child = self.command(scenario, None).spawn().unwrap();
+        let watchdog = Watchdog::arm_for(child.id(), timeout);
+        let output = child.wait_with_output().unwrap();
+        drop(watchdog);
         let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
         assert!(
             output.status.success(),
@@ -1378,16 +1407,20 @@ impl Paused {
     }
 }
 
+const WATCHDOG_TIMEOUT: Duration = Duration::from_secs(120);
+
 /// Kills a stuck child so a broken rendezvous fails the test instead of hanging CI.
 struct Watchdog(Option<std::sync::mpsc::Sender<()>>);
 
 impl Watchdog {
     fn arm(pid: u32) -> Self {
+        Self::arm_for(pid, WATCHDOG_TIMEOUT)
+    }
+
+    fn arm_for(pid: u32, timeout: Duration) -> Self {
         let (tx, rx) = std::sync::mpsc::channel::<()>();
         std::thread::spawn(move || {
-            if rx.recv_timeout(Duration::from_secs(120))
-                == Err(std::sync::mpsc::RecvTimeoutError::Timeout)
-            {
+            if rx.recv_timeout(timeout) == Err(std::sync::mpsc::RecvTimeoutError::Timeout) {
                 unsafe { libc::kill(pid as i32, libc::SIGKILL) };
             }
         });
@@ -3437,6 +3470,154 @@ fn invalid_manifest_never_hides_a_pending_transaction_from_resolution() {
             assert_eq!(payload(&v3_a), "NEW", "{checkpoint} {how}");
         }
     }
+}
+
+fn mkfifo(path: &Path) {
+    use std::os::unix::ffi::OsStrExt;
+    let path = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
+    // SAFETY: path is a live NUL-terminated string; mkfifo has no other pointer inputs.
+    assert_eq!(unsafe { libc::mkfifo(path.as_ptr(), 0o600) }, 0);
+}
+
+fn is_fifo(path: &Path) -> bool {
+    use std::os::unix::fs::FileTypeExt;
+    path.symlink_metadata()
+        .is_ok_and(|meta| meta.file_type().is_fifo())
+}
+
+/// Generous for a child that only resolves and refuses, far below the default watchdog.
+const FIFO_DISCOVERY_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// P2 regression: a FIFO at A's manifest path must not block discovery. With only backup
+/// evidence (no `P`/`C` in the root), the v3 identity anchor falls through to reading A's
+/// manifest; a plain `open(O_RDONLY)` on a writerless FIFO waits forever before any type check,
+/// so resolution hung. No writer is ever attached here: the reader itself must not block. The
+/// child runs under a bounded watchdog so a regression fails instead of hanging.
+#[test]
+fn fifo_manifest_never_blocks_pending_transaction_discovery() {
+    if crate::tools::runner_sessions::workspace_debug_sessiond().is_none() {
+        panic!("build ro-sessiond first (cargo build -p ro-sessiond)");
+    }
+    // Both leave the old prefix in the backup and no transaction marker in A's root.
+    for checkpoint in ["reset:backup-preserved", "provision:root-created"] {
+        let home = Home::new("fp-fifo-m");
+        home.pause_at("fp-reset", checkpoint).sigkill();
+        let state = fs::read_to_string(home.dir.join(FP_STATE)).unwrap();
+        let v3_a = PathBuf::from(state.lines().nth(1).unwrap());
+        if !exists(&v3_a) {
+            fs::create_dir(&v3_a).unwrap();
+        }
+        assert!(
+            fs::read_dir(&v3_a).unwrap().next().is_none(),
+            "{checkpoint}: A must hold no transaction marker"
+        );
+        let manifest = v3_a.join(PREFIX_MARKER);
+        mkfifo(&manifest);
+        let started = std::time::Instant::now();
+        let lines = home.run_within("fp-resolve-blocked", FIFO_DISCOVERY_TIMEOUT);
+        assert!(started.elapsed() < FIFO_DISCOVERY_TIMEOUT, "{checkpoint}");
+        assert_eq!(
+            lines,
+            [
+                "fingerprint-changed true",
+                "steered Unknown true true",
+                "bootstrap-refused true",
+                "still-steered true",
+                "untouched true",
+            ],
+            "{checkpoint}"
+        );
+        assert!(is_fifo(&manifest), "{checkpoint}: the FIFO was replaced");
+        let backup = reset_backup_path(&v3_a).unwrap();
+        assert_eq!(payload(&backup), "OLD", "{checkpoint}");
+        assert_eq!(
+            fs::read(backup.join("save.bin")).unwrap(),
+            b"\x01OLD-SAVE\xfe",
+            "{checkpoint}"
+        );
+        let names: Vec<_> = fs::read_dir(&v3_a)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        assert_eq!(names, [PREFIX_MARKER], "{checkpoint}");
+    }
+}
+
+/// `read_bounded` on a thread with a deadline. On timeout the stuck `open` is released by a
+/// nonblocking writer so no thread stays blocked, then the test fails.
+fn read_bounded_promptly(path: &Path, limit: u64) -> Result<String, String> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    let owned = path.to_path_buf();
+    std::thread::spawn(move || {
+        let _ = tx.send(read_bounded(&owned, limit, "la evidencia"));
+    });
+    match rx.recv_timeout(Duration::from_secs(10)) {
+        Ok(result) => result,
+        Err(_) => {
+            let _ = OpenOptions::new()
+                .write(true)
+                .custom_flags(libc::O_NONBLOCK)
+                .open(path);
+            panic!("read_bounded blocked on {}", path.display());
+        }
+    }
+}
+
+#[test]
+fn read_bounded_reads_only_regular_files_and_never_blocks() {
+    let fixture = Fixture::new("read-bounded");
+    let dir = &fixture.dir;
+
+    let regular = dir.join("regular.json");
+    fs::write(&regular, "{\"ok\":true}").unwrap();
+    assert_eq!(
+        read_bounded_promptly(&regular, 11).unwrap(),
+        "{\"ok\":true}"
+    );
+    assert_eq!(
+        read_bounded_promptly(&regular, 10).unwrap_err(),
+        "la evidencia es demasiado grande"
+    );
+
+    let fifo = dir.join("fifo.json");
+    mkfifo(&fifo);
+    assert_eq!(
+        read_bounded_promptly(&fifo, 1024).unwrap_err(),
+        "la evidencia no es un archivo regular"
+    );
+    assert!(is_fifo(&fifo));
+
+    let directory = dir.join("directory.json");
+    fs::create_dir(&directory).unwrap();
+    assert_eq!(
+        read_bounded_promptly(&directory, 1024).unwrap_err(),
+        "la evidencia no es un archivo regular"
+    );
+
+    // O_NOFOLLOW: a symlink to valid evidence is refused, not followed.
+    let link = dir.join("link.json");
+    std::os::unix::fs::symlink(&regular, &link).unwrap();
+    assert!(read_bounded_promptly(&link, 1024).is_err());
+    let fifo_link = dir.join("fifo-link.json");
+    std::os::unix::fs::symlink(&fifo, &fifo_link).unwrap();
+    assert!(read_bounded_promptly(&fifo_link, 1024).is_err());
+
+    // A socket cannot be opened as a file (ENXIO); it must fail, not block.
+    let socket = dir.join("socket.json");
+    let _listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+    assert!(read_bounded_promptly(&socket, 1024).is_err());
+
+    assert!(read_bounded_promptly(&dir.join("missing.json"), 1024).is_err());
+}
+
+/// The snapshot helper itself must never open a FIFO (that would hang the test, not the code).
+#[test]
+fn snapshot_records_special_files_without_opening_them() {
+    let fixture = Fixture::new("snapshot-special");
+    mkfifo(&fixture.dir.join("fifo"));
+    let snap = snapshot(&fixture.dir);
+    assert_eq!(snap["fifo"], "special:fifo:10600");
+    assert!(is_fifo(&fixture.dir.join("fifo")));
 }
 
 fn multiple_pending_scenario() {

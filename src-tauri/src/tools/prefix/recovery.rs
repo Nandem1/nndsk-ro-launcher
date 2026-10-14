@@ -1347,10 +1347,15 @@ fn v3_path_suffix(location: &PrefixLocation) -> Option<&str> {
 }
 
 /// Bounded, no-follow read of a small launcher-owned file.
+///
+/// `O_NONBLOCK` keeps `open` itself from waiting on a nonregular object (a FIFO with no writer
+/// blocks a plain `open(O_RDONLY)` before any type check could run); it has no effect on regular
+/// files. The type is then verified on the open descriptor, never on the path, so there is no
+/// path/type race. Only regular files are ever read.
 fn read_bounded(path: &Path, limit: u64, label: &str) -> Result<String, String> {
-    let mut file = OpenOptions::new()
+    let file = OpenOptions::new()
         .read(true)
-        .custom_flags(libc::O_NOFOLLOW)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
         .open(path)
         .map_err(|error| format!("no se pudo leer {label}: {error}"))?;
     let meta = file
@@ -1363,8 +1368,12 @@ fn read_bounded(path: &Path, limit: u64, label: &str) -> Result<String, String> 
         return Err(format!("{label} es demasiado grande"));
     }
     let mut text = String::new();
-    file.read_to_string(&mut text)
+    file.take(limit + 1)
+        .read_to_string(&mut text)
         .map_err(|_| format!("{label} está dañado"))?;
+    if text.len() as u64 > limit {
+        return Err(format!("{label} es demasiado grande"));
+    }
     Ok(text)
 }
 
