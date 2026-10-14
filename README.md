@@ -39,16 +39,28 @@ environment while keeping the previous one until completion. The launcher does n
 
 ## Development
 
-Requires Node.js, npm, stable Rust and the Tauri v2 dependencies for Linux.
+Requires rustup, the Node.js release in [`.nvmrc`](.nvmrc) with its bundled npm,
+and the Tauri v2 dependencies for Linux. With nvm, run `nvm install && nvm use`.
+Rustup selects [`rust-toolchain.toml`](rust-toolchain.toml) automatically, including
+rustfmt and clippy; install it explicitly with `rustup toolchain install --no-self-update`.
+Do not override the repository toolchain with `RUSTUP_TOOLCHAIN` or `cargo +<version>`.
 
 ```bash
 npm ci
+node scripts/check-toolchain-invariants.mjs
 npm run tauri:dev
 ```
 
 Build the AppImage with `npm run tauri:build:appimage`. Artifacts go to `target/release/bundle/`.
 See [AGENTS.md](AGENTS.md) for tests and contribution rules, and [docs/README.md](docs/README.md)
 for architecture and technical contracts.
+
+The same pin files select toolchains in quality CI, release-cache, release and scheduled
+audits. `engines.node >=22` is the compatibility requirement, separate from the exact build
+pin. Tauri, TypeScript and Vite come from `npm ci` and the lockfile; no global CLI is needed.
+Updating a toolchain pin requires a deliberate PR. These pins make toolchain selection
+deterministic; they do not establish bit-for-bit reproducible builds (OS packages, system
+libraries, timestamps and packaging inputs remain outside this contract).
 
 The frozen UI uses the soft graphite theme in a fixed 1440×900 window. See the
 [design system](docs/design-system.md) for tokens and visual gates, the
