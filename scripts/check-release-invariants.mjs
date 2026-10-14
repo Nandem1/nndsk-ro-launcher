@@ -6,6 +6,7 @@ import { sidecarOrderError } from './release-sidecar-order.mjs'
 import { qualityCiTriggerError } from './quality-ci-trigger.mjs'
 import { checkToolchainInvariants } from './check-toolchain-invariants.mjs'
 import {
+  dependencyAuditWorkflowErrors,
   hiddenFailureErrors,
   releaseWorkflowErrors,
   unpinnedActionErrors,
@@ -205,6 +206,14 @@ const ciYaml = readFileSync(
 )
 const ciTriggerError = qualityCiTriggerError(ciYaml)
 if (ciTriggerError) fail(ciTriggerError)
+
+const auditErrors = dependencyAuditWorkflowErrors(
+  readFileSync(
+    join(root, '.github', 'workflows', 'dependency-audit.yml'),
+    'utf8',
+  ),
+)
+if (auditErrors.length) fail(auditErrors.join('; '))
 
 const workflowFiles = {}
 for (const file of walkFiles(join(root, '.github'))) {

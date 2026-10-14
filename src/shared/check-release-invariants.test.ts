@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { sidecarOrderError } from '../../scripts/release-sidecar-order.mjs'
 import { qualityCiTriggerError } from '../../scripts/quality-ci-trigger.mjs'
 import {
+  dependencyAuditWorkflowErrors,
   hiddenFailureErrors,
   releaseWorkflowErrors,
   unpinnedActionErrors,
@@ -112,6 +113,55 @@ jobs:
       'x.yml: action actions/checkout@v4 must be pinned to a full commit SHA',
     ])
     expect(hiddenFailureErrors({ 'x.yml': yaml })).toHaveLength(3)
+  })
+})
+
+describe('dependencyAuditWorkflowErrors', () => {
+  const audit = readFileSync(
+    join(root, '.github/workflows/dependency-audit.yml'),
+    'utf8',
+  )
+
+  it('runs shared audits on dependency PRs with stable check names', () => {
+    expect(dependencyAuditWorkflowErrors(audit)).toEqual([])
+  })
+
+  it('rejects removing the PR trigger or a dependency path', () => {
+    expect(
+      dependencyAuditWorkflowErrors(
+        audit.replace('  pull_request:', '  push:'),
+      ).join('\n'),
+    ).toMatch(/pull requests/)
+    for (const path of [
+      'package-lock.json',
+      'Cargo.lock',
+      '**/Cargo.toml',
+      'package.json',
+    ]) {
+      expect(
+        dependencyAuditWorkflowErrors(
+          audit.replace(`      - '${path}'\n`, ''),
+        ).join('\n'),
+      ).toMatch(/PR paths/)
+    }
+  })
+
+  it('rejects hidden audit failures, renamed checks and skipped jobs', () => {
+    for (const changed of [
+      audit.replace('  npm:\n', '  npm:\n    continue-on-error: true\n'),
+      audit.replace(
+        'dependency-audit-policy.mjs npm',
+        'dependency-audit-policy.mjs npm || true',
+      ),
+      audit.replace('name: npm-dependency-audit', 'name: optional'),
+      audit.replace('  rustsec:\n', '  rustsec:\n    if: false\n'),
+      audit.replace(
+        '      - run: node scripts/dependency-audit-policy.mjs npm',
+        '      - if: false\n        run: node scripts/dependency-audit-policy.mjs npm',
+      ),
+      audit.replace('dependency-audit-policy.mjs cargo', 'cargo audit'),
+    ])
+      expect(dependencyAuditWorkflowErrors(changed).length).toBeGreaterThan(0)
   })
 })
 

@@ -1,12 +1,26 @@
 name: Dependency audit
 
-# Scheduled early warning. The same policy also gates every release in release.yml.
+# PR dependency gate and scheduled early warning. The same policy gates every release.
 # Policy (scripts/dependency-audit-policy.mjs): runtime npm advisories >= moderate, dev-only npm
 # criticals and every RustSec vulnerability fail the job. Other advisories are listed in the job
 # summary and as warning annotations. A crashed or unparseable audit fails the job; there is no
 # continue-on-error here on purpose.
 
 on:
+  pull_request:
+    paths:
+      - 'package-lock.json'
+      - 'Cargo.lock'
+      - '**/Cargo.toml'
+      - 'package.json'
+      - '.github/workflows/dependency-audit.yml'
+      - 'scripts/dependency-audit-policy.mjs'
+      - 'src/shared/dependency-audit-policy.test.ts'
+      - 'scripts/release-workflow-policy.mjs'
+      - 'scripts/check-release-invariants.mjs'
+      - 'src/shared/check-release-invariants.test.ts'
+      - '.nvmrc'
+      - 'rust-toolchain.toml'
   workflow_dispatch:
   schedule:
     - cron: '30 8 * * 1'
@@ -16,6 +30,7 @@ permissions:
 
 jobs:
   npm:
+    name: npm-dependency-audit
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -29,6 +44,7 @@ jobs:
       - run: node scripts/dependency-audit-policy.mjs npm
 
   rustsec:
+    name: rustsec-dependency-audit
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4

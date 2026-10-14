@@ -69,6 +69,55 @@ export function hiddenFailureErrors(files) {
   return errors
 }
 
+/** Dependency changes must run the shared security policy before merge (F-13). */
+export function dependencyAuditWorkflowErrors(yaml) {
+  const errors = hiddenFailureErrors({ 'dependency-audit.yml': yaml })
+  const pr = yaml.match(/^ {2}pull_request:\s*\n((?:^ {4}.*\n|^\s*\n)*)/m)?.[1]
+  if (!pr || !/^ {4}paths:\s*$/m.test(pr)) {
+    errors.push('dependency-audit.yml must audit dependency pull requests')
+  } else {
+    for (const path of [
+      'package-lock.json',
+      'Cargo.lock',
+      '**/Cargo.toml',
+      'package.json',
+      '.github/workflows/dependency-audit.yml',
+      'scripts/dependency-audit-policy.mjs',
+    ]) {
+      if (!pr.split('\n').some((line) => line.trim() === `- '${path}'`))
+        errors.push(`dependency-audit.yml PR paths must include ${path}`)
+    }
+    if (/^ {4}(branches|branches-ignore|paths-ignore|types):/m.test(pr))
+      errors.push(
+        'dependency-audit.yml must not narrow the dependency PR trigger',
+      )
+  }
+  const jobs = workflowJobs(yaml)
+  for (const [job, name, mode] of [
+    ['npm', 'npm-dependency-audit', 'npm'],
+    ['rustsec', 'rustsec-dependency-audit', 'cargo'],
+  ]) {
+    if (!jobs[job]?.includes(`    name: ${name}\n`))
+      errors.push(`dependency-audit.yml must keep stable check name ${name}`)
+    if (
+      !jobs[job]?.includes(
+        `      - run: node scripts/dependency-audit-policy.mjs ${mode}\n`,
+      )
+    )
+      errors.push(
+        `dependency-audit.yml ${job} must run the shared ${mode} policy`,
+      )
+    if (
+      /^\s+if:/m.test(jobs[job] ?? '') ||
+      /\bset \+e\b/m.test(jobs[job] ?? '')
+    )
+      errors.push(
+        `dependency-audit.yml ${job} must not skip or suppress the audit`,
+      )
+  }
+  return errors
+}
+
 /** Signing isolation, tested-artifact flow and draft publication in release.yml. */
 export function releaseWorkflowErrors(yaml) {
   const errors = []
