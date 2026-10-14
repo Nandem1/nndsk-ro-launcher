@@ -13,7 +13,9 @@
 // - RustSec: every vulnerability blocks (Cargo.lock is the shipped binary plus its build graph).
 //   Informational warnings (unmaintained, unsound, yanked) are reported, never hidden.
 import { spawnSync } from 'node:child_process'
-import { appendFileSync } from 'node:fs'
+import { appendFileSync, lstatSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { stripVTControlCharacters } from 'node:util'
 
@@ -238,6 +240,27 @@ export function classifyCargoAudit(report) {
 }
 
 function run(command, args) {
+  if (command === 'cargo') {
+    // cargo-audit 0.22.2 auto-loads these files, but its JSON does not expose database or yank
+    // settings. Refuse ambient config instead of accepting a report from a silently reduced audit.
+    const cargoHome = process.env.CARGO_HOME || resolve(homedir(), '.cargo')
+    for (const path of [
+      resolve('.cargo', 'audit.toml'),
+      resolve(cargoHome, 'audit.toml'),
+    ]) {
+      try {
+        lstatSync(path)
+      } catch (error) {
+        if (error.code === 'ENOENT') continue
+        throw new Error(
+          `cannot inspect cargo-audit configuration: ${error.message}`,
+        )
+      }
+      throw new Error(
+        `unsupported cargo-audit configuration ${path}; shared policy requires upstream defaults`,
+      )
+    }
+  }
   const result = spawnSync(command, args, {
     encoding: 'utf8',
     maxBuffer: 64 * 1024 * 1024,

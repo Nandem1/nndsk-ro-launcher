@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -285,20 +291,33 @@ describe('audit subprocess boundary', () => {
     stdout: string,
     status: number | 'signal',
     stderr = '',
+    configuration?: 'project' | 'user',
   ) {
     const directory = mkdtempSync(join(tmpdir(), 'ro-audit-test-'))
     const summary = join(directory, 'summary.md')
+    const cargoHome = join(directory, 'cargo-home')
     try {
+      if (configuration) {
+        const configDirectory =
+          configuration === 'project' ? join(directory, '.cargo') : cargoHome
+        mkdirSync(configDirectory)
+        writeFileSync(
+          join(configDirectory, 'audit.toml'),
+          '[yanked]\nenabled = false\n',
+        )
+      }
       const executable = mode === 'cargo' ? 'cargo' : 'npm'
       const source = `#!${process.execPath}\nprocess.stdout.write(${JSON.stringify(stdout)});\nprocess.stderr.write(${JSON.stringify(stderr)});\n${status === 'signal' ? "process.kill(process.pid, 'SIGTERM')" : `process.exit(${status})`}\n`
       writeFileSync(join(directory, executable), source, { mode: 0o700 })
       const result = spawnSync(process.execPath, [script, mode], {
         encoding: 'utf8',
+        cwd: directory,
         env: {
           ...process.env,
           PATH: directory,
           GITHUB_ACTIONS: 'true',
           GITHUB_STEP_SUMMARY: summary,
+          CARGO_HOME: cargoHome,
         },
       })
       let markdown = ''
@@ -410,4 +429,19 @@ describe('audit subprocess boundary', () => {
       ).status,
     ).toBe(1)
   })
+
+  it.each(['project', 'user'] as const)(
+    'rejects %s audit config that can silently disable yank checks',
+    (configuration) => {
+      const result = probe(
+        'cargo',
+        JSON.stringify(cargoReport()),
+        0,
+        '',
+        configuration,
+      )
+      expect(result.status).toBe(1)
+      expect(result.stderr).toMatch(/configuration/)
+    },
+  )
 })
