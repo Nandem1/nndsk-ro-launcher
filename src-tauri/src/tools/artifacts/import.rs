@@ -1,21 +1,19 @@
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
-use std::os::unix::fs::DirBuilderExt;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 
-use crate::utils::emit_progress;
 use crate::utils::OperationGuard;
+use crate::utils::{emit_log, emit_progress, report};
 use tauri::AppHandle;
 
 use super::descriptor::{
     catalog_descriptor, ArtifactDescriptor, LOCAL_MANAGED_RUNNER_ID, MANAGED_RUNNER_ID,
     PREVIOUS_MANAGED_RUNNER_ID,
 };
-use super::{
-    artifact_cache_state_at, extract, fetch, install, runtime_dir, unique_suffix,
-    ArtifactCacheState,
-};
+#[cfg(test)]
+use super::{artifact_cache_state_at, ArtifactCacheState};
+use super::{extract, fetch, install, runtime_dir, unique_suffix};
 
 /// Import known checksum-pinned packages, not an arbitrary runner archive.
 /// The blocking owner retains both the runtime lock and cleanup if the caller is cancelled.
@@ -60,11 +58,16 @@ fn import_archive_at(
     destination: &Path,
 ) -> Result<PathBuf, String> {
     let _operation = OperationGuard::acquire("runtime", destination)?;
+    // Reject special/truncated input before any recovery mutation. Snapshot reopens and verifies it.
+    open_regular_archive(source, descriptor.expected_size)?;
+    std::fs::create_dir_all(destination).map_err(|error| error.to_string())?;
+    require_runtime_directory(destination)?;
+    install::needs_install(descriptor, destination, install::policy(descriptor))?;
     import_archive_locked(descriptor, source, destination)
 }
 
 /// Caller owns the runtime operation lease, including across blocking extraction.
-fn import_archive_locked(
+pub(super) fn import_archive_locked(
     descriptor: &ArtifactDescriptor,
     source: &Path,
     destination: &Path,
@@ -80,8 +83,12 @@ fn import_archive_locked(
             "El directorio de runtimes no puede ser un enlace ni otro tipo de archivo".to_string(),
         );
     }
+    let policy = install::policy(descriptor);
+    // The owner swept BEFORE acquisition. Sweeping now could delete its live download wrapper.
+    install::recover(descriptor, destination)?;
+    let needs_install = install::inspect_target(descriptor, destination, policy)?;
     let unique = unique_suffix();
-    let snapshot = destination.join(format!(
+    let snapshot_directory = destination.join(format!(
         ".{}.import-{}-{unique}",
         descriptor.id,
         std::process::id()
@@ -92,29 +99,25 @@ fn import_archive_locked(
         std::process::id()
     ));
     let mut cleanup = ImportCleanup::default();
+    install::create_work(descriptor, &snapshot_directory)?;
+    cleanup.snapshot_directory = Some((*descriptor, snapshot_directory.clone()));
+    let snapshot = snapshot_directory.join(descriptor.archive.archive_name());
     snapshot_archive(input, &snapshot, descriptor, &mut cleanup)?;
-
-    let final_dir = destination.join(descriptor.id);
-    if artifact_cache_state_at(descriptor, &final_dir) == ArtifactCacheState::Ready {
-        return Ok(final_dir);
+    if !needs_install {
+        return Ok(destination.join(descriptor.id));
     }
-    match final_dir.symlink_metadata() {
-        Ok(_) => {
-            return Err(format!("{} ya existe pero no coincide con el runtime validado; se conservó sin sustituirlo", final_dir.display()));
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => return Err(format!("No se pudo comprobar el destino: {error}")),
-    }
-    create_owned_staging(&staging, &mut cleanup)?;
+    create_owned_staging(descriptor, &staging, &mut cleanup)?;
     extract::extract_created_archive(descriptor, &snapshot, &staging)?;
-    install::install_new_extracted(descriptor, &staging, &final_dir, |descriptor| {
-        artifact_cache_state_at(descriptor, &final_dir) == ArtifactCacheState::Ready
-    })?;
-    Ok(final_dir)
+    #[cfg(test)]
+    install::checkpoint("extracted")?;
+    let extracted = staging.join(descriptor.archive.archive_root());
+    install::prepare(descriptor, &extracted)?;
+    install::activate(descriptor, &extracted, destination, policy)?;
+    Ok(destination.join(descriptor.id))
 }
 
-/// The caller transfers its existing lease; no recursive lock acquisition.
-/// Cancellation cannot remove files still owned by the blocking importer.
+/// All artifact classes use this owned task. Dropping an IPC or preparation waiter cannot free
+/// its guard while download or extraction is still using private paths.
 pub(crate) async fn download_managed_runtime(
     app: &AppHandle,
     descriptor: &'static ArtifactDescriptor,
@@ -122,25 +125,42 @@ pub(crate) async fn download_managed_runtime(
     progress_start: u32,
     progress_end: u32,
 ) -> Result<(), String> {
-    if !matches!(
-        descriptor.kind,
-        super::ArtifactKind::NndskRoProton | super::ArtifactKind::WineTkg716
-    ) {
-        return Err("La descarga transaccional requiere un runner del catálogo".to_string());
-    }
+    let app = app.clone();
+    tokio::spawn(async move {
+        download_locked(&app, descriptor, operation, progress_start, progress_end).await
+    })
+    .await
+    .map_err(|error| format!("Falló la instalación del runtime: {error}"))?
+}
+
+async fn download_locked(
+    app: &AppHandle,
+    descriptor: &'static ArtifactDescriptor,
+    operation: OperationGuard,
+    progress_start: u32,
+    progress_end: u32,
+) -> Result<(), String> {
     let destination = runtime_dir();
-    let final_dir = destination.join(descriptor.id);
-    if artifact_cache_state_at(descriptor, &final_dir) == ArtifactCacheState::Ready {
+    std::fs::create_dir_all(&destination).map_err(|error| error.to_string())?;
+    require_runtime_directory(&destination)?;
+    if !install::needs_install(descriptor, &destination, install::policy(descriptor))? {
         return Ok(());
     }
-    require_missing_destination(&final_dir)?;
+    emit_log(
+        app,
+        format!(
+            "Descargando {}: {}.",
+            descriptor.id,
+            super::artifact_cache_state_at(descriptor, &destination.join(descriptor.id)).reason()
+        ),
+    )?;
     let directory = destination.join(format!(
         ".{}.download-{}-{}",
         descriptor.id,
         std::process::id(),
         unique_suffix()
     ));
-    let cleanup = DownloadDirectory::create(&directory)?;
+    let cleanup = DownloadDirectory::create(descriptor, &directory)?;
     let archive = directory.join(descriptor.archive.archive_name());
     fetch::download_verified(
         app,
@@ -156,6 +176,17 @@ pub(crate) async fn download_managed_runtime(
         progress_end,
     )?;
     let descriptor = *descriptor;
+    finish_download(descriptor, operation, cleanup, archive, destination).await
+}
+
+async fn finish_download(
+    descriptor: ArtifactDescriptor,
+    operation: OperationGuard,
+    cleanup: DownloadDirectory,
+    archive: PathBuf,
+    destination: PathBuf,
+) -> Result<(), String> {
+    // The blocking owner receives the guard AND the downloaded archive, not a future-owned Drop.
     tokio::task::spawn_blocking(move || {
         let _operation = operation;
         let _cleanup = cleanup;
@@ -165,32 +196,36 @@ pub(crate) async fn download_managed_runtime(
     .map_err(|error| format!("Falló la instalación del runtime: {error}"))?
 }
 
-fn require_missing_destination(path: &Path) -> Result<(), String> {
-    match path.symlink_metadata() {
-        Ok(_) => Err(format!(
-            "{} ya existe pero no coincide con el runtime; se conservó sin sustituirlo",
-            path.display()
-        )),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(format!("No se pudo comprobar el destino: {error}")),
+fn require_runtime_directory(path: &Path) -> Result<(), String> {
+    if !path
+        .symlink_metadata()
+        .is_ok_and(|m| m.is_dir() && !m.file_type().is_symlink())
+    {
+        return Err(
+            "El directorio de runtimes no puede ser un enlace ni otro tipo de archivo".into(),
+        );
     }
+    Ok(())
 }
 
-struct DownloadDirectory(PathBuf);
+struct DownloadDirectory {
+    path: PathBuf,
+    descriptor: ArtifactDescriptor,
+}
 
 impl DownloadDirectory {
-    fn create(path: &Path) -> Result<Self, String> {
-        std::fs::DirBuilder::new()
-            .mode(0o700)
-            .create(path)
-            .map_err(|error| format!("No se pudo crear descarga privada: {error}"))?;
-        Ok(Self(path.to_path_buf()))
+    fn create(descriptor: &ArtifactDescriptor, path: &Path) -> Result<Self, String> {
+        install::create_work(descriptor, path)?;
+        Ok(Self {
+            path: path.to_path_buf(),
+            descriptor: *descriptor,
+        })
     }
 }
 
 impl Drop for DownloadDirectory {
     fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
+        install::clean_work(&self.descriptor, &self.path);
     }
 }
 
@@ -249,23 +284,35 @@ fn snapshot_archive(
 #[derive(Default)]
 struct ImportCleanup {
     snapshot: Option<PathBuf>,
-    staging: Option<PathBuf>,
+    snapshot_directory: Option<(ArtifactDescriptor, PathBuf)>,
+    staging: Option<(ArtifactDescriptor, PathBuf)>,
 }
 
-fn create_owned_staging(path: &Path, cleanup: &mut ImportCleanup) -> Result<(), String> {
-    std::fs::create_dir(path)
-        .map_err(|error| format!("No se pudo crear staging propio: {error}"))?;
-    cleanup.staging = Some(path.to_path_buf());
+fn create_owned_staging(
+    descriptor: &ArtifactDescriptor,
+    path: &Path,
+    cleanup: &mut ImportCleanup,
+) -> Result<(), String> {
+    install::create_work(descriptor, path)?;
+    cleanup.staging = Some((*descriptor, path.to_path_buf()));
     Ok(())
 }
 
 impl Drop for ImportCleanup {
     fn drop(&mut self) {
         if let Some(snapshot) = &self.snapshot {
-            let _ = std::fs::remove_file(snapshot);
+            if let Err(error) = std::fs::remove_file(snapshot) {
+                report(
+                    "artifacts.cleanup",
+                    format!("{}: {error}", snapshot.display()),
+                );
+            }
         }
-        if let Some(staging) = &self.staging {
-            let _ = std::fs::remove_dir_all(staging);
+        if let Some((descriptor, staging)) = &self.staging {
+            install::clean_work(descriptor, staging);
+        }
+        if let Some((descriptor, directory)) = &self.snapshot_directory {
+            install::clean_work(descriptor, directory);
         }
     }
 }
@@ -275,7 +322,6 @@ mod tests {
     use super::super::descriptor::{
         ArchiveLayout, ArtifactKind, ArtifactSource, ExpectedDigest, PayloadValidatorId,
     };
-    use super::super::install::{InstallFault, INSTALL_FAULT};
     use super::super::receipt::{
         parse_stored_receipt, stored_identity_matches_descriptor, MARKER_FILE,
     };
@@ -399,22 +445,6 @@ mod tests {
     }
 
     #[test]
-    fn import_rolls_back_marker_failure_and_can_retry() {
-        for fault in [
-            InstallFault::AfterActivateRename,
-            InstallFault::AfterMarkerWrite,
-        ] {
-            let fixture = Fixture::new();
-            INSTALL_FAULT.set(fault);
-            assert!(fixture.import().unwrap_err().contains("fault inyectado"));
-            assert!(!fixture.destination.join(fixture.descriptor.id).exists());
-            fixture.no_temps();
-            assert!(fixture.import().is_ok());
-            fixture.no_temps();
-        }
-    }
-
-    #[test]
     fn checksum_valid_but_invalid_archive_does_not_activate_or_leave_temps() {
         let mut fixture = Fixture::new();
         let bytes = zstd::stream::encode_all(&b"not a tar archive"[..], 1).unwrap();
@@ -426,24 +456,6 @@ mod tests {
         assert!(fixture.import().is_err());
         assert!(!fixture.destination.join(fixture.descriptor.id).exists());
         fixture.no_temps();
-    }
-
-    #[test]
-    fn first_install_never_replaces_a_racing_destination() {
-        let fixture = Fixture::new();
-        let staging = fixture.root.join("staging");
-        extract::extract_archive(&fixture.descriptor, &fixture.archive, &staging).unwrap();
-        let final_dir = fixture.destination.join(fixture.descriptor.id);
-        std::fs::create_dir_all(&final_dir).unwrap();
-        std::fs::write(final_dir.join("sentinel"), b"keep").unwrap();
-        assert!(
-            install::install_new_extracted(&fixture.descriptor, &staging, &final_dir, |_| true)
-                .is_err()
-        );
-        assert_eq!(std::fs::read(final_dir.join("sentinel")).unwrap(), b"keep");
-        assert!(staging
-            .join(fixture.descriptor.archive.archive_root())
-            .exists());
     }
 
     #[test]
@@ -468,7 +480,7 @@ mod tests {
         std::fs::write(staging.join("sentinel"), b"keep").unwrap();
         {
             let mut cleanup = ImportCleanup::default();
-            assert!(create_owned_staging(&staging, &mut cleanup).is_err());
+            assert!(create_owned_staging(&fixture.descriptor, &staging, &mut cleanup).is_err());
         }
         assert_eq!(std::fs::read(staging.join("sentinel")).unwrap(), b"keep");
     }
@@ -479,13 +491,13 @@ mod tests {
         let fixture = Fixture::new();
         let owned = fixture.root.join("download-owned");
         {
-            let cleanup = DownloadDirectory::create(&owned).unwrap();
+            let cleanup = DownloadDirectory::create(&fixture.descriptor, &owned).unwrap();
             assert_eq!(
                 std::fs::metadata(&owned).unwrap().permissions().mode() & 0o777,
                 0o700
             );
             std::fs::write(owned.join("sentinel"), b"keep").unwrap();
-            assert!(DownloadDirectory::create(&owned).is_err());
+            assert!(DownloadDirectory::create(&fixture.descriptor, &owned).is_err());
             assert_eq!(std::fs::read(owned.join("sentinel")).unwrap(), b"keep");
             drop(cleanup);
         }
@@ -493,9 +505,8 @@ mod tests {
         let foreign = fixture.root.join("foreign-download");
         std::fs::create_dir(&foreign).unwrap();
         std::fs::write(foreign.join("sentinel"), b"keep").unwrap();
-        assert!(DownloadDirectory::create(&foreign).is_err());
+        assert!(DownloadDirectory::create(&fixture.descriptor, &foreign).is_err());
         assert_eq!(std::fs::read(foreign.join("sentinel")).unwrap(), b"keep");
-        assert!(require_missing_destination(&foreign).is_err());
     }
 
     #[tokio::test]
@@ -505,7 +516,7 @@ mod tests {
         std::fs::create_dir_all(&destination).unwrap();
         let operation = OperationGuard::acquire("runtime", &destination).unwrap();
         let directory = destination.join("owned-download");
-        let cleanup = DownloadDirectory::create(&directory).unwrap();
+        let cleanup = DownloadDirectory::create(&fixture.descriptor, &directory).unwrap();
         let (started_tx, started_rx) = tokio::sync::oneshot::channel();
         let (release_tx, release_rx) = std::sync::mpsc::channel();
         let (done_tx, done_rx) = tokio::sync::oneshot::channel();
@@ -531,6 +542,41 @@ mod tests {
         done_rx.await.unwrap();
         assert!(!directory.exists());
         assert!(OperationGuard::acquire("runtime", &destination).is_ok());
+    }
+
+    #[tokio::test]
+    async fn downloaded_archive_owner_uses_the_same_import_activation_and_keeps_its_live_wrapper() {
+        let fixture = Fixture::new();
+        std::fs::create_dir_all(&fixture.destination).unwrap();
+        let operation = OperationGuard::acquire("runtime", &fixture.destination).unwrap();
+        install::needs_install(
+            &fixture.descriptor,
+            &fixture.destination,
+            install::policy(&fixture.descriptor),
+        )
+        .unwrap();
+        let directory = fixture
+            .destination
+            .join(format!(".{}.download-123-456", fixture.descriptor.id));
+        let cleanup = DownloadDirectory::create(&fixture.descriptor, &directory).unwrap();
+        let archive = directory.join(fixture.descriptor.archive.archive_name());
+        std::fs::copy(&fixture.archive, &archive).unwrap();
+        finish_download(
+            fixture.descriptor,
+            operation,
+            cleanup,
+            archive,
+            fixture.destination.clone(),
+        )
+        .await
+        .unwrap();
+        let root = fixture.destination.join(fixture.descriptor.id);
+        assert_eq!(
+            artifact_cache_state_at(&fixture.descriptor, &root),
+            ArtifactCacheState::Ready
+        );
+        fixture.no_temps();
+        assert!(OperationGuard::acquire("runtime", &fixture.destination).is_ok());
     }
 
     #[tokio::test]

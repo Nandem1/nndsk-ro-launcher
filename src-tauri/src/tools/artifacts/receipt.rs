@@ -1,4 +1,7 @@
 use std::collections::BTreeSet;
+use std::fs::OpenOptions;
+use std::io::Read;
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
@@ -113,28 +116,75 @@ pub(crate) fn runtime_marker_v1_matches(
 pub(crate) fn parse_stored_receipt(
     marker_path: &Path,
 ) -> Result<Option<ParsedStoredReceipt>, String> {
-    let content = std::fs::read(marker_path)
+    let file = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(marker_path)
         .map_err(|error| format!("No se pudo leer {}: {error}", marker_path.display()))?;
+    if !file
+        .metadata()
+        .is_ok_and(|m| m.is_file() && m.len() <= 65_536)
+    {
+        return Err("El receipt debe ser un archivo regular de hasta 64 KiB".into());
+    }
+    let mut content = Vec::new();
+    file.take(65_537)
+        .read_to_end(&mut content)
+        .map_err(|error| error.to_string())?;
+    if content.len() > 65_536 {
+        return Err("Receipt demasiado grande".into());
+    }
     let value: serde_json::Value = serde_json::from_slice(&content)
         .map_err(|error| format!("JSON inválido en {}: {error}", marker_path.display()))?;
     let schema = value
         .get("schemaVersion")
         .and_then(|version| version.as_u64())
-        .ok_or_else(|| format!("schemaVersion ausente en {}", marker_path.display()))?
-        as u32;
+        .ok_or_else(|| format!("schemaVersion ausente en {}", marker_path.display()))?;
     match schema {
-        RUNTIME_SCHEMA_V1 => {
+        1 => {
             let marker: RuntimeMarkerV1 = serde_json::from_value(value)
                 .map_err(|error| format!("marker v1 inválido: {error}"))?;
             Ok(Some(ParsedStoredReceipt::V1(marker)))
         }
-        RUNTIME_SCHEMA_V2 => {
+        2 => {
             let receipt: RuntimeReceiptV2 = serde_json::from_value(value)
                 .map_err(|error| format!("receipt v2 inválido: {error}"))?;
             Ok(Some(ParsedStoredReceipt::V2(receipt)))
         }
         _ => Ok(None),
     }
+}
+
+/// Same filename and schema. The temp is private to this writer (create_new); the receipt
+/// rename is atomic, so elevation readers keep either valid v1 or complete v2.
+pub(super) fn write_receipt(descriptor: &ArtifactDescriptor, root: &Path) -> Result<(), String> {
+    let target = root.join(MARKER_FILE);
+    let value = receipt_v2_from_descriptor(descriptor);
+    #[cfg(not(test))]
+    {
+        crate::utils::replace_json(&target, &value)
+    }
+    #[cfg(test)]
+    {
+        use crate::utils::{replace_json_observed, JsonWriteCheckpoint};
+        replace_json_observed(&target, &value, |stage| {
+            super::install::checkpoint(match stage {
+                JsonWriteCheckpoint::FileSynced => "receipt_temp_synced",
+                JsonWriteCheckpoint::Renamed => "receipt_renamed",
+            })
+        })
+    }
+}
+
+pub(super) fn elevate_v1(descriptor: &ArtifactDescriptor, root: &Path) -> Result<(), String> {
+    if super::artifact_cache_state_at(descriptor, root) != super::ArtifactCacheState::Ready {
+        return Ok(());
+    }
+    if matches!(parse_stored_receipt(&root.join(MARKER_FILE))?, Some(ParsedStoredReceipt::V1(ref marker)) if runtime_marker_v1_matches(descriptor, marker))
+    {
+        write_receipt(descriptor, root)?;
+    }
+    Ok(())
 }
 
 pub(crate) enum ParsedStoredReceipt {

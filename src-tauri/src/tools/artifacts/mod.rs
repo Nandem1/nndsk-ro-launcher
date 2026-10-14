@@ -14,7 +14,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use tauri::AppHandle;
 
-use crate::utils::{app_data_dir, emit_log, emit_log_opt, emit_progress, replace_json};
+use crate::utils::{app_data_dir, OperationGuard};
 
 #[allow(unused_imports)]
 pub(crate) use descriptor::{
@@ -82,8 +82,48 @@ fn artifact_cache_state_at(
     if !metadata.is_dir() || metadata.file_type().is_symlink() {
         return ArtifactCacheState::InvalidDirectory;
     }
-    let marker_path = root.join(receipt::MARKER_FILE);
-    let Ok(Some(stored)) = receipt::parse_stored_receipt(&marker_path) else {
+    // Pin the directory inode while validating. Exchange plus cleanup can otherwise make a
+    // reader mix an old receipt with a new payload, or read old files as they are deleted.
+    use std::os::fd::AsRawFd;
+    use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+    loop {
+        let Ok(directory) = std::fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW)
+            .open(root)
+        else {
+            return ArtifactCacheState::InvalidDirectory;
+        };
+        let Ok(pinned) = directory.metadata() else {
+            return ArtifactCacheState::InvalidDirectory;
+        };
+        #[cfg(test)]
+        install::checkpoint("reader_pinned").expect("reader rendezvous");
+        let handle_path = PathBuf::from(format!("/proc/self/fd/{}", directory.as_raw_fd()));
+        let state = cache_state_in_directory(descriptor, &handle_path);
+        match root.symlink_metadata() {
+            Ok(current)
+                if current.dev() == pinned.dev()
+                    && current.ino() == pinned.ino()
+                    && current.is_dir()
+                    && !current.file_type().is_symlink() =>
+            {
+                return state
+            }
+            Ok(_) => continue, // A generation changed: revalidate the current canonical inode.
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return ArtifactCacheState::Missing
+            }
+            Err(_) => return ArtifactCacheState::InvalidDirectory,
+        }
+    }
+}
+
+fn cache_state_in_directory(
+    descriptor: &ArtifactDescriptor,
+    root: &std::path::Path,
+) -> ArtifactCacheState {
+    let Ok(Some(stored)) = receipt::parse_stored_receipt(&root.join(receipt::MARKER_FILE)) else {
         return ArtifactCacheState::InvalidReceipt;
     };
     if !receipt::stored_identity_matches_descriptor(descriptor, &stored) {
@@ -95,113 +135,16 @@ fn artifact_cache_state_at(
     ArtifactCacheState::Ready
 }
 
-pub(crate) fn try_elevate_marker_v1_to_v2(
-    _app: &AppHandle,
-    descriptor: &ArtifactDescriptor,
-) -> Result<(), String> {
-    let root = runtime_artifact_root(descriptor);
-    let marker_path = root.join(receipt::MARKER_FILE);
-    let Some(receipt::ParsedStoredReceipt::V1(_)) =
-        receipt::parse_stored_receipt(&marker_path).ok().flatten()
-    else {
-        return Ok(());
-    };
-    replace_json(
-        &marker_path,
-        &receipt::receipt_v2_from_descriptor(descriptor),
-    )
-}
-
+/// Acquires runtime ownership before dispatch; the detached owner retains it through acquisition
+/// and blocking extraction. The caller never owns cleanup while another task owns these paths.
 pub(crate) async fn ensure_catalog_artifact(
     app: &AppHandle,
     descriptor: &'static ArtifactDescriptor,
     progress_start: u32,
     progress_end: u32,
 ) -> Result<(), String> {
-    let cache_state = artifact_cache_state_at(descriptor, &runtime_artifact_root(descriptor));
-    if cache_state == ArtifactCacheState::Ready {
-        emit_log_opt(
-            Some(app),
-            format!(
-                "Reutilizando {}: recibo y archivos esenciales válidos; sin descarga.",
-                descriptor.id
-            ),
-        );
-        if let Err(error) = try_elevate_marker_v1_to_v2(app, descriptor) {
-            emit_log(
-                app,
-                format!("No se pudo elevar el receipt de {}: {error}", descriptor.id),
-            )?;
-        }
-        return Ok(());
-    }
-    if matches!(
-        descriptor.kind,
-        ArtifactKind::NndskRoProton | ArtifactKind::WineTkg716
-    ) {
-        return Err(
-            "El runner requiere el instalador transaccional con ownership de la operación"
-                .to_string(),
-        );
-    }
-
-    let runtime_dir = runtime_dir();
-    let final_dir = runtime_dir.join(descriptor.id);
-    let unique = unique_suffix();
-    let download_path = runtime_dir.join(format!(
-        ".{}.download-{}-{unique}",
-        descriptor.archive.archive_name(),
-        std::process::id()
-    ));
-    let staging_dir = runtime_dir.join(format!(
-        ".{}.staging-{}-{unique}",
-        descriptor.id,
-        std::process::id()
-    ));
-
-    let mut cleanup = install::StagingCleanup::new(download_path.clone(), staging_dir.clone());
-    let result = async {
-        emit_log(
-            app,
-            format!("Descargando {}: {}.", descriptor.id, cache_state.reason()),
-        )?;
-        fetch::download_verified(
-            app,
-            descriptor,
-            &download_path,
-            progress_start,
-            progress_end.saturating_sub(2),
-        )
-        .await?;
-        emit_progress(
-            app,
-            &format!("Verificando {}...", descriptor.id),
-            progress_end - 1,
-        )?;
-
-        let descriptor_copy = *descriptor;
-        let download_copy = download_path.clone();
-        let staging_copy = staging_dir.clone();
-        tokio::task::spawn_blocking(move || {
-            extract::extract_archive(&descriptor_copy, &download_copy, &staging_copy)
-        })
-        .await
-        .map_err(|error| format!("Falló la tarea de extracción: {error}"))??;
-
-        emit_progress(
-            app,
-            &format!("Instalando {}...", descriptor.id),
-            progress_end,
-        )?;
-        install::install_extracted(descriptor, &staging_dir, &final_dir, artifact_ready)
-    }
-    .await;
-
-    cleanup.disarm();
-    drop(cleanup);
-    let _ = std::fs::remove_file(&download_path);
-    let _ = std::fs::remove_dir_all(&staging_dir);
-    result
+    let operation = OperationGuard::acquire("runtime", &runtime_dir())?;
+    download_managed_runtime(app, descriptor, operation, progress_start, progress_end).await
 }
 
 fn unique_suffix() -> u128 {

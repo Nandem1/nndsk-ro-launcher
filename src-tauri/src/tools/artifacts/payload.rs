@@ -328,23 +328,25 @@ fn regular_path_inside_root(root: &Path, path: &Path) -> bool {
 }
 
 fn umu_zipapp_ready(root: &Path) -> bool {
-    is_executable(&root.join("umu-run")) && is_regular_file(&root.join("umu-run"))
+    is_executable(&root.join("umu-run")) && regular_path_inside_root(root, &root.join("umu-run"))
 }
 
 fn dxvk_prefix_dlls_ready(root: &Path) -> bool {
     ["x32", "x64"].iter().all(|arch| {
         DXVK_DLLS
             .iter()
-            .all(|dll| is_regular_file(&root.join(arch).join(dll)))
+            .all(|dll| regular_path_inside_root(root, &root.join(arch).join(dll)))
     })
 }
 
 fn proton_cachyos_slr_ready(root: &Path) -> bool {
-    if !(is_executable(&root.join("proton")) && is_regular_file(&root.join("proton"))) {
+    if !(is_executable(&root.join("proton"))
+        && regular_path_inside_root(root, &root.join("proton")))
+    {
         return false;
     }
     if !(is_executable(&root.join("files/bin/wine"))
-        && is_regular_file(&root.join("files/bin/wine")))
+        && regular_path_inside_root(root, &root.join("files/bin/wine")))
     {
         return false;
     }
@@ -353,7 +355,7 @@ fn proton_cachyos_slr_ready(root: &Path) -> bool {
     let dxvk_ready = ["x86_64-windows", "i386-windows"].iter().all(|arch| {
         ["d3d9.dll", "d3d11.dll", "dxgi.dll"]
             .iter()
-            .all(|dll| is_regular_file(&dxvk.join(arch).join(dll)))
+            .all(|dll| regular_path_inside_root(root, &dxvk.join(arch).join(dll)))
     });
     let vkd3d = root.join("files/lib/vkd3d");
     let vkd3d_ready = ["x86_64-windows", "i386-windows"].iter().all(|arch| {
@@ -363,7 +365,7 @@ fn proton_cachyos_slr_ready(root: &Path) -> bool {
             "libvkd3d-utils-1.dll",
         ]
         .iter()
-        .all(|dll| is_regular_file(&vkd3d.join(arch).join(dll)))
+        .all(|dll| regular_path_inside_root(root, &vkd3d.join(arch).join(dll)))
     });
     dxvk_ready && vkd3d_ready
 }

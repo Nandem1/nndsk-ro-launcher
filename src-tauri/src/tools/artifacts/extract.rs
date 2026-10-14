@@ -9,6 +9,7 @@ use xz2::read::XzDecoder;
 use super::descriptor::{ArchiveLayout, ArtifactDescriptor};
 use super::payload::payload_ready;
 
+#[cfg(test)]
 pub(crate) fn extract_archive(
     descriptor: &ArtifactDescriptor,
     archive_path: &Path,
