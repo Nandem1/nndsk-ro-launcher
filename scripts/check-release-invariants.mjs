@@ -4,6 +4,7 @@ import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { sidecarOrderError } from './release-sidecar-order.mjs'
 import { qualityCiTriggerError } from './quality-ci-trigger.mjs'
+import { checkToolchainInvariants } from './check-toolchain-invariants.mjs'
 import {
   hiddenFailureErrors,
   releaseWorkflowErrors,
@@ -48,6 +49,12 @@ function walkFiles(dir, out = []) {
 }
 
 const args = process.argv.slice(2)
+try {
+  const toolchainErrors = checkToolchainInvariants(root)
+  if (toolchainErrors.length) fail(toolchainErrors.join('; '))
+} catch (error) {
+  fail(error.message)
+}
 const tagIndex = args.indexOf('--tag')
 const tag = tagIndex >= 0 ? args[tagIndex + 1] : null
 

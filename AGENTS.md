@@ -251,6 +251,10 @@ filesystem commands (`git reset --hard`, checkout-overwrite, recursive deletion)
 
 ### 4. Test in proportion to the change
 
+Use the repository-pinned Rust/Node toolchains (`rust-toolchain.toml`, `.nvmrc`) and Node's
+bundled npm. `node scripts/check-toolchain-invariants.mjs` checks workflow alignment; the
+release invariant gate includes it. Keep `engines.node >=22` as the compatibility contract.
+
 Fast focused checks come first, then the full gate. Frontend code uses TypeScript, React function
 components, named exports, two spaces, single quotes, and no semicolons. Rust follows `rustfmt` and
 keeps serialized payloads in `models`.

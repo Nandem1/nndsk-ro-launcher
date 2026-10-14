@@ -56,6 +56,11 @@ Cortes siguientes:
 7. Escribe las notas que verá el updater en `latest.json` (`notes`).
 8. El usuario publica el release cuando el draft esté bien; el agente no lo publica.
 
+Los jobs de CI, release-cache, release y audit consumen `rust-toolchain.toml` y `.nvmrc`.
+Node usa su npm incluido; el CLI Tauri viene de `package-lock.json`. El gate
+`check-release-invariants.mjs` incluye la política de toolchains. Los pins controlan
+la selección de herramientas, no garantizan builds idénticos byte a byte.
+
 `release.yml` tiene cuatro jobs y solo uno ve la clave privada:
 
 1. `release-config` lee la variable pública `RO_LAUNCHER_DISCORD_APPLICATION_ID` del entorno

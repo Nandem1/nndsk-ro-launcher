@@ -23,7 +23,8 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 22
+          node-version-file: .nvmrc
+      - run: node scripts/check-toolchain-invariants.mjs
       # The audit reads package-lock.json; installing (and running install scripts) is not needed.
       - run: node scripts/dependency-audit-policy.mjs npm
 
@@ -33,9 +34,12 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          toolchain: stable
+          node-version-file: .nvmrc
+      - name: Install repository Rust toolchain
+        run: rustup toolchain install --no-self-update
+      - run: node scripts/check-toolchain-invariants.mjs
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           shared-key: cargo-audit
