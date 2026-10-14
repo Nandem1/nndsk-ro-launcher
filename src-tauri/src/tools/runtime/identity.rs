@@ -161,9 +161,11 @@ fn resolve_prefix_binding_for_location(
     // Otherwise resolution would fall through to another candidate (another v3 path or a v2
     // sibling) and silently run there while the old prefix waits in its reset backup. Recovery at
     // that path, on its own durable evidence, decides what survives; the caller then resolves
-    // again from scratch. Discovery is read-only and never chooses between two transactions.
+    // again from scratch. Only a valid commit record clears transaction evidence: a corrupt,
+    // nonregular or foreign manifest keeps the transaction blocking. Discovery is read-only and
+    // never chooses between two transactions.
     let mut pending = crate::tools::prefix::pending_v3_transactions(server_id)?;
-    if crate::tools::prefix::uncommitted_transaction_present(Path::new(&v2_path))
+    if crate::tools::prefix::transaction_gate(server_id, Path::new(&v2_path)).blocks_resolution()
         && !pending.contains(&v2_path)
     {
         pending.push(v2_path.clone());

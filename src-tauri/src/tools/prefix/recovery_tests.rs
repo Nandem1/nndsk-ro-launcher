@@ -13,7 +13,10 @@ use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
-use crate::utils::{write_prefix_manifest, PrefixManifest, PREFIX_SCHEMA_VERSION};
+use crate::utils::test_hooks::ManifestFault;
+use crate::utils::{
+    write_prefix_manifest, ManifestCommitError, PrefixManifest, PREFIX_SCHEMA_VERSION,
+};
 
 static SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -854,13 +857,15 @@ fn residue_predicates_are_read_only_and_precise() {
     make_committed(&root, &fixture.location, "OLD");
     assert!(!transaction_residue_present(&root));
     fs::rename(&root, fixture.backup()).unwrap();
+    let gate = |root: &Path| transaction_gate("srv", root);
     assert!(transaction_residue_present(&root));
-    assert!(uncommitted_transaction_present(&root));
+    assert_eq!(gate(&root), TransactionGate::PendingTransaction);
     make_provisioning(&fixture, "NEW");
-    assert!(uncommitted_transaction_present(&root));
+    assert_eq!(gate(&root), TransactionGate::PendingTransaction);
     fixture.prefix().revoke_rollback_authority().unwrap();
-    assert!(
-        uncommitted_transaction_present(&root),
+    assert_eq!(
+        gate(&root),
+        TransactionGate::PendingTransaction,
         "C is still uncommitted"
     );
     write_prefix_manifest(
@@ -869,8 +874,9 @@ fn residue_predicates_are_read_only_and_precise() {
     )
     .unwrap();
     assert!(transaction_residue_present(&root));
-    assert!(
-        !uncommitted_transaction_present(&root),
+    assert_eq!(
+        gate(&root),
+        TransactionGate::CommittedValid,
         "committed root resolves normally"
     );
     // Legacy residue counts only when the root holds no data.
@@ -881,8 +887,9 @@ fn residue_predicates_are_read_only_and_precise() {
         "L",
     );
     assert!(transaction_residue_present(&fixture.root()));
-    assert!(
-        !uncommitted_transaction_present(&fixture.root()),
+    assert_eq!(
+        gate(&fixture.root()),
+        TransactionGate::NoTransactionEvidence,
         "old-build residue never steers binding resolution"
     );
     make_committed(&fixture.root(), &fixture.location, "CUR");
@@ -891,7 +898,84 @@ fn residue_predicates_are_read_only_and_precise() {
     let fixture = Fixture::new("residue-empty-backup");
     fs::create_dir(fixture.backup()).unwrap();
     assert!(transaction_residue_present(&fixture.root()));
-    assert!(!uncommitted_transaction_present(&fixture.root()));
+    assert_eq!(
+        gate(&fixture.root()),
+        TransactionGate::NoTransactionEvidence
+    );
+}
+
+/// Only a valid commit record clears fixed transaction evidence; classification is read-only.
+#[test]
+fn transaction_gate_never_treats_an_invalid_manifest_as_a_commit() {
+    for evidence in ["P", "C", "B"] {
+        for how in [
+            "corrupt",
+            "directory",
+            "symlink",
+            "unreadable",
+            "foreign-server",
+        ] {
+            let fixture = Fixture::new("gate");
+            match evidence {
+                "P" => make_provisioning(&fixture, "NEW"),
+                "C" => make_commit_pending(&fixture, "NEW"),
+                _ => {
+                    make_committed(&fixture.backup(), &fixture.location, "OLD");
+                    fs::create_dir(fixture.root()).unwrap();
+                    fs::write(fixture.root().join("payload.txt"), "NEW").unwrap();
+                }
+            }
+            let manifest = fixture.root().join(PREFIX_MARKER);
+            let valid =
+                serde_json::to_vec_pretty(&manifest_for(&fixture.location, Some("srv"), "NEW"))
+                    .unwrap();
+            match how {
+                "corrupt" => fs::write(&manifest, b"{\"schemaVersion\":2,").unwrap(),
+                "directory" => fs::create_dir(&manifest).unwrap(),
+                "symlink" => {
+                    let elsewhere = fixture.dir.join("elsewhere.json");
+                    fs::write(&elsewhere, &valid).unwrap();
+                    std::os::unix::fs::symlink(&elsewhere, &manifest).unwrap();
+                }
+                "unreadable" => {
+                    fs::write(&manifest, &valid).unwrap();
+                    fs::set_permissions(&manifest, fs::Permissions::from_mode(0o000)).unwrap();
+                }
+                _ => fs::write(
+                    &manifest,
+                    serde_json::to_vec_pretty(&manifest_for(&fixture.location, Some("other"), "X"))
+                        .unwrap(),
+                )
+                .unwrap(),
+            }
+            let before = snapshot(&fixture.dir);
+            let gate = transaction_gate("srv", &fixture.root());
+            assert!(
+                matches!(gate, TransactionGate::AmbiguousTransaction(_)),
+                "{evidence} {how}: {gate:?}"
+            );
+            assert!(gate.blocks_resolution());
+            assert_eq!(
+                snapshot(&fixture.dir),
+                before,
+                "{evidence} {how}: gate mutated"
+            );
+            if how == "unreadable" {
+                fs::set_permissions(&manifest, fs::Permissions::from_mode(0o600)).unwrap();
+            }
+        }
+    }
+    // A valid commit record with a launcher-owned backup only needs cleanup.
+    let fixture = Fixture::new("gate-committed");
+    make_committed(&fixture.backup(), &fixture.location, "OLD");
+    make_committed_with_stale_marker(&fixture, "NEW");
+    assert_eq!(
+        transaction_gate("srv", &fixture.root()),
+        TransactionGate::CommittedValid
+    );
+    // ...but not when the backup cannot be verified.
+    fs::remove_file(fixture.backup().join(PREFIX_MARKER)).unwrap();
+    assert!(transaction_gate("srv", &fixture.root()).blocks_resolution());
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -904,9 +988,12 @@ struct FileWork {
     /// Commit a v3 manifest with this full digest instead of a v2 manifest.
     v3_digest: Option<String>,
     fail_provision: bool,
-    fail_commit: bool,
-    /// The manifest rename succeeds, then the directory fsync reports EIO.
-    fail_dir_sync: bool,
+    /// Fail the real manifest writer at this step, on either side of its rename.
+    manifest_fault: Option<ManifestFault>,
+    /// After an `AfterRename` failure, the manifest disappears before error handling sees it.
+    lose_manifest_after_rename: bool,
+    /// Write a binary user-data sentinel into the new root while provisioning.
+    sentinel: bool,
     fail_quiesce: bool,
     quiesced: u32,
 }
@@ -930,6 +1017,9 @@ impl ProvisioningWork for FileWork {
         let root = self.root();
         create_structure(&root);
         fs::write(root.join("payload.txt"), self.tag).unwrap();
+        if self.sentinel {
+            fs::write(root.join("user-save.dat"), USER_SENTINEL).unwrap();
+        }
         fault::reached("provision:partial");
         if self.fail_provision {
             return Err("winetricks falló".into());
@@ -945,21 +1035,26 @@ impl ProvisioningWork for FileWork {
         Ok(())
     }
 
-    fn commit(&mut self) -> Result<(), String> {
-        if self.fail_commit {
-            return Err("disco lleno".into());
-        }
-        if self.fail_dir_sync {
-            crate::utils::test_hooks::FAIL_MANIFEST_DIR_SYNC.with(|fail| fail.set(true));
+    fn commit(&mut self) -> Result<(), ManifestCommitError> {
+        if let Some(fault) = self.manifest_fault {
+            crate::utils::test_hooks::arm(fault);
         }
         let location = self.location.as_ref().unwrap();
-        match &self.v3_digest {
+        let result = match &self.v3_digest {
             Some(digest) => write_v3_manifest(&location.path, location, digest, self.tag),
             None => write_prefix_manifest(
                 &location.path,
                 &manifest_for(location, location.server_id.as_deref(), self.tag),
             ),
+        };
+        if self.lose_manifest_after_rename
+            && matches!(result, Err(ManifestCommitError::AfterRename(_)))
+        {
+            fs::remove_file(Path::new(&location.path).join(PREFIX_MARKER)).unwrap();
+            sync_dir(Path::new(&location.path)).unwrap();
+            fault::reached("commit:manifest-lost");
         }
+        result
     }
 }
 
@@ -968,7 +1063,7 @@ fn write_v3_manifest(
     location: &PrefixLocation,
     digest: &str,
     tag: &str,
-) -> Result<(), String> {
+) -> Result<(), ManifestCommitError> {
     crate::utils::write_prefix_manifest_v3(
         dir,
         &crate::utils::PrefixManifestV3 {
@@ -1027,7 +1122,7 @@ fn ordinary_failures_use_the_same_recovery_state_machine() {
         make_committed(&fixture.root(), &fixture.location, "OLD");
         let mut work = FileWork::new(&fixture.location, "NEW");
         work.fail_provision = failure == "provision";
-        work.fail_commit = failure == "commit";
+        work.manifest_fault = (failure == "commit").then_some(ManifestFault::TempWrite);
         let error = block_on(run_managed_transaction(
             &fixture.prefix(),
             TransactionKind::Reset,
@@ -1353,6 +1448,30 @@ async fn child_scenario(scenario: &str) {
                 .unwrap();
             child_print(format!("committed {:?}", committed.cleanup.unwrap().action));
         }
+        "reset-lost" | "initial-lost" => {
+            // The manifest rename succeeds, the directory fsync fails, and the manifest vanishes
+            // before the transaction's error handling observes it.
+            let _guard =
+                crate::utils::OperationGuard::acquire("prefix", Path::new(&location.path)).unwrap();
+            let prefix = ManagedPrefix::new(&location, None).unwrap();
+            let mut work = FileWork::new(&location, "NEW");
+            work.manifest_fault = Some(ManifestFault::DirSync);
+            work.lose_manifest_after_rename = true;
+            work.sentinel = true;
+            let kind = if scenario == "reset-lost" {
+                TransactionKind::Reset
+            } else {
+                TransactionKind::InitialSetup
+            };
+            let error = run_managed_transaction(&prefix, kind, "fp", &mut work)
+                .await
+                .err()
+                .expect("a lost manifest never reports success");
+            child_print(format!(
+                "failed {}",
+                error.contains("no puede resolverse con seguridad")
+            ));
+        }
         "recover" => {
             let guard = crate::utils::OperationGuard::acquire("prefix", Path::new(&location.path));
             let Ok(_guard) = guard else {
@@ -1390,6 +1509,7 @@ async fn child_scenario(scenario: &str) {
         "collision" => collision_scenario(),
         "fp-reset" => fingerprint_reset_scenario().await,
         "fp-resolve" => fingerprint_resolve_scenario().await,
+        "fp-resolve-blocked" => fingerprint_blocked_scenario().await,
         "multi-pending" => multiple_pending_scenario(),
         "path-safety" => path_safety_scenario(&location),
         other => panic!("unknown scenario {other}"),
@@ -1679,7 +1799,7 @@ impl ProvisioningWork for SupervisedWork<'_> {
         }
     }
 
-    fn commit(&mut self) -> Result<(), String> {
+    fn commit(&mut self) -> Result<(), ManifestCommitError> {
         write_prefix_manifest(
             &self.ctx.prefix,
             &manifest_for(&self.ctx.location, None, "NEW"),
@@ -2117,7 +2237,10 @@ fn manifest_never_commits_a_root_that_still_holds_rollback_authority() {
         &manifest_for(&fixture.location, Some("srv"), "NEW"),
     )
     .unwrap_err();
-    assert!(error.contains("autorización de reversión"), "{error}");
+    assert!(
+        matches!(&error, ManifestCommitError::BeforeRename(message) if message.contains("autorización de reversión")),
+        "{error:?}"
+    );
     assert!(!exists(&fixture.root().join(PREFIX_MARKER)));
     assert_eq!(
         fixture.prefix().classify_root().unwrap(),
@@ -2173,47 +2296,161 @@ fn lost_or_damaged_manifest_after_commit_is_never_discarded() {
     }
 }
 
-#[test]
-fn ordinary_commit_failure_reinstates_authority_only_without_a_manifest() {
-    // No manifest after the failed commit call: in-process knowledge re-grants rollback, and the
-    // old prefix wins exactly as before the pre-commit boundary existed.
-    let fixture = Fixture::new("tx-commit-fail");
-    make_committed(&fixture.root(), &fixture.location, "OLD");
+/// Run one transaction whose manifest writer fails at `fault`; returns the transaction error.
+fn failed_commit(
+    fixture: &Fixture,
+    kind: TransactionKind,
+    fault: ManifestFault,
+    lose_manifest_after_rename: bool,
+) -> String {
     let mut work = FileWork::new(&fixture.location, "NEW");
-    work.fail_commit = true;
-    let error = block_on(run_managed_transaction(
+    work.manifest_fault = Some(fault);
+    work.lose_manifest_after_rename = lose_manifest_after_rename;
+    work.sentinel = true;
+    block_on(run_managed_transaction(
         &fixture.prefix(),
-        TransactionKind::Reset,
+        kind,
         "fp",
         &mut work,
     ))
     .err()
-    .unwrap();
-    assert!(error.contains("restaurado correctamente"), "{error}");
-    assert_eq!(payload(&fixture.root()), "OLD");
-    assert!(!exists(&fixture.backup()));
+    .unwrap()
+}
 
-    // Directory fsync fails after the manifest rename: the commit happened, NEW stays
-    // authoritative, OLD is never restored, and authority is never re-granted.
-    let fixture = Fixture::new("tx-postcommit-eio");
+#[test]
+fn manifest_writer_reports_its_commit_stage() {
+    let cases = [
+        (ManifestFault::TempWrite, false),
+        (ManifestFault::Rename, false),
+        (ManifestFault::DirSync, true),
+    ];
+    for (fault, renamed) in cases {
+        let fixture = Fixture::new("commit-stage");
+        make_commit_pending(&fixture, "NEW");
+        crate::utils::test_hooks::arm(fault);
+        let error = write_prefix_manifest(
+            &fixture.location.path,
+            &manifest_for(&fixture.location, Some("srv"), "NEW"),
+        )
+        .unwrap_err();
+        assert_eq!(
+            matches!(error, ManifestCommitError::AfterRename(_)),
+            renamed,
+            "{fault:?}: {error:?}"
+        );
+        assert_eq!(exists(&fixture.root().join(PREFIX_MARKER)), renamed);
+        let temporaries = fs::read_dir(fixture.root())
+            .unwrap()
+            .flatten()
+            .filter(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(".ro-launcher-prefix.tmp")
+            })
+            .count();
+        assert_eq!(temporaries, 0, "{fault:?} left a temporary manifest");
+    }
+}
+
+/// A/B: the writer proves the manifest rename never happened, so `C -> P` re-grants rollback
+/// and the old prefix wins exactly as before the pre-commit boundary existed.
+#[test]
+fn pre_rename_commit_failure_reinstates_authority_and_restores_old() {
+    for fault in [ManifestFault::TempWrite, ManifestFault::Rename] {
+        let fixture = Fixture::new("tx-prerename");
+        make_committed(&fixture.root(), &fixture.location, "OLD");
+        fs::write(fixture.root().join("save.bin"), b"\x01OLD-SAVE\xfe").unwrap();
+        let error = failed_commit(&fixture, TransactionKind::Reset, fault, false);
+        assert!(error.contains("os error 5"), "{fault:?}: {error}");
+        assert!(
+            error.contains("restaurado correctamente"),
+            "{fault:?}: {error}"
+        );
+        assert_eq!(payload(&fixture.root()), "OLD");
+        assert_eq!(
+            fs::read(fixture.root().join("save.bin")).unwrap(),
+            b"\x01OLD-SAVE\xfe"
+        );
+        assert!(!exists(&fixture.root().join("user-save.dat")));
+        assert!(!exists(&fixture.backup()));
+        assert_eq!(fixture.recover_twice().action, RecoveryAction::None);
+
+        let fixture = Fixture::new("tx-prerename-initial");
+        let error = failed_commit(&fixture, TransactionKind::InitialSetup, fault, false);
+        assert!(error.contains("entorno incompleto"), "{fault:?}: {error}");
+        assert!(!exists(&fixture.root()));
+    }
+}
+
+/// C: the rename succeeded and the directory fsync failed. NEW is committed and authoritative.
+#[test]
+fn post_rename_fsync_failure_never_reinstates_authority() {
+    let fixture = Fixture::new("tx-postrename-eio");
     make_committed(&fixture.root(), &fixture.location, "OLD");
-    let mut work = FileWork::new(&fixture.location, "NEW");
-    work.fail_dir_sync = true;
-    let error = block_on(run_managed_transaction(
-        &fixture.prefix(),
+    let error = failed_commit(
+        &fixture,
         TransactionKind::Reset,
-        "fp",
-        &mut work,
-    ))
-    .err()
-    .unwrap();
+        ManifestFault::DirSync,
+        false,
+    );
     assert!(error.contains("os error 5"), "{error}");
     assert!(error.contains("ya estaba confirmado"), "{error}");
     assert_eq!(payload(&fixture.root()), "NEW");
+    assert_eq!(
+        fs::read(fixture.root().join("user-save.dat")).unwrap(),
+        USER_SENTINEL
+    );
     assert!(!exists(&fixture.backup()));
     assert!(!exists(&fixture.root().join(PROVISIONING_MARKER)));
     assert!(!exists(&fixture.root().join(COMMIT_PENDING_MARKER)));
     assert_eq!(fixture.recover_twice().action, RecoveryAction::None);
+}
+
+/// D: the rename succeeded, the directory fsync failed, and the manifest vanished before error
+/// handling observed it. Disk now looks exactly like "never renamed"; only the writer's commit
+/// stage knows better. Rollback is never reactivated: `R` and `B` are preserved, fail closed.
+#[test]
+fn post_rename_manifest_loss_never_reactivates_rollback() {
+    for kind in [TransactionKind::Reset, TransactionKind::InitialSetup] {
+        let fixture = Fixture::new("tx-postrename-lost");
+        if kind == TransactionKind::Reset {
+            make_committed(&fixture.root(), &fixture.location, "OLD");
+            fs::write(fixture.root().join("save.bin"), b"\x01OLD-SAVE\xfe").unwrap();
+        }
+        let error = failed_commit(&fixture, kind, ManifestFault::DirSync, true);
+        assert!(error.contains("os error 5"), "{kind:?}: {error}");
+        assert!(
+            error.contains("no puede resolverse con seguridad"),
+            "{kind:?}: {error}"
+        );
+        assert!(!error.contains("restaurado"), "{kind:?}: {error}");
+        assert!(!error.contains("entorno incompleto"), "{kind:?}: {error}");
+        assert!(!exists(&fixture.root().join(PREFIX_MARKER)));
+        assert!(
+            !exists(&fixture.root().join(PROVISIONING_MARKER)),
+            "{kind:?}: rollback authority was reactivated after the rename"
+        );
+        assert!(exists(&fixture.root().join(COMMIT_PENDING_MARKER)));
+        assert_eq!(
+            fixture.prefix().classify_root().unwrap(),
+            RootState::CommitPending
+        );
+        assert_eq!(payload(&fixture.root()), "NEW");
+        assert_eq!(
+            fs::read(fixture.root().join("user-save.dat")).unwrap(),
+            USER_SENTINEL
+        );
+        if kind == TransactionKind::Reset {
+            assert_eq!(payload(&fixture.backup()), "OLD");
+            assert_eq!(
+                fs::read(fixture.backup().join("save.bin")).unwrap(),
+                b"\x01OLD-SAVE\xfe"
+            );
+        }
+        assert_refused_and_preserved(&fixture);
+        assert_refused_and_preserved(&fixture);
+    }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -2379,6 +2616,108 @@ fn refuse_in_new_process(home: &Home) {
         "recovery must fail closed"
     );
     assert_eq!(snapshot(&home.dir), before, "a refusal modified data");
+}
+
+/// Checkpoints that only a destructive rollback (or its re-authorization) can reach.
+const DESTRUCTIVE_CHECKPOINTS: [&str; 4] = [
+    "rollback:authority-reinstated",
+    "discard:payload-partial",
+    "recovery:partial-removed",
+    "recovery:backup-restored",
+];
+
+/// Run `scenario` armed at `checkpoint` with stdin closed: reaching the checkpoint aborts the
+/// child, so a successful exit proves that the process never reached it.
+fn run_never_reaching(home: &Home, scenario: &str, checkpoint: &str) -> Vec<String> {
+    let output = home
+        .command(scenario, Some(checkpoint))
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    assert!(
+        output.status.success() && !stdout.contains(fault::REACHED),
+        "{scenario} reached {checkpoint}\n{stdout}\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    stdout
+        .lines()
+        .filter_map(|line| {
+            line.split_once(RESULT)
+                .map(|(_, rest)| rest.trim().to_string())
+        })
+        .collect()
+}
+
+fn assert_lost_commit_preserved(home: &Home, reset: bool) {
+    assert_eq!(home.classify().0, RootState::CommitPending);
+    assert!(!exists(&home.root().join(PROVISIONING_MARKER)));
+    assert!(!exists(&home.root().join(PREFIX_MARKER)));
+    assert_eq!(payload(&home.root()), "NEW");
+    assert_eq!(
+        fs::read(home.root().join("user-save.dat")).unwrap(),
+        USER_SENTINEL
+    );
+    if reset {
+        assert_eq!(home.classify().1, BackupState::Restorable);
+        assert_eq!(payload(&home.backup()), "OLD");
+        assert_eq!(
+            fs::read(home.backup().join("save.bin")).unwrap(),
+            b"\x01OLD-SAVE\xfe"
+        );
+    } else {
+        assert!(!exists(&home.backup()));
+    }
+}
+
+/// E/F: the post-rename loss of the manifest, then SIGKILL, fresh recovery, and further
+/// interrupted recovery attempts. No process ever reactivates rollback or reaches a destructive
+/// step; every attempt fails closed with identical bytes.
+#[test]
+fn sigkill_after_post_rename_manifest_loss_never_rolls_back() {
+    for (scenario, reset) in [("reset-lost", true), ("initial-lost", false)] {
+        // Killed after the loss, before the transaction's own error handling ran.
+        let home = Home::new("kill-lost");
+        if reset {
+            home.make_old();
+        }
+        home.pause_at(scenario, "commit:manifest-lost").sigkill();
+        assert_lost_commit_preserved(&home, reset);
+        let before = snapshot_without_runtime(&home.dir);
+        refuse_in_new_process(&home);
+        for checkpoint in DESTRUCTIVE_CHECKPOINTS {
+            assert_eq!(
+                run_never_reaching(&home, "recover", checkpoint),
+                ["refused true", "refused-again true"],
+                "{scenario} {checkpoint}"
+            );
+        }
+        refuse_in_new_process(&home);
+        assert_eq!(snapshot_without_runtime(&home.dir), before, "{scenario}");
+        assert_lost_commit_preserved(&home, reset);
+
+        // The transaction's error handling runs to completion: it never reaches C -> P, then
+        // the process dies and fresh recoveries (themselves interrupted) still refuse.
+        for armed in DESTRUCTIVE_CHECKPOINTS {
+            let home = Home::new("lost-handled");
+            if reset {
+                home.make_old();
+            }
+            assert_eq!(
+                run_never_reaching(&home, scenario, armed),
+                ["failed true"],
+                "{scenario} {armed}"
+            );
+            assert_lost_commit_preserved(&home, reset);
+            let before = snapshot_without_runtime(&home.dir);
+            for checkpoint in DESTRUCTIVE_CHECKPOINTS {
+                run_never_reaching(&home, "recover", checkpoint);
+            }
+            refuse_in_new_process(&home);
+            assert_eq!(snapshot_without_runtime(&home.dir), before, "{scenario}");
+            assert_lost_commit_preserved(&home, reset);
+        }
+    }
 }
 
 #[test]
@@ -2943,6 +3282,163 @@ fn changed_fingerprint_never_bypasses_a_pending_v3_transaction() {
     );
 }
 
+/// Ways an invalid manifest can sit next to the fixed evidence of pending transaction A. None of
+/// them is a commit record for A.
+const INVALID_COMMIT_RECORDS: [&str; 6] = [
+    "corrupt",
+    "directory",
+    "symlink",
+    "unreadable",
+    "foreign-server",
+    "digest-conflict",
+];
+
+/// Raw bytes of a syntactically valid v3 manifest. Written directly, because the real writer
+/// (correctly) refuses a root that still holds `P`.
+fn raw_v3_manifest(server: &str, digest: &str) -> Vec<u8> {
+    serde_json::to_vec_pretty(&crate::utils::PrefixManifestV3 {
+        schema_version: crate::utils::PREFIX_SCHEMA_V3,
+        scope: PrefixScope::Isolated,
+        server_id: Some(server.into()),
+        runner_kind: "wine".into(),
+        runner_path: "/opt/fake/bin/wine".into(),
+        components: vec![],
+        prefix_fingerprint: crate::utils::PrefixFingerprintEnvelope {
+            schema_version: 1,
+            algorithm: "sha256".into(),
+            digest: digest.to_string(),
+        },
+    })
+    .unwrap()
+}
+
+/// Same 24-hex v3 path suffix as `digest`, different full identity.
+fn conflicting_digest(digest: &str) -> String {
+    let last = if digest.ends_with('0') { '1' } else { '0' };
+    let conflict = format!("{}{last}", &digest[..63]);
+    assert_ne!(conflict, digest);
+    assert!(crate::utils::digests_share_v3_path_suffix(
+        digest, &conflict
+    ));
+    conflict
+}
+
+fn plant_invalid_manifest(root: &Path, how: &str, digest: &str) {
+    let manifest = root.join(PREFIX_MARKER);
+    match how {
+        "corrupt" => fs::write(&manifest, b"{\"schemaVersion\":3,").unwrap(),
+        "directory" => fs::create_dir(&manifest).unwrap(),
+        "symlink" => {
+            let elsewhere = root.parent().unwrap().join("elsewhere-manifest.json");
+            fs::write(&elsewhere, raw_v3_manifest("srv", digest)).unwrap();
+            std::os::unix::fs::symlink(&elsewhere, &manifest).unwrap();
+        }
+        "unreadable" => {
+            fs::write(&manifest, raw_v3_manifest("srv", digest)).unwrap();
+            fs::set_permissions(&manifest, fs::Permissions::from_mode(0o000)).unwrap();
+        }
+        "foreign-server" => fs::write(&manifest, raw_v3_manifest("other", digest)).unwrap(),
+        "digest-conflict" => fs::write(
+            &manifest,
+            raw_v3_manifest("srv", &conflicting_digest(digest)),
+        )
+        .unwrap(),
+        other => panic!("unknown manifest {other}"),
+    }
+}
+
+/// Pending transaction A plus an invalid manifest, inert runner updated in place (A -> B), and a
+/// valid v2 sibling. Resolution must stay on A and the production gate must refuse; nothing may
+/// start on the v2 sibling and no byte under the isolated root may change.
+async fn fingerprint_blocked_scenario() {
+    use crate::tools::runner_sessions::{RunnerOperation, RunnerSessionRegistry};
+    let state =
+        fs::read_to_string(PathBuf::from(std::env::var("HOME").unwrap()).join(FP_STATE)).unwrap();
+    let mut lines = state.lines();
+    let (digest_a, v3_a, v2) = (
+        lines.next().unwrap().to_string(),
+        lines.next().unwrap().to_string(),
+        lines.next().unwrap().to_string(),
+    );
+    let isolated = crate::utils::isolated_prefix_root();
+    let before = snapshot(&isolated);
+    let base = inert_runner_context_with(&shared_location(), UPDATED_WINE);
+    let steered = fp_resolve(&base).unwrap();
+    child_print(format!(
+        "fingerprint-changed {}",
+        steered.desired_fingerprint.digest.hex_digest() != digest_a
+    ));
+    child_print(format!(
+        "steered {:?} {} {}",
+        steered.status,
+        steered.location.path == v3_a,
+        steered.location.path != v2
+    ));
+    let sidecar = crate::tools::runner_sessions::workspace_debug_sessiond()
+        .expect("build ro-sessiond first (cargo build -p ro-sessiond)");
+    let sessions = RunnerSessionRegistry::with_sidecar_for_test(sidecar);
+    let game = crate::state::GameProcessHandle::new();
+    let ctx = fp_context(&base, steered);
+    let anchor = crate::tools::runtime::session_anchor_from_context(&ctx);
+    let error = RunnerOperation::begin(None, &sessions, &game, &ctx, &anchor)
+        .await
+        .err()
+        .expect("an unresolved transaction must stop the operation");
+    // Recovery's ambiguity refusal, or (for a symlinked manifest) the managed-path safety check
+    // that runs first on the same steered path. Either way nothing starts and nothing changes.
+    child_print(format!(
+        "bootstrap-refused {}",
+        error.contains("no puede resolverse con seguridad")
+            || error == "El manifiesto del entorno no puede ser un symlink"
+    ));
+    let again = fp_resolve(&base).unwrap();
+    child_print(format!("still-steered {}", again.location.path == v3_a));
+    child_print(format!("untouched {}", snapshot(&isolated) == before));
+    assert!(sessions.shutdown_all().await.is_empty());
+}
+
+/// P2 regression: a corrupt, nonregular or foreign manifest next to A's fixed evidence never
+/// hides A from discovery, so a changed fingerprint cannot silently select the v2 sibling.
+#[test]
+fn invalid_manifest_never_hides_a_pending_transaction_from_resolution() {
+    if crate::tools::runner_sessions::workspace_debug_sessiond().is_none() {
+        panic!("build ro-sessiond first (cargo build -p ro-sessiond)");
+    }
+    for checkpoint in ["provision:partial", "commit:authority-revoked"] {
+        for how in INVALID_COMMIT_RECORDS {
+            let home = Home::new("fp-invalid-m");
+            home.pause_at("fp-reset", checkpoint).sigkill();
+            let state = fs::read_to_string(home.dir.join(FP_STATE)).unwrap();
+            let mut lines = state.lines();
+            let (digest_a, v3_a) = (lines.next().unwrap(), PathBuf::from(lines.next().unwrap()));
+            plant_invalid_manifest(&v3_a, how, digest_a);
+            assert_eq!(
+                home.run("fp-resolve-blocked"),
+                [
+                    "fingerprint-changed true",
+                    "steered Unknown true true",
+                    "bootstrap-refused true",
+                    "still-steered true",
+                    "untouched true",
+                ],
+                "{checkpoint} {how}"
+            );
+            if how == "unreadable" {
+                fs::set_permissions(v3_a.join(PREFIX_MARKER), fs::Permissions::from_mode(0o600))
+                    .unwrap();
+            }
+            let backup = reset_backup_path(&v3_a).unwrap();
+            assert_eq!(payload(&backup), "OLD", "{checkpoint} {how}");
+            assert_eq!(
+                fs::read(backup.join("save.bin")).unwrap(),
+                b"\x01OLD-SAVE\xfe",
+                "{checkpoint} {how}"
+            );
+            assert_eq!(payload(&v3_a), "NEW", "{checkpoint} {how}");
+        }
+    }
+}
+
 fn multiple_pending_scenario() {
     let ctx = inert_runner_context(&shared_location());
     let digest = fp_resolve(&ctx)
@@ -2988,7 +3484,11 @@ fn multiple_pending_scenario() {
     let resolved = fp_resolve(&ctx).unwrap();
     child_print(format!("scoped {}", resolved.location.path == v3));
     // Pending #2 under another fingerprint of the same server: never choose between them.
-    let digest_d = format!("d{}", &digest[1..]);
+    // A guaranteed different first hex digit, so the second path is never the first one.
+    let first = if digest.starts_with('d') { 'e' } else { 'd' };
+    let digest_d = format!("{first}{}", &digest[1..]);
+    assert_ne!(digest, digest_d);
+    assert_ne!(crate::utils::isolated_prefix_path_v3("srv", &digest_d), v3);
     let v3_d = crate::utils::isolated_prefix_path_v3("srv", &digest_d);
     let location_d = PrefixLocation {
         path: v3_d.clone(),

@@ -8,8 +8,8 @@ use crate::utils::{OperationGuard, PrefixLocation, PrefixScope};
 #[cfg(test)]
 pub(crate) use recovery::fault;
 pub use recovery::{
-    pending_v3_transactions, transaction_residue_present, uncommitted_transaction_present,
-    RecoveryAction, RecoveryOutcome, RECOVERED_RETRY_MSG,
+    pending_v3_transactions, transaction_gate, transaction_residue_present, RecoveryAction,
+    RecoveryOutcome, RECOVERED_RETRY_MSG,
 };
 pub use setup::{
     reset_runtime_prefix, setup_runtime_prefix, DxvkProvision, RuntimeRequirements,

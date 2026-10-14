@@ -143,9 +143,12 @@ Reset: `rename(R, B)` + `fsync(padre)`; crear `R` y `P`; provisionar; quiesce; `
 `rename(P, C)` + `fsync(R)`; manifiesto (commit); retirar `C` + `fsync(R)`; `rename(→T)` +
 `fsync(B)`; borrar el contenido de `B`, luego `T`, luego `B` + `fsync(padre)`. La preparación
 inicial es igual sin `B`. Un fallo ordinario, tras quiesce, usa la misma función de recuperación que
-un arranque tras SIGKILL. La única excepción es en proceso: si la llamada de commit falló y el
-manifiesto no existe, con el guard exclusivo y todo quieto, `C` vuelve a `P` antes de recuperar.
-Tras un crash nunca se hace esa transición.
+un arranque tras SIGKILL. La única excepción es en proceso: el escritor del manifiesto informa si
+el fallo ocurrió antes o después de su punto de commit, que es el `rename` exitoso (no el `fsync`
+posterior). Sólo si la revocación falló, o el escritor prueba que el `rename` nunca ocurrió, `C`
+vuelve a `P` antes de recuperar, con el guard exclusivo y todo quieto. Si el `rename` ocurrió, la
+autoridad de reversión queda revocada para siempre aunque `M` desaparezca o se dañe después. La
+existencia de `M` en disco nunca decide esa transición, y tras un crash nunca se hace.
 
 Identidad v3: la ruta sólo expone 24 hex del digest. Toda afirmación de identidad completa presente
 debe ser idéntica byte a byte: el fingerprint deseado del caller (sólo si apunta a esa misma ruta),
@@ -194,7 +197,10 @@ comprobar bajo el guard después de `RunnerOperation::begin`. El bootstrap del s
 tras apagar leftovers y antes de soltar su guard. Si la raíz cambió, la operación termina pidiendo
 reintento, para reevaluar runner, manifiesto y protección. La resolución de identidad busca, sólo
 lectura y sólo con nombres del contrato administrado de ese servidor, transacciones sin commit en
-todas sus rutas v3 y en su ruta v2 actual. Con una, apunta a ella en vez de saltar a otro candidato,
+todas sus rutas v3 y en su ruta v2 actual. Sólo un `M` válido para esa ubicación e identidad
+completa, con un `B` del launcher, despeja la evidencia `P`/`C`/`B`. Un `M` dañado, ilegible,
+directorio, symlink, de otro servidor o con otro digest completo deja la transacción pendiente o
+ambigua, nunca resuelta. Con una, apunta a ella en vez de saltar a otro candidato,
 aunque el fingerprint deseado haya cambiado; la recuperación la concilia con su propia evidencia y
 sólo una resolución posterior elige el candidato del fingerprint nuevo. Con dos o más, falla sin
 elegir. Ninguna acción destructiva corre si hay procesos usando el prefix.

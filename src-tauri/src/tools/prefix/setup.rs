@@ -19,8 +19,9 @@ use crate::utils::{
     dxvk_cache_path, dxvk_config_path, dxvk_log_path, emit_log, emit_log_opt, emit_progress,
     ensure_custom_setup_allowed, ensure_managed_reset_allowed, inspect_prefix,
     is_v3_managed_prefix_path, resolve_runner, write_prefix_manifest, write_prefix_manifest_v3,
-    OperationGuard, PrefixFingerprintEnvelope, PrefixManifest, PrefixManifestV3, PrefixScope,
-    ResolvedRunner, WineContext, WineSyncMode, PREFIX_SCHEMA_V3, PREFIX_SCHEMA_VERSION,
+    ManifestCommitError, OperationGuard, PrefixFingerprintEnvelope, PrefixManifest,
+    PrefixManifestV3, PrefixScope, ResolvedRunner, WineContext, WineSyncMode, PREFIX_SCHEMA_V3,
+    PREFIX_SCHEMA_VERSION,
 };
 
 pub const MANAGED_DXVK_COMPONENT: &str = "dxvk-2.6.2";
@@ -121,7 +122,8 @@ pub async fn setup_runtime_prefix(
     let result = async {
         preparation?;
         op.quiesce().await?;
-        write_runtime_manifest(ctx, requirements)
+        // In-place repair never rolls back, so the commit stage carries no authority here.
+        write_runtime_manifest(ctx, requirements).map_err(String::from)
     }
     .await;
 
@@ -252,7 +254,7 @@ impl ProvisioningWork for RunnerWork<'_> {
         }
     }
 
-    fn commit(&mut self) -> Result<(), String> {
+    fn commit(&mut self) -> Result<(), ManifestCommitError> {
         write_runtime_manifest(self.ctx, self.requirements)
     }
 
@@ -396,7 +398,7 @@ async fn configure_ui_font_fallback(app: &AppHandle, op: &RunnerOperation) -> Re
 fn write_runtime_manifest(
     ctx: &WineContext,
     requirements: RuntimeRequirements,
-) -> Result<(), String> {
+) -> Result<(), ManifestCommitError> {
     let mut components = vec![
         "vcrun2019".to_string(),
         "d3dx9".to_string(),

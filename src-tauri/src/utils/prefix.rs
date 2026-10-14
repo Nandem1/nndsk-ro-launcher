@@ -438,22 +438,66 @@ pub(crate) fn parse_stored_prefix_manifest(json: &str) -> Result<StoredPrefixMan
     }
 }
 
-pub fn write_prefix_manifest(prefix_path: &str, manifest: &PrefixManifest) -> Result<(), String> {
-    if manifest.schema_version != PREFIX_SCHEMA_VERSION {
-        return Err("Versión de manifiesto de prefix inválida".to_string());
+/// Where a manifest commit failed relative to its commit point: the successful
+/// `rename(temporary, PREFIX_MARKER)`. Only the writer observes that fact, so it is carried
+/// explicitly instead of being reconstructed later from what happens to be on disk.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ManifestCommitError {
+    /// The final name was never replaced. Nothing was committed by this call.
+    BeforeRename(String),
+    /// The rename succeeded, so the prefix is committed (perhaps not yet power-loss durable).
+    /// Rollback authority can never be reactivated, whatever later happens to the manifest.
+    AfterRename(String),
+}
+
+impl ManifestCommitError {
+    pub fn message(&self) -> &str {
+        match self {
+            Self::BeforeRename(message) | Self::AfterRename(message) => message,
+        }
     }
-    let json = serde_json::to_vec_pretty(manifest).map_err(|error| error.to_string())?;
+}
+
+impl std::fmt::Display for ManifestCommitError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.message())
+    }
+}
+
+impl From<ManifestCommitError> for String {
+    fn from(error: ManifestCommitError) -> Self {
+        match error {
+            ManifestCommitError::BeforeRename(message)
+            | ManifestCommitError::AfterRename(message) => message,
+        }
+    }
+}
+
+pub fn write_prefix_manifest(
+    prefix_path: &str,
+    manifest: &PrefixManifest,
+) -> Result<(), ManifestCommitError> {
+    if manifest.schema_version != PREFIX_SCHEMA_VERSION {
+        return Err(ManifestCommitError::BeforeRename(
+            "Versión de manifiesto de prefix inválida".to_string(),
+        ));
+    }
+    let json = serde_json::to_vec_pretty(manifest)
+        .map_err(|error| ManifestCommitError::BeforeRename(error.to_string()))?;
     commit_prefix_manifest(prefix_path, &json)
 }
 
 pub fn write_prefix_manifest_v3(
     prefix_path: &str,
     manifest: &PrefixManifestV3,
-) -> Result<(), String> {
+) -> Result<(), ManifestCommitError> {
     if manifest.schema_version != PREFIX_SCHEMA_V3 {
-        return Err("Versión de manifiesto de prefix inválida".to_string());
+        return Err(ManifestCommitError::BeforeRename(
+            "Versión de manifiesto de prefix inválida".to_string(),
+        ));
     }
-    let json = serde_json::to_vec_pretty(manifest).map_err(|error| error.to_string())?;
+    let json = serde_json::to_vec_pretty(manifest)
+        .map_err(|error| ManifestCommitError::BeforeRename(error.to_string()))?;
     commit_prefix_manifest(prefix_path, &json)
 }
 
@@ -461,65 +505,111 @@ pub fn write_prefix_manifest_v3(
 /// sync it, rename it over the final name, then sync the prefix directory so the rename itself is
 /// persisted before callers treat the prefix as committed.
 ///
+/// The commit point is the successful rename, not the directory fsync. Every failure before it is
+/// `BeforeRename`; every failure after it is `AfterRename`.
+///
 /// A root that still carries rollback authority (`PROVISIONING_MARKER`) is never committed: the
 /// transaction must revoke it first, so a lost manifest can never leave "marker without manifest"
 /// evidence over committed data.
-fn commit_prefix_manifest(prefix_path: &str, json: &[u8]) -> Result<(), String> {
-    std::fs::create_dir_all(prefix_path).map_err(|error| error.to_string())?;
+fn commit_prefix_manifest(prefix_path: &str, json: &[u8]) -> Result<(), ManifestCommitError> {
+    use ManifestCommitError::{AfterRename, BeforeRename};
+    std::fs::create_dir_all(prefix_path).map_err(|error| BeforeRename(error.to_string()))?;
     if Path::new(prefix_path)
         .join(PROVISIONING_MARKER)
         .symlink_metadata()
         .is_ok()
     {
-        return Err(
+        return Err(BeforeRename(
             "El entorno aún conserva la autorización de reversión; no se confirmará".to_string(),
-        );
+        ));
     }
     let destination = prefix_marker_path(prefix_path);
     if destination.is_symlink() {
-        return Err("El manifiesto del entorno no puede ser un symlink".to_string());
+        return Err(BeforeRename(
+            "El manifiesto del entorno no puede ser un symlink".to_string(),
+        ));
     }
     let temporary = Path::new(prefix_path).join(format!(
         ".ro-launcher-prefix.tmp-{}-{}",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .map_err(|error| error.to_string())?
+            .map_err(|error| BeforeRename(error.to_string()))?
             .as_nanos()
     ));
     let mut file = std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)
         .open(&temporary)
-        .map_err(|error| error.to_string())?;
-    if let Err(error) = file.write_all(json).and_then(|_| file.sync_all()) {
+        .map_err(|error| BeforeRename(error.to_string()))?;
+    #[cfg(test)]
+    let injected = test_hooks::take(test_hooks::ManifestFault::TempWrite);
+    #[cfg(not(test))]
+    let injected = None;
+    if let Err(error) =
+        injected.map_or_else(|| file.write_all(json).and_then(|_| file.sync_all()), Err)
+    {
         let _ = std::fs::remove_file(&temporary);
-        return Err(error.to_string());
+        return Err(BeforeRename(error.to_string()));
     }
     #[cfg(test)]
     crate::tools::prefix::fault::reached("commit:manifest-rename");
-    std::fs::rename(&temporary, &destination).map_err(|error| {
-        let _ = std::fs::remove_file(&temporary);
-        error.to_string()
-    })?;
+    #[cfg(test)]
+    let injected = test_hooks::take(test_hooks::ManifestFault::Rename);
+    #[cfg(not(test))]
+    let injected = None;
+    injected
+        .map_or_else(|| std::fs::rename(&temporary, &destination), Err)
+        .map_err(|error| {
+            let _ = std::fs::remove_file(&temporary);
+            BeforeRename(error.to_string())
+        })?;
+    // Commit point crossed: from here every failure is `AfterRename`.
     #[cfg(test)]
     crate::tools::prefix::fault::reached("commit:manifest-renamed");
     #[cfg(test)]
-    if test_hooks::FAIL_MANIFEST_DIR_SYNC.with(|fail| fail.replace(false)) {
-        return Err("El manifiesto se escribió, pero no se pudo sincronizar el directorio del entorno: Input/output error (os error 5)".to_string());
-    }
-    super::sync_dir(Path::new(prefix_path)).map_err(|error| {
-        format!("El manifiesto se escribió, pero no se pudo sincronizar el directorio del entorno: {error}")
-    })
+    let injected = test_hooks::take(test_hooks::ManifestFault::DirSync);
+    #[cfg(not(test))]
+    let injected = None;
+    injected
+        .map_or_else(|| super::sync_dir(Path::new(prefix_path)), Err)
+        .map_err(|error| {
+            AfterRename(format!(
+                "El manifiesto se escribió, pero no se pudo sincronizar el directorio del entorno: {error}"
+            ))
+        })
 }
 
 /// Test-only fault injection for the commit record. Compiles to nothing outside `cfg(test)`.
 #[cfg(test)]
 pub(crate) mod test_hooks {
+    /// One armed failure of `commit_prefix_manifest`, at a step on either side of the rename.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub(crate) enum ManifestFault {
+        /// Writing or syncing the temporary file fails (before the rename).
+        TempWrite,
+        /// The rename itself fails; the final name is untouched.
+        Rename,
+        /// The rename succeeded; the directory fsync that follows fails.
+        DirSync,
+    }
+
     thread_local! {
-        /// Fail the directory fsync that follows a successful manifest rename, exactly once.
-        pub(crate) static FAIL_MANIFEST_DIR_SYNC: std::cell::Cell<bool> =
-            const { std::cell::Cell::new(false) };
+        static ARMED: std::cell::Cell<Option<ManifestFault>> = const { std::cell::Cell::new(None) };
+    }
+
+    /// Fail the next manifest commit at `fault`, exactly once.
+    pub(crate) fn arm(fault: ManifestFault) {
+        ARMED.with(|armed| armed.set(Some(fault)));
+    }
+
+    pub(super) fn take(fault: ManifestFault) -> Option<std::io::Error> {
+        ARMED.with(|armed| {
+            (armed.get() == Some(fault)).then(|| {
+                armed.set(None);
+                std::io::Error::from_raw_os_error(libc::EIO)
+            })
+        })
     }
 }
 

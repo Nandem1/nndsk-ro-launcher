@@ -103,8 +103,8 @@ use serde::{Deserialize, Serialize};
 use crate::utils::{
     backup_path, ensure_managed_path_safe, inspect_prefix, is_v3_managed_prefix_path,
     isolated_prefix_root, manifest_matches_stored_location, parse_stored_prefix_manifest,
-    rename_noreplace, sync_dir, sync_filesystem, v3_path_digest_prefix24, PrefixLocation,
-    PrefixScope, StoredPrefixManifest, COMMIT_PENDING_MARKER, INSTALLATION_MARKER,
+    rename_noreplace, sync_dir, sync_filesystem, v3_path_digest_prefix24, ManifestCommitError,
+    PrefixLocation, PrefixScope, StoredPrefixManifest, COMMIT_PENDING_MARKER, INSTALLATION_MARKER,
     LEGACY_PREFIX_MARKER, PREFIX_MARKER, PROVISIONING_MARKER, PROVISIONING_MARKER_TMP,
 };
 
@@ -662,15 +662,14 @@ impl<'a> ManagedPrefix<'a> {
         Ok(())
     }
 
-    /// In-process only: the commit call returned an error, the transaction still holds the
-    /// exclusive guard with every writer quiesced, and the manifest is observably absent. That is
-    /// direct knowledge, not inference from residue, so `C -> P` may re-grant rollback authority.
-    /// Any manifest entry (even one whose directory fsync failed) means the commit happened and
-    /// authority is never re-granted. Recovery after a crash never performs this transition.
-    fn reinstate_rollback_authority(&self) -> Result<(), String> {
+    /// In-process only: `C -> P`. The only argument is the writer's own proof that the manifest
+    /// rename never happened in this transaction ([`ManifestNeverRenamed`]); disk evidence about
+    /// `M` is deliberately not consulted, because a manifest that was renamed and then lost looks
+    /// exactly like one that was never written. Recovery after a crash never performs this
+    /// transition. A no-op when the revocation itself never renamed `P` to `C`.
+    fn reinstate_rollback_authority(&self, _proof: ManifestNeverRenamed) -> Result<(), String> {
         let io = |error: std::io::Error| self.io("restituir la autorización de reversión", &error);
-        if entry_kind(&self.root.join(PREFIX_MARKER)).map_err(io)? != EntryKind::Missing
-            || entry_kind(&self.root.join(COMMIT_PENDING_MARKER)).map_err(io)? != EntryKind::File
+        if entry_kind(&self.root.join(COMMIT_PENDING_MARKER)).map_err(io)? != EntryKind::File
             || entry_kind(&self.root.join(PROVISIONING_MARKER)).map_err(io)? != EntryKind::Missing
         {
             return Ok(());
@@ -835,15 +834,40 @@ pub fn transaction_residue_present(root: &Path) -> bool {
     !root_holds_data && !legacy_reset_backups(root).is_empty()
 }
 
-/// Read-only: an interrupted transaction of this protocol left `root` without a commit record.
-/// Binding resolution keeps pointing here so recovery, not a fresh candidate path, decides what
-/// survives. An empty backup holds no data and never steers resolution. Pre-F-05 timestamped
-/// residue never steers resolution either; it is only restored when recovery runs at its own
-/// root and finds exactly one valid candidate.
-pub fn uncommitted_transaction_present(root: &Path) -> bool {
-    if root.join(PREFIX_MARKER).symlink_metadata().is_ok() {
-        return false;
+/// Read-only verdict on one managed isolated root of a server, for binding resolution.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TransactionGate {
+    /// No fixed transaction evidence (`P`, its temporary, `C`, or a backup holding data).
+    NoTransactionEvidence,
+    /// Transaction evidence, but `R` holds a valid commit record for this exact location and full
+    /// identity, and the backup (if any) is launcher-owned: only cleanup remains.
+    CommittedValid,
+    /// An interrupted transaction without a valid commit record. Recovery here decides.
+    PendingTransaction,
+    /// Evidence that cannot be classified safely. Recovery here fails closed.
+    AmbiguousTransaction(String),
+}
+
+impl TransactionGate {
+    /// Resolution must stay on this root (and let recovery decide) instead of choosing another
+    /// candidate. Only the absence of evidence or a validated commit lets it move on.
+    pub fn blocks_resolution(&self) -> bool {
+        matches!(
+            self,
+            Self::PendingTransaction | Self::AmbiguousTransaction(_)
+        )
     }
+}
+
+/// Read-only: classify `root`, an isolated managed root of `server_id`, for binding resolution.
+///
+/// Mere presence of a manifest entry never clears transaction evidence: a corrupt, nonregular,
+/// symlinked or foreign manifest, or one whose full v3 identity contradicts the transaction
+/// record, is not a commit. Classification reuses the recovery classifiers, so "committed" here
+/// means exactly what recovery would accept. An empty backup holds no data and never steers
+/// resolution. Pre-F-05 timestamped residue never steers resolution either; it is only restored
+/// when recovery runs at its own root and finds exactly one valid candidate.
+pub fn transaction_gate(server_id: &str, root: &Path) -> TransactionGate {
     let backup_holds_data = reset_backup_path(root).is_ok_and(|backup| {
         backup.symlink_metadata().is_ok_and(|meta| {
             !meta.is_dir()
@@ -851,14 +875,50 @@ pub fn uncommitted_transaction_present(root: &Path) -> bool {
                 || fs::read_dir(&backup).map_or(true, |mut entries| entries.next().is_some())
         })
     });
-    backup_holds_data || root_holds_transaction_evidence(root)
+    if !backup_holds_data && !root_holds_transaction_evidence(root) {
+        return TransactionGate::NoTransactionEvidence;
+    }
+    let location = PrefixLocation {
+        path: root.to_string_lossy().into_owned(),
+        scope: PrefixScope::Isolated,
+        managed: true,
+        server_id: Some(server_id.to_string()),
+    };
+    let prefix = match ManagedPrefix::at(&location, None) {
+        Ok(prefix) => prefix,
+        Err(reason) => return TransactionGate::AmbiguousTransaction(reason),
+    };
+    let identity = prefix.identity();
+    match classify_root(&prefix.root, &location, identity.as_ref()) {
+        Ok(RootState::Committed { .. }) => {
+            match classify_backup(&prefix.backup, &prefix.parent, &location, identity.as_ref()) {
+                Ok(BackupState::Foreign(reason)) => TransactionGate::AmbiguousTransaction(reason),
+                Err(reason) => TransactionGate::AmbiguousTransaction(reason),
+                Ok(_) => TransactionGate::CommittedValid,
+            }
+        }
+        Ok(
+            RootState::Absent
+            | RootState::Empty
+            | RootState::PendingMarker
+            | RootState::Provisioning
+            | RootState::CommitPending,
+        ) => TransactionGate::PendingTransaction,
+        Ok(RootState::LegacyValid) => TransactionGate::AmbiguousTransaction(
+            "el entorno actual es legacy y además existe un respaldo".into(),
+        ),
+        Ok(RootState::Foreign(reason)) | Err(reason) => {
+            TransactionGate::AmbiguousTransaction(reason)
+        }
+    }
 }
 
 /// Read-only discovery of interrupted transactions of `server_id` under every v3 fingerprint.
 /// Only names produced by the managed naming contract are considered: `<token>-v3-<24 hex>` for
-/// this server's token, or its fixed `.<name>.reset-backup` sibling. Nothing is opened beyond
-/// the fixed evidence names, and nothing is modified. Each candidate must still pass full
-/// evidence validation in recovery before anything is changed.
+/// this server's token, or its fixed `.<name>.reset-backup` sibling. Candidates without fixed
+/// evidence are skipped before anything is opened; the rest are classified by
+/// [`transaction_gate`]. Nothing is modified. A pending or ambiguous candidate is reported, and
+/// must still pass full evidence validation in recovery before anything is changed.
 pub fn pending_v3_transactions(server_id: &str) -> Result<Vec<String>, String> {
     let directory = isolated_prefix_root();
     let entries = match fs::read_dir(&directory) {
@@ -885,7 +945,7 @@ pub fn pending_v3_transactions(server_id: &str) -> Result<Vec<String>, String> {
     }
     Ok(roots
         .into_iter()
-        .filter(|root| uncommitted_transaction_present(root))
+        .filter(|root| transaction_gate(server_id, root).blocks_resolution())
         .map(|root| root.to_string_lossy().into_owned())
         .collect())
 }
@@ -1362,8 +1422,9 @@ pub(crate) trait ProvisioningWork {
     async fn provision(&mut self) -> Result<(), String>;
     /// End execution and wait until no process uses the prefix. Must be repeatable.
     async fn quiesce(&mut self) -> Result<(), String>;
-    /// Write the final manifest: the commit point.
-    fn commit(&mut self) -> Result<(), String>;
+    /// Write the final manifest. The commit point is its successful rename; the error says on
+    /// which side of it the failure happened.
+    fn commit(&mut self) -> Result<(), ManifestCommitError>;
     fn annotate_failure(&self, primary: String) -> String {
         primary
     }
@@ -1385,9 +1446,10 @@ pub(crate) struct CommittedTransaction {
 ///
 /// Order: `[rename(R, B)]`, create `R` and a durable `P`, provision, quiesce, `syncfs`, then the
 /// pre-commit revocation `rename(P, C)` with `fsync(R)`, then the manifest (commit); recovery
-/// finally drops `C` and removes `B`. Ordinary failures are reconciled by the same `recover` that runs after a crash, so there is
-/// exactly one destructive rollback implementation. The only extra step is in-process: a commit
-/// call that failed without leaving a manifest re-grants rollback authority before `recover`.
+/// finally drops `C` and removes `B`. Ordinary failures are reconciled by the same `recover` that
+/// runs after a crash, so there is exactly one destructive rollback implementation. The only extra
+/// step is in-process: when the writer proves the manifest rename never happened, `C -> P`
+/// re-grants rollback authority before `recover`. Once the rename succeeded it never does.
 pub(crate) async fn run_managed_transaction<W: ProvisioningWork>(
     prefix: &ManagedPrefix<'_>,
     kind: TransactionKind,
@@ -1411,16 +1473,26 @@ pub(crate) async fn run_managed_transaction<W: ProvisioningWork>(
             });
         }
     }
-    let mut commit_started = false;
+    // Rollback authority after a failure is decided by what this process did, never by what is
+    // later observed on disk. It starts `Held` (P), and becomes `Reinstatable` only through the
+    // writer's proof that the manifest rename never happened.
+    let mut authority = Authority::Held;
     let result = async {
         prefix.begin_provisioning(fingerprint)?;
         work.provision().await?;
         work.quiesce().await?;
         prefix.sync_payload()?;
         // From here the root may become committed at any moment: rollback authority goes first.
-        commit_started = true;
+        // A failed revocation never reached the manifest writer.
+        authority = Authority::Reinstatable(ManifestNeverRenamed(()));
         prefix.revoke_rollback_authority()?;
-        work.commit()
+        work.commit().map_err(|error| match error {
+            ManifestCommitError::BeforeRename(message) => message,
+            ManifestCommitError::AfterRename(message) => {
+                authority = Authority::Revoked;
+                message
+            }
+        })
     }
     .await;
     match result {
@@ -1437,8 +1509,8 @@ pub(crate) async fn run_managed_transaction<W: ProvisioningWork>(
                     "{primary}\nLimpieza pendiente: {cleanup}; el entorno se conservó y se recuperará antes de la próxima operación"
                 ));
             }
-            if commit_started {
-                if let Err(error) = prefix.reinstate_rollback_authority() {
+            if let Authority::Reinstatable(proof) = authority {
+                if let Err(error) = prefix.reinstate_rollback_authority(proof) {
                     return Err(format!("{primary}. {error}"));
                 }
             }
@@ -1449,6 +1521,20 @@ pub(crate) async fn run_managed_transaction<W: ProvisioningWork>(
             }
         }
     }
+}
+
+/// The writer's proof that the manifest rename never happened in this transaction. Created only
+/// by `run_managed_transaction` before revocation and destroyed by an `AfterRename` failure.
+pub(crate) struct ManifestNeverRenamed(());
+
+/// In-process rollback authority of one managed transaction.
+enum Authority {
+    /// `P` was never revoked: ordinary recovery may discard the partial root.
+    Held,
+    /// `P` may have become `C`, but the manifest rename provably never happened.
+    Reinstatable(ManifestNeverRenamed),
+    /// The manifest rename succeeded. Rollback can never be reactivated by this process.
+    Revoked,
 }
 
 #[cfg(test)]
