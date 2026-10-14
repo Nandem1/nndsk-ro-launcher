@@ -84,17 +84,47 @@ where
 }
 
 pub fn write_json<T: Serialize + ?Sized>(path: &Path, value: &T) -> Result<(), String> {
-    write_json_internal(path, value, true)
+    write_json_internal(
+        path,
+        value,
+        true,
+        #[cfg(test)]
+        |_| Ok(()),
+    )
 }
 
 pub fn replace_json<T: Serialize + ?Sized>(path: &Path, value: &T) -> Result<(), String> {
-    write_json_internal(path, value, false)
+    write_json_internal(
+        path,
+        value,
+        false,
+        #[cfg(test)]
+        |_| Ok(()),
+    )
+}
+
+/// Test observation of the SAME writer used in production. No hook argument or hook stages are
+/// present in production binaries; ordinary JSON callers retain their existing semantics.
+#[cfg(test)]
+pub(crate) fn replace_json_observed<T: Serialize + ?Sized>(
+    path: &Path,
+    value: &T,
+    observer: impl FnMut(JsonWriteCheckpoint) -> Result<(), String>,
+) -> Result<(), String> {
+    write_json_internal(path, value, false, observer)
+}
+
+#[cfg(test)]
+pub(crate) enum JsonWriteCheckpoint {
+    FileSynced,
+    Renamed,
 }
 
 fn write_json_internal<T: Serialize + ?Sized>(
     path: &Path,
     value: &T,
     rotate_backup: bool,
+    #[cfg(test)] mut observer: impl FnMut(JsonWriteCheckpoint) -> Result<(), String>,
 ) -> Result<(), String> {
     let parent = path
         .parent()
@@ -105,10 +135,14 @@ fn write_json_internal<T: Serialize + ?Sized>(
 
     let result = (|| {
         write_and_sync(&temp_path, json.as_bytes())?;
+        #[cfg(test)]
+        observer(JsonWriteCheckpoint::FileSynced)?;
         if rotate_backup && path.exists() {
             copy_and_sync(path, &backup_path(path))?;
         }
         fs::rename(&temp_path, path).map_err(|error| error.to_string())?;
+        #[cfg(test)]
+        observer(JsonWriteCheckpoint::Renamed)?;
         sync_directory(parent)
     })();
 

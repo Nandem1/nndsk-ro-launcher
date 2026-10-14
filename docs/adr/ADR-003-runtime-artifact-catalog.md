@@ -62,6 +62,8 @@ bloqueante recibe guard y cleanup juntos.
 
 `prepare` valida payload y escribe RuntimeReceiptV2 en `.ro-launcher-runtime.json`:
 create-new temp → write-all → fsync archivo → rename → fsync del árbol preparado.
+Reutiliza `replace_json`; sus checkpoints de observación sólo existen en tests y no cambian
+el orden productivo ni el comportamiento de los demás persistidores JSON.
 Luego exige `artifact_cache_state_at(prepared) == Ready`. Los archivos requeridos no pueden
 depender de directorios symlink fuera del árbol trasladable. No hay escritura crítica en final
 tras activar. Schema, filename, pins y lectura v1 no cambian. La elevación v1 exige identidad
