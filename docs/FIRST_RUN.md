@@ -115,9 +115,13 @@ file warnings. A non-zero initialization status cannot be accepted because files
 exist. Zero with an unusable structure is a bootstrap failure, not success.
 
 On setup/repair failure, owned processes are quiesced before incomplete managed
-data is removed or a reset backup restored. Removal still requires the original
-empty-managed-prefix authority; custom or unknown non-empty roots are preserved.
-Cleanup failure is appended to the primary error, not substituted for it.
+data is removed or a reset backup restored. Removal requires the durable
+provisioning marker written when the launcher created the managed root, so the
+same rule applies after a crash (ADR-002, F-05). That marker loses its authority
+before the manifest commit can begin; a root that may already be committed is
+preserved, never deleted. Custom or unknown non-empty
+roots are preserved. Cleanup failure is appended to the primary error, not
+substituted for it.
 
 With the mandatory supervisor, setup diagnostics retain the first explicit runner
 `ERROR:` candidate plus eight

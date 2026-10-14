@@ -181,6 +181,16 @@ Antes de crear el supervisor se inspeccionan procesos del prefix bajo el guard `
 - leftover de otro runner: sólo usar el runner exacto registrado por el manifest para apagarlo;
 - nunca matar un proceso activo por inferencia débil.
 
+Con el prefix ya quieto y el mismo guard tomado, el bootstrap concilia una preparación o reset
+interrumpidos (ADR-002, F-05). Sin respaldo fijo ni marcador de preparación no hace nada. Si la
+recuperación reemplaza la raíz, la operación se rechaza para que el caller vuelva a validar. Si la
+evidencia no permite una acción segura, por ejemplo un commit que pudo haber ocurrido, la operación
+se rechaza sin modificar nada. Así ningún programa supervisado corre sobre una transacción sin
+conciliar. Setup y reset concilian antes,
+bajo el guard exclusivo y sin sesión. Después de `RunnerOperation::begin` vuelven a comprobar bajo su
+propio guard. El guard nunca se toma de forma anidada: `begin` lo adquiere y lo suelta dentro del
+bootstrap, y setup/reset lo toman al volver.
+
 ## 6. Memoria compartida
 
 `MemorySessionRegistry` mantiene una sesión por `ProcessIdentity`, no por PID. El registro verifica

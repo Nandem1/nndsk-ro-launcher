@@ -132,6 +132,26 @@ pub(crate) async fn bootstrap_prefix_for_supervisor(
     let _guard =
         OperationGuard::acquire("prefix", prefix_path).map_err(SessionError::validation)?;
 
+    clear_leftover_processes(ctx, game).await?;
+    // F-05: no supervised program may run on an unrecovered transaction. Leftovers are gone and
+    // the exclusive guard is still held, so reconciliation sees a quiet prefix. If the root was
+    // replaced, the caller validated a state that no longer exists: make it start over.
+    let desired = crate::tools::prefix::desired_identity(ctx);
+    let outcome =
+        crate::tools::prefix::recover_residue_with_guard_held(&ctx.location, Some(&desired))
+            .map_err(SessionError::validation)?;
+    if outcome.root_replaced() {
+        return Err(SessionError::validation(
+            crate::tools::prefix::RECOVERED_RETRY_MSG,
+        ));
+    }
+    Ok(())
+}
+
+async fn clear_leftover_processes(
+    ctx: &WineContext,
+    game: &GameProcessHandle,
+) -> Result<(), SessionError> {
     let identities = find_prefix_processes(&ctx.prefix);
     match plan_bootstrap_prefix_processes(&identities, game)? {
         BootstrapPrefixAction::NothingToDo => Ok(()),

@@ -1704,6 +1704,7 @@ mod tests {
             structure_ok: true,
             configured: true,
             legacy_marker: true,
+            provisioning: false,
             manifest: None,
             issues: vec!["Entorno legacy".to_string()],
         };

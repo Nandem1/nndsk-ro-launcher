@@ -50,7 +50,7 @@ async fn setup_prefix_owned(
         runner.as_deref(),
     )
     .await?;
-    let ctx = resolve_context(server.as_ref(), runner.clone()).await?;
+    let ctx = resolve_recovered_context(server.as_ref(), runner.clone()).await?;
     let requirements = runtime_requirements(server.as_ref(), &ctx, runner.as_deref())?;
     observe_prefix_shadow(
         &app,
@@ -171,7 +171,7 @@ async fn reset_prefix_owned(
         runner.as_deref(),
     )
     .await?;
-    let ctx = resolve_context(server.as_ref(), runner.clone()).await?;
+    let ctx = resolve_recovered_context(server.as_ref(), runner.clone()).await?;
     let requirements = runtime_requirements(server.as_ref(), &ctx, runner.as_deref())?;
     observe_prefix_shadow(
         &app,
@@ -272,6 +272,21 @@ fn validate_requirement_support(
         ));
     }
     Ok(())
+}
+
+/// Setup/reset decisions (rebuild, adoption refusal, reset permission) read the prefix on disk.
+/// Reconcile an interrupted F-05 transaction first, then resolve again so those decisions never
+/// see transaction residue or a pre-recovery binding.
+async fn resolve_recovered_context(
+    server: Option<&ServerConfig>,
+    legacy_runner: Option<String>,
+) -> Result<WineContext, String> {
+    let ctx = resolve_context(server, legacy_runner.clone()).await?;
+    let desired = prefix::desired_identity(&ctx);
+    if prefix::recover_interrupted_prefix(&ctx.location, Some(&desired))?.root_replaced() {
+        return resolve_context(server, legacy_runner).await;
+    }
+    Ok(ctx)
 }
 
 async fn resolve_context(

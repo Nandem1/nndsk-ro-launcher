@@ -1,9 +1,78 @@
+mod recovery;
 mod setup;
 
+use std::path::Path;
+
+use crate::utils::{OperationGuard, PrefixLocation, PrefixScope};
+
+#[cfg(test)]
+pub(crate) use recovery::fault;
+pub use recovery::{
+    pending_v3_transactions, transaction_gate, transaction_residue_present, RecoveryAction,
+    RecoveryOutcome, RECOVERED_RETRY_MSG,
+};
 pub use setup::{
     reset_runtime_prefix, setup_runtime_prefix, DxvkProvision, RuntimeRequirements,
     MANAGED_DXVK_COMPONENT,
 };
+
+/// Reconcile an interrupted managed provisioning/reset before any runner session can touch the
+/// prefix. Takes the exclusive prefix guard; custom prefixes are never touched.
+///
+/// `desired` is the caller's current full fingerprint digest. It binds recovery only where it
+/// addresses this exact v3 path; otherwise the transaction is judged on its own durable evidence.
+pub fn recover_interrupted_prefix(
+    location: &PrefixLocation,
+    desired: Option<&str>,
+) -> Result<RecoveryOutcome, String> {
+    if !is_recoverable(location) {
+        return Ok(RecoveryOutcome::untouched());
+    }
+    let _guard = OperationGuard::acquire("prefix", Path::new(&location.path))?;
+    recover_with_guard_held(location, desired)
+}
+
+/// Same reconciliation for a caller that already holds the exclusive prefix guard.
+pub fn recover_with_guard_held(
+    location: &PrefixLocation,
+    desired: Option<&str>,
+) -> Result<RecoveryOutcome, String> {
+    if !is_recoverable(location) {
+        return Ok(RecoveryOutcome::untouched());
+    }
+    let outcome = recovery::ManagedPrefix::new(location, desired)?.recover()?;
+    if outcome.action != RecoveryAction::None || outcome.removed_empty_backup {
+        crate::utils::report(
+            "prefix-recovery",
+            format!("{}: {:?}", location.path, outcome.action),
+        );
+    }
+    for note in &outcome.notes {
+        crate::utils::report("prefix-recovery", format!("{}: {note}", location.path));
+    }
+    Ok(outcome)
+}
+
+/// Hot-path variant for supervisor bootstrap: ordinary prefixes without transaction evidence skip
+/// classification entirely.
+pub fn recover_residue_with_guard_held(
+    location: &PrefixLocation,
+    desired: Option<&str>,
+) -> Result<RecoveryOutcome, String> {
+    if !transaction_residue_present(Path::new(&location.path)) {
+        return Ok(RecoveryOutcome::untouched());
+    }
+    recover_with_guard_held(location, desired)
+}
+
+/// The full desired fingerprint a context's recovery is checked against.
+pub fn desired_identity(ctx: &crate::utils::WineContext) -> String {
+    ctx.identity.desired_fingerprint.digest.hex_digest()
+}
+
+fn is_recoverable(location: &PrefixLocation) -> bool {
+    location.managed && location.scope != PrefixScope::Custom
+}
 
 /// A prefix transaction must finish cleanup even if its IPC caller is cancelled.
 pub async fn run_prefix_operation<F>(

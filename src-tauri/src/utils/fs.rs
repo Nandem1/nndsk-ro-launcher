@@ -1,4 +1,45 @@
+use std::fs::File;
+use std::os::fd::AsRawFd;
+use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
+
+/// Makes a completed entry change in `directory` (create, rename, unlink) durable on Linux.
+/// A rename is atomic for concurrent observers immediately, but it is only persisted once the
+/// containing directory has been synced.
+pub fn sync_dir(directory: &Path) -> std::io::Result<()> {
+    File::open(directory)?.sync_all()
+}
+
+/// Flushes every dirty page of the filesystem containing `path` (syncfs(2)).
+pub fn sync_filesystem(path: &Path) -> std::io::Result<()> {
+    let handle = File::open(path)?;
+    if unsafe { libc::syncfs(handle.as_raw_fd()) } == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
+    }
+}
+
+/// `rename(2)` that fails with `AlreadyExists` instead of replacing the destination. A plain
+/// rename silently replaces an empty destination directory, which would hide a lost race.
+pub fn rename_noreplace(source: &Path, destination: &Path) -> std::io::Result<()> {
+    let source = std::ffi::CString::new(source.as_os_str().as_bytes())?;
+    let destination = std::ffi::CString::new(destination.as_os_str().as_bytes())?;
+    let result = unsafe {
+        libc::renameat2(
+            libc::AT_FDCWD,
+            source.as_ptr(),
+            libc::AT_FDCWD,
+            destination.as_ptr(),
+            libc::RENAME_NOREPLACE,
+        )
+    };
+    if result == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
+    }
+}
 
 pub fn find_file_case_insensitive(dir: &Path, filename: &str) -> Option<PathBuf> {
     let target = filename.to_ascii_lowercase();
@@ -107,6 +148,25 @@ mod tests {
         ));
         std::fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    #[test]
+    fn rename_noreplace_never_replaces_an_empty_directory() {
+        let dir = unique_dir();
+        let source = dir.join("source");
+        let destination = dir.join("destination");
+        std::fs::create_dir(&source).unwrap();
+        std::fs::write(source.join("payload"), b"old").unwrap();
+        std::fs::create_dir(&destination).unwrap();
+        let error = rename_noreplace(&source, &destination).unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::AlreadyExists);
+        assert_eq!(std::fs::read(source.join("payload")).unwrap(), b"old");
+        std::fs::remove_dir(&destination).unwrap();
+        rename_noreplace(&source, &destination).unwrap();
+        sync_dir(&dir).unwrap();
+        sync_filesystem(&dir).unwrap();
+        assert_eq!(std::fs::read(destination.join("payload")).unwrap(), b"old");
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

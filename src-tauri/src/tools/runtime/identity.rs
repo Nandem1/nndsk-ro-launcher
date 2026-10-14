@@ -151,6 +151,45 @@ fn resolve_prefix_binding_for_location(
         .as_deref()
         .ok_or_else(|| "El entorno aislado no tiene serverId".to_string())?;
 
+    let runner_path = std::fs::canonicalize(resolved.runner_path())
+        .unwrap_or_else(|_| resolved.runner_path().to_path_buf());
+    let v2_path =
+        isolated_prefix_path_for_runner(server_id, runner_path.to_string_lossy().as_ref());
+
+    // F-05: an interrupted, uncommitted transaction of this server keeps its own location, even
+    // when it belongs to a previous v3 fingerprint (runner material changed after the crash).
+    // Otherwise resolution would fall through to another candidate (another v3 path or a v2
+    // sibling) and silently run there while the old prefix waits in its reset backup. Recovery at
+    // that path, on its own durable evidence, decides what survives; the caller then resolves
+    // again from scratch. Only a valid commit record clears transaction evidence: a corrupt,
+    // nonregular or foreign manifest keeps the transaction blocking. Discovery is read-only and
+    // never chooses between two transactions.
+    let mut pending = crate::tools::prefix::pending_v3_transactions(server_id)?;
+    if crate::tools::prefix::transaction_gate(server_id, Path::new(&v2_path)).blocks_resolution()
+        && !pending.contains(&v2_path)
+    {
+        pending.push(v2_path.clone());
+    }
+    match pending.as_slice() {
+        [] => {}
+        [only] => {
+            location.path = only.clone();
+            return Ok(PrefixBinding {
+                status: PrefixIdentityStatus::Unknown,
+                desired_fingerprint: desired.clone(),
+                location,
+                eligibility: RuntimeEligibility::Eligible,
+            });
+        }
+        many => {
+            return Err(format!(
+                "Hay {} preparaciones o reconstrucciones interrumpidas para este servidor ({}); no se elegirá ninguna automáticamente. Revísalas antes de continuar",
+                many.len(),
+                many.join(", ")
+            ))
+        }
+    }
+
     if let Some(v3_path) = try_v3_verified(server_id, desired) {
         location.path = v3_path;
         return Ok(PrefixBinding {
@@ -173,10 +212,6 @@ fn resolve_prefix_binding_for_location(
         });
     }
 
-    let runner_path = std::fs::canonicalize(resolved.runner_path())
-        .unwrap_or_else(|_| resolved.runner_path().to_path_buf());
-    let v2_path =
-        isolated_prefix_path_for_runner(server_id, runner_path.to_string_lossy().as_ref());
     if try_legacy_v2_match(server_id, resolved, &v2_path) {
         location.path = v2_path;
         return Ok(PrefixBinding {
