@@ -282,7 +282,8 @@ async fn resolve_recovered_context(
     legacy_runner: Option<String>,
 ) -> Result<WineContext, String> {
     let ctx = resolve_context(server, legacy_runner.clone()).await?;
-    if prefix::recover_interrupted_prefix(&ctx.location)?.root_replaced() {
+    let desired = prefix::desired_identity(&ctx);
+    if prefix::recover_interrupted_prefix(&ctx.location, Some(&desired))?.root_replaced() {
         return resolve_context(server, legacy_runner).await;
     }
     Ok(ctx)

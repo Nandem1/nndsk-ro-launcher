@@ -12,11 +12,16 @@ pub const PREFIX_MARKER: &str = ".ro-launcher-prefix.json";
 pub const PREFIX_SCHEMA_VERSION: u32 = 2;
 pub const PREFIX_SCHEMA_V3: u32 = 3;
 pub const INSTALLATION_MARKER: &str = ".ro-launcher-installation.json";
-/// In-root proof that RO-Launcher created this managed root and has not committed it yet.
-/// The manifest (`PREFIX_MARKER`) remains the only commit record; see `tools::prefix::recovery`.
+/// Rollback authority: RO-Launcher created this managed root and its commit has not started. It is
+/// renamed to `COMMIT_PENDING_MARKER` before the manifest may be written, so it never coexists with
+/// a committed root. The manifest (`PREFIX_MARKER`) remains the only commit record; see
+/// `tools::prefix::recovery`.
 pub const PROVISIONING_MARKER: &str = ".ro-launcher-provisioning";
 /// Fixed temporary name used while `PROVISIONING_MARKER` is written durably.
 pub const PROVISIONING_MARKER_TMP: &str = ".ro-launcher-provisioning.tmp";
+/// The provisioning record after destructive authority was revoked: the commit may have happened.
+/// It never authorizes deleting or rolling back the root.
+pub const COMMIT_PENDING_MARKER: &str = ".ro-launcher-commit-pending";
 
 /// An installer may have written both game files and registry/dependency state.
 /// Mere marker presence is conservative protection, never runner provenance.
@@ -385,16 +390,21 @@ pub fn inspect_prefix(prefix_path: &str) -> PrefixHealth {
 
     // The provisioning marker never makes a prefix ready; only a manifest commits it. A committed
     // manifest stays authoritative even if marker cleanup was interrupted.
-    if health.manifest.is_none()
-        && [PROVISIONING_MARKER, PROVISIONING_MARKER_TMP]
-            .iter()
-            .any(|name| root.join(name).symlink_metadata().is_ok())
-    {
-        health.provisioning = true;
-        health.issues.push(
-            "La preparación anterior del entorno se interrumpió antes de confirmarse; Preparar la recuperará automáticamente"
-                .to_string(),
-        );
+    if health.manifest.is_none() {
+        let present = |name: &str| root.join(name).symlink_metadata().is_ok();
+        if present(COMMIT_PENDING_MARKER) {
+            health.provisioning = true;
+            health.issues.push(
+                "La confirmación anterior del entorno se interrumpió y no puede probarse si terminó; se conservó sin cambios y requiere revisión"
+                    .to_string(),
+            );
+        } else if present(PROVISIONING_MARKER) || present(PROVISIONING_MARKER_TMP) {
+            health.provisioning = true;
+            health.issues.push(
+                "La preparación anterior del entorno se interrumpió antes de confirmarse; Preparar la recuperará automáticamente"
+                    .to_string(),
+            );
+        }
     }
     health.configured = health.structure_ok
         && (health.manifest.is_some() || (health.legacy_marker && !health.provisioning));
@@ -415,7 +425,7 @@ struct SchemaProbe {
     schema_version: u32,
 }
 
-fn parse_stored_prefix_manifest(json: &str) -> Result<StoredPrefixManifest, String> {
+pub(crate) fn parse_stored_prefix_manifest(json: &str) -> Result<StoredPrefixManifest, String> {
     let probe: SchemaProbe = serde_json::from_str(json).map_err(|error| error.to_string())?;
     match probe.schema_version {
         PREFIX_SCHEMA_VERSION => serde_json::from_str::<PrefixManifest>(json)
@@ -450,8 +460,21 @@ pub fn write_prefix_manifest_v3(
 /// The manifest is the commit record of a managed prefix transaction: write a temporary file,
 /// sync it, rename it over the final name, then sync the prefix directory so the rename itself is
 /// persisted before callers treat the prefix as committed.
+///
+/// A root that still carries rollback authority (`PROVISIONING_MARKER`) is never committed: the
+/// transaction must revoke it first, so a lost manifest can never leave "marker without manifest"
+/// evidence over committed data.
 fn commit_prefix_manifest(prefix_path: &str, json: &[u8]) -> Result<(), String> {
     std::fs::create_dir_all(prefix_path).map_err(|error| error.to_string())?;
+    if Path::new(prefix_path)
+        .join(PROVISIONING_MARKER)
+        .symlink_metadata()
+        .is_ok()
+    {
+        return Err(
+            "El entorno aún conserva la autorización de reversión; no se confirmará".to_string(),
+        );
+    }
     let destination = prefix_marker_path(prefix_path);
     if destination.is_symlink() {
         return Err("El manifiesto del entorno no puede ser un symlink".to_string());
@@ -473,13 +496,31 @@ fn commit_prefix_manifest(prefix_path: &str, json: &[u8]) -> Result<(), String> 
         let _ = std::fs::remove_file(&temporary);
         return Err(error.to_string());
     }
+    #[cfg(test)]
+    crate::tools::prefix::fault::reached("commit:manifest-rename");
     std::fs::rename(&temporary, &destination).map_err(|error| {
         let _ = std::fs::remove_file(&temporary);
         error.to_string()
     })?;
+    #[cfg(test)]
+    crate::tools::prefix::fault::reached("commit:manifest-renamed");
+    #[cfg(test)]
+    if test_hooks::FAIL_MANIFEST_DIR_SYNC.with(|fail| fail.replace(false)) {
+        return Err("El manifiesto se escribió, pero no se pudo sincronizar el directorio del entorno: Input/output error (os error 5)".to_string());
+    }
     super::sync_dir(Path::new(prefix_path)).map_err(|error| {
         format!("El manifiesto se escribió, pero no se pudo sincronizar el directorio del entorno: {error}")
     })
+}
+
+/// Test-only fault injection for the commit record. Compiles to nothing outside `cfg(test)`.
+#[cfg(test)]
+pub(crate) mod test_hooks {
+    thread_local! {
+        /// Fail the directory fsync that follows a successful manifest rename, exactly once.
+        pub(crate) static FAIL_MANIFEST_DIR_SYNC: std::cell::Cell<bool> =
+            const { std::cell::Cell::new(false) };
+    }
 }
 
 pub fn manifest_matches_runner(

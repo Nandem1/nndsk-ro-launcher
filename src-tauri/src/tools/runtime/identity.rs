@@ -156,22 +156,35 @@ fn resolve_prefix_binding_for_location(
     let v2_path =
         isolated_prefix_path_for_runner(server_id, runner_path.to_string_lossy().as_ref());
 
-    // F-05: an interrupted, uncommitted transaction keeps its own location. Otherwise a reset
-    // killed after moving the old root aside would fall through to another candidate path and
-    // silently start a fresh prefix while the old one waits in the reset backup. Recovery at this
-    // path, not resolution, decides what survives.
-    for candidate in [
-        isolated_prefix_path_v3(server_id, &desired.digest.hex_digest()),
-        v2_path.clone(),
-    ] {
-        if crate::tools::prefix::uncommitted_transaction_present(Path::new(&candidate)) {
-            location.path = candidate;
+    // F-05: an interrupted, uncommitted transaction of this server keeps its own location, even
+    // when it belongs to a previous v3 fingerprint (runner material changed after the crash).
+    // Otherwise resolution would fall through to another candidate (another v3 path or a v2
+    // sibling) and silently run there while the old prefix waits in its reset backup. Recovery at
+    // that path, on its own durable evidence, decides what survives; the caller then resolves
+    // again from scratch. Discovery is read-only and never chooses between two transactions.
+    let mut pending = crate::tools::prefix::pending_v3_transactions(server_id)?;
+    if crate::tools::prefix::uncommitted_transaction_present(Path::new(&v2_path))
+        && !pending.contains(&v2_path)
+    {
+        pending.push(v2_path.clone());
+    }
+    match pending.as_slice() {
+        [] => {}
+        [only] => {
+            location.path = only.clone();
             return Ok(PrefixBinding {
                 status: PrefixIdentityStatus::Unknown,
                 desired_fingerprint: desired.clone(),
                 location,
                 eligibility: RuntimeEligibility::Eligible,
             });
+        }
+        many => {
+            return Err(format!(
+                "Hay {} preparaciones o reconstrucciones interrumpidas para este servidor ({}); no se elegirá ninguna automáticamente. Revísalas antes de continuar",
+                many.len(),
+                many.join(", ")
+            ))
         }
     }
 

@@ -122,54 +122,90 @@ observados. No se confía en nombre de directorio, versión reportada o label pa
 ### Transacción y recuperación de prefixes administrados (F-05)
 
 Preparar un prefix administrado limpio y reconstruirlo son transacciones recuperables tras la muerte
-del proceso. No hay journal ni archivo de intención fuera del prefix. La evidencia es:
+del proceso. No hay journal ni archivo de intención fuera del prefix. La evidencia es de nombre fijo:
 
-- `B` = `<padre>/.<nombre>.reset-backup`: un único respaldo con nombre fijo, en el mismo directorio
-  y sistema de archivos. Un reset no empieza mientras exista.
-- `M` = `<prefix>/.ro-launcher-provisioning`: marcador escrito antes de provisionar. Registra
-  schema, scope, serverId, ruta y fingerprint. No contiene instrucciones; sólo prueba que el
-  launcher creó esa raíz para esa ubicación y aún no la confirmó. Se escribe en un temporal fijo,
-  con `fsync` del archivo, rename y `fsync` del prefix.
-- El manifiesto v2/v3 existente es el único registro de commit. Se escribe con temporal, `fsync`,
-  rename y `fsync` del directorio del prefix. Para un path v3 debe coincidir además el digest que
-  codifica la ruta.
+- `R`: la raíz canónica. `B` = `<padre>/.<nombre>.reset-backup`: un único respaldo, en el mismo
+  directorio y sistema de archivos. Un reset no empieza mientras exista.
+- `P` = `R/.ro-launcher-provisioning`: **autorización de reversión**. Se escribe (temporal fijo,
+  `fsync`, rename, `fsync(R)`) antes de cualquier escritura de provisioning. Registra schema, scope,
+  serverId, ruta y, sólo para una ruta v3, el fingerprint completo de la transacción. No contiene
+  instrucciones.
+- `C` = `R/.ro-launcher-commit-pending`: el mismo registro tras `rename(P, C)` + `fsync(R)`, la
+  **revocación previa al commit**. Desde ahí el commit puede haber ocurrido y nada en `R` autoriza
+  borrarlo.
+- `M`: el manifiesto v2/v3, **único registro de commit** (temporal, `fsync`, rename, `fsync(R)`).
+  `commit_prefix_manifest` rechaza una raíz que todavía contiene `P`.
+- `T` = `B/.ro-launcher-removing-manifest` o `B/.ro-launcher-removing-legacy`: la evidencia de
+  propiedad del respaldo tras `rename(M_B o marcador legacy, T)` + `fsync(B)`, la **invalidación de
+  la autoridad de restauración**. Ocurre antes de borrar el primer byte del respaldo.
 
-Reset: `rename(R, B)` + `fsync(padre)`; crear `R` y `M`; provisionar; quiesce; `syncfs`; manifiesto
-(commit); borrar `M` + `fsync(R)`; borrar `B` + `fsync(padre)`. La preparación inicial es igual sin
-`B`. Un fallo ordinario, tras quiesce, usa la misma función de recuperación que un arranque tras
-SIGKILL; no existe un segundo algoritmo de rollback.
+Reset: `rename(R, B)` + `fsync(padre)`; crear `R` y `P`; provisionar; quiesce; `syncfs`;
+`rename(P, C)` + `fsync(R)`; manifiesto (commit); retirar `C` + `fsync(R)`; `rename(→T)` +
+`fsync(B)`; borrar el contenido de `B`, luego `T`, luego `B` + `fsync(padre)`. La preparación
+inicial es igual sin `B`. Un fallo ordinario, tras quiesce, usa la misma función de recuperación que
+un arranque tras SIGKILL. La única excepción es en proceso: si la llamada de commit falló y el
+manifiesto no existe, con el guard exclusivo y todo quieto, `C` vuelve a `P` antes de recuperar.
+Tras un crash nunca se hace esa transición.
 
-| `R` \ `B`                     | ausente                       | restaurable                | parcial o ajeno                       |
-| ----------------------------- | ----------------------------- | -------------------------- | ------------------------------------- |
-| ausente o vacío               | nada                          | restaurar `B`              | rechazar                              |
-| `M` válido sin manifiesto     | retirar `R`                   | retirar `R`, restaurar `B` | rechazar                              |
-| manifiesto confirmado (± `M`) | retirar `M`                   | retirar `M` y `B`          | retirar si parcial; rechazar si ajeno |
-| legacy válido                 | nada                          | rechazar                   | rechazar                              |
-| datos sin evidencia, symlink  | nada (rige el rechazo actual) | rechazar                   | rechazar                              |
+Identidad v3: la ruta sólo expone 24 hex del digest. Toda afirmación de identidad completa presente
+debe ser idéntica byte a byte: el fingerprint deseado del caller (sólo si apunta a esa misma ruta),
+el de `P`/`C`, el de `M` en `R` y el de `M`/`T` en `B`. El sufijo es sólo una validación de forma.
+Un marcador legacy no prueba identidad en una ruta v3. Un respaldo sin ninguna otra afirmación se
+juzga por su propia evidencia, lo que permite conciliar una transacción de un fingerprint anterior.
 
-"Restaurable" exige un directorio real, sin symlink, en el mismo sistema de archivos, sin marcador
-de instalación de juego y con un manifiesto de esta ubicación, o marcador legacy más estructura
-completa. "Rechazar" conserva todo y devuelve un error accionable con ambas rutas. Un manifiesto
-confirmado siempre gana: nunca se restaura `B` sobre un prefix nuevo confirmado. Borrar `R` o `B`
-deja su evidencia para el final, y restaurar es un único `renameat2(RENAME_NOREPLACE)`. Por eso una
-recuperación interrumpida deja otro estado de la tabla y la siguiente converge. Repetirla no hace
-nada.
+Estados de `R`: ausente, vacío, `P` temporal sólo, **`P` (reversión autorizada)**, **`C` (commit
+pendiente, no destructivo)**, confirmado (`M` válido; un `P`/`C` residual debe coincidir), legacy
+válido (sin evidencia fija, no v3) y ajeno. Estados de `B`: ausente, vacío, restaurable (sin `T`;
+`M` válido o legacy más estructura), **en retiro (`T`, nunca restaurable)** y ajeno.
+
+| `R` \ `B`              | ausente                       | restaurable                | en retiro (`T`) | ajeno    |
+| ---------------------- | ----------------------------- | -------------------------- | --------------- | -------- |
+| ausente o vacío        | nada                          | restaurar `B`              | rechazar        | rechazar |
+| `P` válido, sin `M`    | retirar `R`                   | retirar `R`, restaurar `B` | rechazar        | rechazar |
+| `C` válido, sin `M`    | rechazar                      | rechazar                   | rechazar        | rechazar |
+| confirmado (± `P`/`C`) | retirar `P`/`C`               | invalidar y retirar `B`    | retirar `B`     | rechazar |
+| legacy válido          | nada                          | rechazar                   | rechazar        | rechazar |
+| ajeno                  | nada; rechazar si hay `P`/`C` | rechazar                   | rechazar        | rechazar |
+
+"Rechazar" conserva todo y devuelve un error accionable con ambas rutas. Restaurable o en retiro
+exigen un directorio real, sin symlink, en el mismo sistema de archivos y sin marcador de instalación
+de juego. Así quedan cerrados por construcción:
+
+- `P` y `M` nunca coexisten. Perder o dañar `M` después del commit deja `C` o un manifiesto ajeno:
+  se rechaza y no se borra la raíz.
+- Un respaldo parcialmente borrado siempre tiene `T` y nunca se restaura. Sólo se borra mientras
+  `R` está confirmado.
+- Un digest distinto con el mismo sufijo nunca confirma, restaura ni borra como si fuera el otro.
+- Un manifiesto confirmado siempre gana: nunca se restaura `B` sobre un prefix nuevo confirmado,
+  tampoco si falla el `fsync` del directorio tras el rename del manifiesto.
+
+Borrar `R` deja `P` para el final, borrar `B` deja `T` para el final, y restaurar es un único
+`renameat2(RENAME_NOREPLACE)`. Por eso una recuperación interrumpida deja otro estado de la tabla y
+la siguiente converge. Repetirla no hace nada.
 
 Reglas que no cambian: un prefix custom nunca se recupera, mueve, restaura ni borra. Un directorio
 administrado con datos sin evidencia no se adopta. Un prefix con instalación de juego no entra a
-reset, y la recuperación nunca descarta un árbol que contenga ese marcador. Los respaldos
-`.<nombre>.reset-backup-<pid>-<ms>` de versiones anteriores nunca se borran. Sólo se restaura uno
-si la raíz no existe y es el único válido; en otro caso se informan en diagnostics.
+reset, y la recuperación nunca descarta ni invalida un árbol que contenga ese marcador. Los
+respaldos `.<nombre>.reset-backup-<pid>-<ms>` de versiones anteriores nunca se borran. Sólo se
+restaura uno si la raíz no existe y es el único válido; en otro caso se informan en diagnostics.
 
 Orden: setup/reset concilian bajo el guard exclusivo `prefix` antes de iniciar sesión y vuelven a
 comprobar bajo el guard después de `RunnerOperation::begin`. El bootstrap del supervisor concilia
 tras apagar leftovers y antes de soltar su guard. Si la raíz cambió, la operación termina pidiendo
-reintento, para reevaluar runner, manifiesto y protección. La resolución de identidad sigue apuntando
-a la ruta de una transacción sin commit en lugar de saltar a otro candidato. Ninguna acción
-destructiva corre si hay procesos usando el prefix.
+reintento, para reevaluar runner, manifiesto y protección. La resolución de identidad busca, sólo
+lectura y sólo con nombres del contrato administrado de ese servidor, transacciones sin commit en
+todas sus rutas v3 y en su ruta v2 actual. Con una, apunta a ella en vez de saltar a otro candidato,
+aunque el fingerprint deseado haya cambiado; la recuperación la concilia con su propia evidencia y
+sólo una resolución posterior elige el candidato del fingerprint nuevo. Con dos o más, falla sin
+elegir. Ninguna acción destructiva corre si hay procesos usando el prefix.
 
-Calificación: probado contra SIGKILL en cada paso del reset, de la preparación inicial y de la propia
-recuperación, también con `ro-sessiond` real y un runner inerte. El orden de `fsync` está
+Calificación. Probado con SIGKILL real de un proceso de prueba y recuperación en un proceso nuevo:
+cada paso del reset y de la preparación inicial, antes y después de la revocación, antes y después
+del rename del manifiesto, cada paso del retiro del respaldo y dobles crashes dentro de la propia
+recuperación. Con `ro-sessiond` real de desarrollo: SIGKILL del proceso lanzador mientras un hijo
+supervisado sigue corriendo en el prefix, con PDEATHSIG terminando supervisor e hijo antes de
+recuperar, y un bootstrap que se niega a correr nada tras la revocación. El runner es un fixture
+inerte; Wine 7.16, Proton y Ragnarok no forman parte de esa calificación. El orden de `fsync` está
 implementado, pero la pérdida de energía no está calificada.
 
 ## Alternativas rechazadas

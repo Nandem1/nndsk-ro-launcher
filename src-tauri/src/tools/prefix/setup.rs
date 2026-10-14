@@ -74,7 +74,10 @@ pub async fn setup_runtime_prefix(
     let root = Path::new(&ctx.prefix);
     // F-05: reconcile crash residue before a runner session exists. A restored pre-reset prefix
     // invalidates the caller's setup/rebuild decision, so the caller must re-evaluate it.
-    if super::recover_interrupted_prefix(&ctx.location)?.restored_previous() {
+    // Any replacement, including a discarded partial root, may also have been a transaction the
+    // binding steered to (another fingerprint's path): the caller must resolve again.
+    let desired = super::desired_identity(ctx);
+    if super::recover_interrupted_prefix(&ctx.location, Some(&desired))?.root_replaced() {
         return Err(super::RECOVERED_RETRY_MSG.to_string());
     }
     let operational_plan = resolve_operational_plan(OperationalRuntimeInput {
@@ -101,9 +104,9 @@ pub async fn setup_runtime_prefix(
         // marker on disk, never from this in-memory branch.
         let mut work = RunnerWork::new(app, op, ctx, requirements);
         let committed = run_managed_transaction(
-            &ManagedPrefix::new(&ctx.location)?,
+            &ManagedPrefix::new(&ctx.location, Some(&desired))?,
             TransactionKind::InitialSetup,
-            &ctx.identity.desired_fingerprint.digest.hex_digest(),
+            &desired,
             &mut work,
         )
         .await?;
@@ -145,7 +148,8 @@ pub async fn reset_runtime_prefix(
     emit_progress(app, "Preparando reconstrucción del entorno...", 40)?;
     // F-05: an interrupted reset is reconciled first. Restoring the old prefix is compatible with
     // the requested reset, whose preconditions are re-checked under the guard below.
-    super::recover_interrupted_prefix(&ctx.location)?;
+    let desired = super::desired_identity(ctx);
+    super::recover_interrupted_prefix(&ctx.location, Some(&desired))?;
 
     let operational_plan = resolve_operational_plan(OperationalRuntimeInput {
         server_runner: None,
@@ -164,7 +168,7 @@ pub async fn reset_runtime_prefix(
 
     shutdown_existing_prefix_for_reset(app, &op, ctx).await?;
 
-    let prefix = ManagedPrefix::new(&ctx.location)?;
+    let prefix = ManagedPrefix::new(&ctx.location, Some(&desired))?;
     if Path::new(&ctx.prefix).exists() {
         emit_log(
             app,
@@ -175,13 +179,8 @@ pub async fn reset_runtime_prefix(
         )?;
     }
     let mut work = RunnerWork::new(app, op, ctx, requirements);
-    let committed = run_managed_transaction(
-        &prefix,
-        TransactionKind::Reset,
-        &ctx.identity.desired_fingerprint.digest.hex_digest(),
-        &mut work,
-    )
-    .await?;
+    let committed =
+        run_managed_transaction(&prefix, TransactionKind::Reset, &desired, &mut work).await?;
     report_post_commit_cleanup(app, committed);
     emit_progress(app, "¡Listo!", 100)?;
     Ok(())
@@ -190,7 +189,8 @@ pub async fn reset_runtime_prefix(
 /// Under the exclusive guard no other launcher writer can create residue, so anything recovery
 /// would still replace here means the state changed after the caller validated it.
 fn ensure_recovered_under_guard(ctx: &WineContext) -> Result<(), String> {
-    if super::recover_with_guard_held(&ctx.location)?.root_replaced() {
+    let desired = super::desired_identity(ctx);
+    if super::recover_with_guard_held(&ctx.location, Some(&desired))?.root_replaced() {
         return Err(super::RECOVERED_RETRY_MSG.to_string());
     }
     Ok(())
@@ -927,9 +927,12 @@ mod tests {
         // then provision and commit cleanly at the same location.
         for attempt in 0..2 {
             assert_eq!(
-                crate::tools::prefix::recover_interrupted_prefix(&ctx.location)
-                    .unwrap()
-                    .action,
+                crate::tools::prefix::recover_interrupted_prefix(
+                    &ctx.location,
+                    Some(&crate::tools::prefix::desired_identity(&ctx)),
+                )
+                .unwrap()
+                .action,
                 if attempt == 0 {
                     crate::tools::prefix::RecoveryAction::None
                 } else {
@@ -942,9 +945,13 @@ mod tests {
             let root = Path::new(&ctx.prefix);
             let guard = OperationGuard::acquire("prefix", root).unwrap();
             ensure_managed_reset_allowed(&ctx.location).unwrap();
-            ManagedPrefix::new(&ctx.location)
-                .unwrap()
-                .begin_provisioning(&ctx.identity.desired_fingerprint.digest.hex_digest())
+            let managed = ManagedPrefix::new(
+                &ctx.location,
+                Some(&crate::tools::prefix::desired_identity(&ctx)),
+            )
+            .unwrap();
+            managed
+                .begin_provisioning(&crate::tools::prefix::desired_identity(&ctx))
                 .unwrap();
             let result = initialize_prefix(&op).await;
             let op = op.into_cleanup();
@@ -968,7 +975,9 @@ mod tests {
                 drop(guard);
                 continue;
             }
-            // Record ownership only: this initialization smoke doesn't provision components.
+            // Record ownership only: this initialization smoke doesn't provision components. The
+            // pre-commit boundary is mandatory: a root holding rollback authority never commits.
+            managed.revoke_rollback_authority().unwrap();
             write_prefix_manifest(
                 &ctx.prefix,
                 &PrefixManifest {
@@ -982,9 +991,12 @@ mod tests {
             )
             .unwrap();
             assert!(matches!(
-                crate::tools::prefix::recover_with_guard_held(&ctx.location)
-                    .unwrap()
-                    .action,
+                crate::tools::prefix::recover_with_guard_held(
+                    &ctx.location,
+                    Some(&crate::tools::prefix::desired_identity(&ctx)),
+                )
+                .unwrap()
+                .action,
                 crate::tools::prefix::RecoveryAction::CompleteCommit { .. }
             ));
             assert!(inspect_prefix(&ctx.prefix).configured);
