@@ -123,6 +123,14 @@ preserved, never deleted. Custom or unknown non-empty
 roots are preserved. Cleanup failure is appended to the primary error, not
 substituted for it.
 
+Runtime artifacts use the separate [ADR-003 activation protocol](adr/ADR-003-runtime-artifact-catalog.md#6-f-06-preparación-commit-y-recuperación):
+receipt and Ready validation occur in private preparation, before an atomic no-replace install
+or atomic exchange of a receipted incomplete supporting artifact. Runners still refuse existing
+non-Ready targets. Recovery discards positively owned activation residue; canonical NEW always
+wins after commit. Foreign/ambiguous final or slot data is preserved. Download/import cancellation
+keeps the owner's runtime guard until extraction/cleanup ends. Real SIGKILL is qualified with
+synthetic artifacts; power loss and real Wine/Proton runtime qualification remain separate gates.
+
 With the mandatory supervisor, setup diagnostics retain the first explicit runner
 `ERROR:` candidate plus eight
 recent redacted lines, bounded to 1024 characters each. They are labeled diagnostic

@@ -206,16 +206,10 @@ async fn ensure_runtime_for_id(app: &AppHandle, id: Option<&str>) -> Result<(), 
             runtime_dir.display()
         )
     })?;
-    let operation = OperationGuard::acquire("runtime", &runtime_dir)?;
-
     ensure_catalog_artifact(app, catalog_descriptor(UMU_ID).unwrap(), 1, 5).await?;
     if let Some(id) = id {
         let descriptor = catalog_descriptor(id).expect("known Proton descriptor");
-        if descriptor.kind == artifacts::ArtifactKind::NndskRoProton {
-            artifacts::download_managed_runtime(app, descriptor, operation, 6, 38).await?;
-        } else {
-            ensure_catalog_artifact(app, descriptor, 6, 38).await?;
-        }
+        ensure_catalog_artifact(app, descriptor, 6, 38).await?;
         emit_log(
             app,
             format!(
@@ -253,7 +247,6 @@ pub async fn ensure_managed_dxvk(app: &AppHandle) -> Result<(), String> {
             runtime_dir.display()
         )
     })?;
-    let _operation = OperationGuard::acquire("runtime", &runtime_dir)?;
     ensure_catalog_artifact(app, catalog_descriptor(MANAGED_DXVK_ID).unwrap(), 40, 54).await
 }
 
