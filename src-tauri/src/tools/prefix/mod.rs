@@ -1,6 +1,9 @@
 mod recovery;
 mod setup;
 
+#[cfg(all(test, feature = "real-runtime"))]
+pub(crate) use setup::qualification::qualify_wine716_pe32;
+
 use std::path::Path;
 
 use crate::utils::{OperationGuard, PrefixLocation, PrefixScope};
