@@ -69,29 +69,27 @@ export function hiddenFailureErrors(files) {
   return errors
 }
 
-/** Dependency changes must run the shared security policy before merge (F-13). */
+/** Every PR must produce the stable dependency checks before merge (F-13). */
 export function dependencyAuditWorkflowErrors(yaml) {
   const errors = hiddenFailureErrors({ 'dependency-audit.yml': yaml })
-  const pr = yaml.match(/^ {2}pull_request:\s*\n((?:^ {4}.*\n|^\s*\n)*)/m)?.[1]
-  if (!pr || !/^ {4}paths:\s*$/m.test(pr)) {
-    errors.push('dependency-audit.yml must audit dependency pull requests')
-  } else {
-    for (const path of [
-      'package-lock.json',
-      'Cargo.lock',
-      '**/Cargo.toml',
-      'package.json',
-      '.github/workflows/dependency-audit.yml',
-      'scripts/dependency-audit-policy.mjs',
-    ]) {
-      if (!pr.split('\n').some((line) => line.trim() === `- '${path}'`))
-        errors.push(`dependency-audit.yml PR paths must include ${path}`)
-    }
-    if (/^ {4}(branches|branches-ignore|paths-ignore|types):/m.test(pr))
-      errors.push(
-        'dependency-audit.yml must not narrow the dependency PR trigger',
-      )
-  }
+  // Support only the literal, empty PR mapping. Reject all nested/inline options rather than
+  // partially parsing YAML and overlooking an alias, merge key or future narrowing option.
+  const source = yaml.replace(/^[ \t]*#.*$/gm, '')
+  const triggers = source.match(/^on:\n((?:^[ \t]+[^\n]*\n|^\n)*)/m)?.[1] ?? ''
+  const pr = triggers.match(
+    /^ {2}pull_request:([^\n]*)\n((?:^[ \t]{3}[^\n]*\n|^\n)*)/m,
+  )
+  if (
+    !pr ||
+    pr[1].trim() !== '' ||
+    pr[2]
+      .split('\n')
+      .some((line) => line.trim() && !line.trim().startsWith('#')) ||
+    [...triggers.matchAll(/^ {2}pull_request:/gm)].length !== 1
+  )
+    errors.push(
+      'dependency-audit.yml must audit all pull requests with an unconditional pull_request trigger',
+    )
   const jobs = workflowJobs(yaml)
   for (const [job, name, mode] of [
     ['npm', 'npm-dependency-audit', 'npm'],
@@ -108,7 +106,7 @@ export function dependencyAuditWorkflowErrors(yaml) {
         `dependency-audit.yml ${job} must run the shared ${mode} policy`,
       )
     if (
-      /^\s+if:/m.test(jobs[job] ?? '') ||
+      /^\s+(?:-\s+)?if:/m.test(jobs[job] ?? '') ||
       /\bset \+e\b/m.test(jobs[job] ?? '')
     )
       errors.push(

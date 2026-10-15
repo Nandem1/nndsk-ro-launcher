@@ -5,22 +5,12 @@ name: Dependency audit
 # criticals and every RustSec vulnerability fail the job. Other advisories are listed in the job
 # summary and as warning annotations. A crashed or unparseable audit fails the job; there is no
 # continue-on-error here on purpose.
+# Run on every PR so npm-dependency-audit and rustsec-dependency-audit can safely become
+# required checks later: path-filtered workflows leave required checks Pending on skipped PRs.
+# This prepares the checks; it does not enable branch protection or a ruleset.
 
 on:
   pull_request:
-    paths:
-      - 'package-lock.json'
-      - 'Cargo.lock'
-      - '**/Cargo.toml'
-      - 'package.json'
-      - '.github/workflows/dependency-audit.yml'
-      - 'scripts/dependency-audit-policy.mjs'
-      - 'src/shared/dependency-audit-policy.test.ts'
-      - 'scripts/release-workflow-policy.mjs'
-      - 'scripts/check-release-invariants.mjs'
-      - 'src/shared/check-release-invariants.test.ts'
-      - '.nvmrc'
-      - 'rust-toolchain.toml'
   workflow_dispatch:
   schedule:
     - cron: '30 8 * * 1'

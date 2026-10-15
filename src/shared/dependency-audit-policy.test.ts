@@ -286,6 +286,72 @@ describe('classifyCargoAudit', () => {
 describe('audit subprocess boundary', () => {
   const script = join(process.cwd(), 'scripts/dependency-audit-policy.mjs')
 
+  it.each([
+    ['.npmrc registry', 'registry=http://127.0.0.1:9/\n', {}],
+    ['.npmrc offline', 'offline=true\n', {}],
+    ['NPM_CONFIG_REGISTRY', '', { NPM_CONFIG_REGISTRY: 'http://127.0.0.1:9/' }],
+    ['npm_config_registry', '', { npm_config_registry: 'http://127.0.0.1:9/' }],
+    ['NPM_CONFIG_OFFLINE', '', { NPM_CONFIG_OFFLINE: 'true' }],
+    ['npm_config_offline', '', { npm_config_offline: 'true' }],
+  ])('keeps npm audit authority despite %s', (_label, npmrc, overrides) => {
+    const directory = mkdtempSync(join(tmpdir(), 'ro-audit-authority-'))
+    try {
+      writeFileSync(join(directory, 'package.json'), '{"private":true}')
+      writeFileSync(join(directory, '.npmrc'), npmrc)
+      const observations = join(directory, 'observations.jsonl')
+      // Use the real npm config resolver with the policy's actual subprocess arguments.
+      // Model the original silent-clean attack without making unit tests depend on a network:
+      // only the official online authority knows the fixture's runtime advisory.
+      writeFileSync(
+        join(directory, 'npm'),
+        `#!${process.execPath}
+const { spawnSync } = require('node:child_process');
+const { appendFileSync } = require('node:fs');
+const result = spawnSync('npm', ['config', 'list', '--json', ...process.argv.slice(3)], {
+  encoding: 'utf8', env: { ...process.env, PATH: ${JSON.stringify(process.env.PATH)} }
+});
+if (result.status !== 0) { process.stderr.write(result.stderr); process.exit(2); }
+const config = JSON.parse(result.stdout);
+appendFileSync(${JSON.stringify(observations)}, JSON.stringify({
+  registry: config.registry, offline: config.offline, args: process.argv.slice(2)
+}) + '\\n');
+const authoritative = config.registry === 'https://registry.npmjs.org/' && config.offline === false;
+process.stdout.write(JSON.stringify(authoritative
+  ? ${JSON.stringify(npmReport({ vulnerable: [['GHSA-auth', 'high']] }))}
+  : ${JSON.stringify(npmReport({}))}));
+process.exit(authoritative ? 1 : 0);
+`,
+        { mode: 0o700 },
+      )
+      const result = spawnSync(process.execPath, [script, 'npm'], {
+        cwd: directory,
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          ...overrides,
+          PATH: `${directory}:${process.env.PATH}`,
+          GITHUB_STEP_SUMMARY: join(directory, 'summary'),
+        },
+      })
+      const configs = readFileSync(observations, 'utf8')
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line))
+      expect(
+        configs.map(({ registry, offline }) => ({ registry, offline })),
+      ).toEqual([
+        { registry: 'https://registry.npmjs.org/', offline: false },
+        { registry: 'https://registry.npmjs.org/', offline: false },
+      ])
+      expect(configs[0].args).toEqual(expect.arrayContaining(['--include=dev']))
+      expect(configs[1].args).toEqual(expect.arrayContaining(['--omit=dev']))
+      expect(result.status).toBe(1)
+      expect(result.stderr).toMatch(/runtime high GHSA-auth/)
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
   function probe(
     mode: string,
     stdout: string,

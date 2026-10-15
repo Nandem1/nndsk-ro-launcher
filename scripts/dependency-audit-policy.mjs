@@ -328,12 +328,14 @@ function main(mode) {
   if (mode === 'npm') {
     title = 'npm audit'
     verdict = classifyNpmAudit(
-      // Explicit includes override inherited npm omit/include settings. These select the same
-      // full/runtime graphs as the defaults, while preventing local config from narrowing them.
+      // Explicit authority/online flags and includes override ambient npm config. Both reports
+      // must query npm's registry for the full/runtime graphs, even with a project .npmrc.
       run('npm', [
         'audit',
         '--json',
         '--audit-level=low',
+        '--registry=https://registry.npmjs.org/',
+        '--offline=false',
         '--include=prod',
         '--include=optional',
         '--include=peer',
@@ -343,6 +345,8 @@ function main(mode) {
         'audit',
         '--json',
         '--audit-level=low',
+        '--registry=https://registry.npmjs.org/',
+        '--offline=false',
         '--include=prod',
         '--include=optional',
         '--include=peer',
