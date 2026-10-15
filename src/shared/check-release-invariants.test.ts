@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { sidecarOrderError } from '../../scripts/release-sidecar-order.mjs'
 import { qualityCiTriggerError } from '../../scripts/quality-ci-trigger.mjs'
 import {
+  dependencyAuditWorkflowErrors,
   hiddenFailureErrors,
   releaseWorkflowErrors,
   unpinnedActionErrors,
@@ -113,6 +114,88 @@ jobs:
     ])
     expect(hiddenFailureErrors({ 'x.yml': yaml })).toHaveLength(3)
   })
+})
+
+describe('dependencyAuditWorkflowErrors', () => {
+  const audit = readFileSync(
+    join(root, '.github/workflows/dependency-audit.yml'),
+    'utf8',
+  )
+
+  it('runs shared audits on every PR with stable check names', () => {
+    expect(dependencyAuditWorkflowErrors(audit)).toEqual([])
+  })
+
+  it('rejects removing the PR trigger', () => {
+    expect(
+      dependencyAuditWorkflowErrors(
+        audit.replace('  pull_request:', '  push:'),
+      ).join('\n'),
+    ).toMatch(/pull requests/)
+  })
+
+  it.each([
+    ['paths', 'Cargo.lock'],
+    ['paths-ignore', 'Cargo.lock'],
+    ['branches', 'main'],
+    ['branches-ignore', 'main'],
+    ['types', 'opened'],
+  ])('rejects pull_request.%s filters', (filter, value) => {
+    const changed = audit.replace(
+      '  pull_request:\n',
+      `  pull_request:\n    ${filter}: ['${value}']\n`,
+    )
+    expect(dependencyAuditWorkflowErrors(changed).join('\n')).toMatch(
+      /unconditional pull_request/,
+    )
+  })
+
+  it.each([
+    '  pull_request: { paths: [Cargo.lock] }\n',
+    '  pull_request: *filtered\n',
+    '  pull_request:\n    <<: *filtered\n',
+    '  pull_request:\n  pull_request:\n    paths: [Cargo.lock]\n',
+    '  pull_request:\n   paths: [Cargo.lock]\n',
+    '  pull_request:\n# event filter\n    paths: [Cargo.lock]\n',
+  ])('rejects inline, aliased or duplicate PR options: %s', (trigger) => {
+    expect(
+      dependencyAuditWorkflowErrors(
+        audit.replace('  pull_request:\n', trigger),
+      ).join('\n'),
+    ).toMatch(/unconditional pull_request/)
+  })
+
+  it.each([
+    ['npm', 'npm-dependency-audit', 'npm'],
+    ['rustsec', 'rustsec-dependency-audit', 'cargo'],
+  ])(
+    'rejects skips, suppression and renamed checks in %s',
+    (job, name, mode) => {
+      const command = `      - run: node scripts/dependency-audit-policy.mjs ${mode}\n`
+      for (const [before, after] of [
+        [`name: ${name}`, 'name: optional'],
+        [`  ${job}:\n`, `  ${job}:\n    if: false\n`],
+        [command, `${command}        if: false\n`],
+        [
+          command,
+          `      - if: false\n        run: node scripts/dependency-audit-policy.mjs ${mode}\n`,
+        ],
+        [`  ${job}:\n`, `  ${job}:\n    continue-on-error: true\n`],
+        [command, `${command}        continue-on-error: true\n`],
+        [command, command.replace(`${mode}\n`, `${mode} || true\n`)],
+        [
+          command,
+          `      - run: |\n          set +e\n          node scripts/dependency-audit-policy.mjs ${mode}\n`,
+        ],
+        [command, '      - run: true\n'],
+        [command, `      - run: set +e\n${command}`],
+      ]) {
+        const changed = audit.replace(before, after)
+        expect(changed).not.toBe(audit)
+        expect(dependencyAuditWorkflowErrors(changed).length).toBeGreaterThan(0)
+      }
+    },
+  )
 })
 
 describe('qualityCiTriggerError', () => {

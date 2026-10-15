@@ -69,6 +69,53 @@ export function hiddenFailureErrors(files) {
   return errors
 }
 
+/** Every PR must produce the stable dependency checks before merge (F-13). */
+export function dependencyAuditWorkflowErrors(yaml) {
+  const errors = hiddenFailureErrors({ 'dependency-audit.yml': yaml })
+  // Support only the literal, empty PR mapping. Reject all nested/inline options rather than
+  // partially parsing YAML and overlooking an alias, merge key or future narrowing option.
+  const source = yaml.replace(/^[ \t]*#.*$/gm, '')
+  const triggers = source.match(/^on:\n((?:^[ \t]+[^\n]*\n|^\n)*)/m)?.[1] ?? ''
+  const pr = triggers.match(
+    /^ {2}pull_request:([^\n]*)\n((?:^[ \t]{3}[^\n]*\n|^\n)*)/m,
+  )
+  if (
+    !pr ||
+    pr[1].trim() !== '' ||
+    pr[2]
+      .split('\n')
+      .some((line) => line.trim() && !line.trim().startsWith('#')) ||
+    [...triggers.matchAll(/^ {2}pull_request:/gm)].length !== 1
+  )
+    errors.push(
+      'dependency-audit.yml must audit all pull requests with an unconditional pull_request trigger',
+    )
+  const jobs = workflowJobs(yaml)
+  for (const [job, name, mode] of [
+    ['npm', 'npm-dependency-audit', 'npm'],
+    ['rustsec', 'rustsec-dependency-audit', 'cargo'],
+  ]) {
+    if (!jobs[job]?.includes(`    name: ${name}\n`))
+      errors.push(`dependency-audit.yml must keep stable check name ${name}`)
+    if (
+      !jobs[job]?.includes(
+        `      - run: node scripts/dependency-audit-policy.mjs ${mode}\n`,
+      )
+    )
+      errors.push(
+        `dependency-audit.yml ${job} must run the shared ${mode} policy`,
+      )
+    if (
+      /^\s+(?:-\s+)?if:/m.test(jobs[job] ?? '') ||
+      /\bset \+e\b/m.test(jobs[job] ?? '')
+    )
+      errors.push(
+        `dependency-audit.yml ${job} must not skip or suppress the audit`,
+      )
+  }
+  return errors
+}
+
 /** Signing isolation, tested-artifact flow and draft publication in release.yml. */
 export function releaseWorkflowErrors(yaml) {
   const errors = []
