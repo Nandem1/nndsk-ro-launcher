@@ -14,6 +14,10 @@ path = "src/main.rs"
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
+[features]
+# Explicit ignored qualification only; never downloads or executes Wine in the ordinary suite.
+real-runtime = []
+
 [dependencies]
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"

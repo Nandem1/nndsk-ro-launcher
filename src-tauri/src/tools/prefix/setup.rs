@@ -1,5 +1,9 @@
 use std::path::Path;
 
+#[cfg(all(test, feature = "real-runtime"))]
+#[path = "qualification.rs"]
+pub(super) mod qualification;
+
 use ro_tools_linux::find_prefix_processes;
 use tauri::AppHandle;
 
