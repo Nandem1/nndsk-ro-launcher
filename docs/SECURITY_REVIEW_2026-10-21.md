@@ -126,7 +126,7 @@ Avisos recientes contrastados que no requieren más cambios:
    GTK3/Tauri siguen usando 0.18. No se parcheó ni sustituyó ese ecosistema de
    forma local. [RUSTSEC-2024-0370](https://rustsec.org/advisories/RUSTSEC-2024-0370.html)
    avisa que `proc-macro-error` 1.0.4 está sin mantenimiento. Se mantienen visibles.
-3. La herramienta [cargo-audit 0.22.2](https://crates.io/crates/cargo-audit/0.22.2),
+3. La herramienta [cargo-audit 0.22.2](https://github.com/rustsec/rustsec/releases/tag/cargo-audit/v0.22.2),
    última release disponible en crates.io al consultar, no forma parte del
    `Cargo.lock` del launcher. Su paquete oficial incluye un Cargo.lock separado
    con Rustls 0.23.40, rustls-webpki 0.103.13 y webpki-root-certs 1.0.7. Quedan
