@@ -10,6 +10,10 @@ Base: `main` en `c5d1dd6b5aac8c770ea384630e6324b29f23a7bb`.
 - npm, `package-lock.json` v3 y Cargo, `Cargo.lock` v4. No hay lockfile Bun,
   pnpm o Yarn. Se usó Node 22.23.4 con su npm 10.9.9 y Rust 1.98.1, conservando
   `engines.node >=22`. `npm audit --help` confirma soporte de `--omit=dev`.
+- El shell del host seleccionaba Node 26.8.1/npm 11.19.0 y Rust 1.99.1. Se
+  seleccionaron explícitamente los toolchains del repositorio para validar.
+  No se actualizaron instalaciones globales del host: para desarrollar hay que
+  activar el Node fijado; el Node 26.8.1 global queda fuera del conjunto parchado.
 - React/React DOM 18.3.1, Vite, Tailwind 4.3.3 y TypeScript 5.9.3 generan una
   SPA estática en `dist`. Vitest ejecuta las pruebas; Playwright es herramienta
   de revisión. No hay Astro, Next, SSR, adaptadores de servidor ni paquetes
@@ -122,6 +126,17 @@ Avisos recientes contrastados que no requieren más cambios:
    GTK3/Tauri siguen usando 0.18. No se parcheó ni sustituyó ese ecosistema de
    forma local. [RUSTSEC-2024-0370](https://rustsec.org/advisories/RUSTSEC-2024-0370.html)
    avisa que `proc-macro-error` 1.0.4 está sin mantenimiento. Se mantienen visibles.
+3. La herramienta [cargo-audit 0.22.2](https://crates.io/crates/cargo-audit/0.22.2),
+   última release disponible en crates.io al consultar, no forma parte del
+   `Cargo.lock` del launcher. Su paquete oficial incluye un Cargo.lock separado
+   con Rustls 0.23.40, rustls-webpki 0.103.13 y webpki-root-certs 1.0.7. Quedan
+   dentro de rangos afectados por los avisos TLS citados arriba; el impacto
+   requiere las funciones/configuraciones afectadas o una cadena confiable con
+   los certificados comprometidos. No se demostró explotación de la herramienta.
+   El `cargo install --locked --version 0.22.2` de CI conserva ese grafo upstream;
+   no existe aún una release corregida que fijar. No se retiró `--locked`, no se
+   añadieron forks ni se fabricó otro lockfile. Este pendiente de la herramienta
+   no está incluido en los seis hallazgos ZIP del proyecto.
 
 RustSec inicial: 9 hallazgos de vulnerabilidad (3 TLS y 6 ZIP), seis avisos de
 mantenimiento y uno de unsoundness. Después: quedan seis hallazgos ZIP, un aviso
@@ -184,3 +199,9 @@ una AppImage automáticamente. `release.yml` exige un tag de versión y CI verde
 y solo crea un draft. La release pública observada es `v0.3.3`, publicada el
 13 de octubre de 2026. Esta revisión no autoriza una nueva publicación ni cambia
 esa instalación. El estado del push y de CI se informa con sus enlaces al entregar.
+
+El [CI del parche ffd0f48](https://github.com/Nandem1/nndsk-ro-launcher/actions/runs/39699672269)
+terminó en verde en ambos jobs, quality y release-cache. Confirma 324 pruebas
+frontend y 734 Rust, con los mismos 9 casos Rust ignorados. Sus logs prueban
+Node 22.23.4/npm 10.9.9 y que rustup se
+actualizó efectivamente de 1.29.1 a 1.29.2, además de los pins configurados.
