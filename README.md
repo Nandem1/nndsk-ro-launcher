@@ -39,10 +39,11 @@ environment while keeping the previous one until completion. The launcher does n
 
 ## Development
 
-Requires rustup, the Node.js release in [`.nvmrc`](.nvmrc) with its bundled npm,
+Requires rustup 1.29.2 or newer, the Node.js release in [`.nvmrc`](.nvmrc) with its bundled npm,
 and the Tauri v2 dependencies for Linux. With nvm, run `nvm install && nvm use`.
 Rustup selects [`rust-toolchain.toml`](rust-toolchain.toml) automatically, including
-rustfmt and clippy; install it explicitly with `rustup toolchain install --no-self-update`.
+rustfmt and clippy; install it explicitly with
+`rustup self update && rustup toolchain install --no-self-update`.
 Do not override the repository toolchain with `RUSTUP_TOOLCHAIN` or `cargo +<version>`.
 
 ```bash

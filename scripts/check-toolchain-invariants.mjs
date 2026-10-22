@@ -4,7 +4,8 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { workflowJobs } from './release-workflow-policy.mjs'
 
-const RUST_INSTALL = 'rustup toolchain install --no-self-update'
+const RUST_INSTALL =
+  'rustup self update && rustup toolchain install --no-self-update'
 const REQUIRED_JOBS = {
   '.github/workflows/ci.yml': ['quality', 'release-cache'],
   '.github/workflows/release.yml': [
@@ -104,7 +105,7 @@ function jobErrors(path, name, text) {
     errors.push(`${label}: must install Rust exactly once with ${RUST_INSTALL}`)
   for (const index of rustSetups) {
     if (
-      !/^ {6}- name: Install repository Rust toolchain\n {8}run: rustup toolchain install --no-self-update$/.test(
+      !/^ {6}- name: Install repository Rust toolchain\n {8}run: rustup self update && rustup toolchain install --no-self-update$/.test(
         steps[index],
       )
     )

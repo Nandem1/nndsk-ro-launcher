@@ -29,7 +29,8 @@ walk('.github/actions')
 const ci = '.github/workflows/ci.yml'
 const release = '.github/workflows/release.yml'
 const audit = '.github/workflows/dependency-audit.yml'
-const rustInstall = 'run: rustup toolchain install --no-self-update'
+const rustInstall =
+  'run: rustup self update && rustup toolchain install --no-self-update'
 
 function mutate(path: string, before: string, after: string) {
   expect(files[path]).toContain(before)
@@ -39,7 +40,7 @@ function mutate(path: string, before: string, after: string) {
 describe('repository toolchain contract', () => {
   it('keeps the approved pins separate from the Node compatibility requirement', () => {
     expect(rustToolchainVersion(files['rust-toolchain.toml'])).toBe('1.98.1')
-    expect(files['.nvmrc']).toBe('22.23.3\n')
+    expect(files['.nvmrc']).toBe('22.23.4\n')
     expect(JSON.parse(files['package.json']).engines.node).toBe('>=22')
     expect(toolchainInvariantErrors(files)).toEqual([])
     expect(checkToolchainInvariants(root)).toEqual([])
@@ -54,6 +55,20 @@ describe('repository toolchain contract', () => {
     expect(result.status, result.stderr).toBe(0)
     expect(result.stdout).toContain('ok')
   })
+
+  it.each([ci, release, audit])(
+    'rejects leaving the runner-provided rustup unpatched in %s',
+    (path) => {
+      const changed = mutate(
+        path,
+        rustInstall,
+        'run: rustup toolchain install --no-self-update',
+      )
+      expect(toolchainInvariantErrors(changed).join('\n')).toContain(
+        'must install Rust',
+      )
+    },
+  )
 
   it.each([ci, release, audit])(
     'rejects stable or an independent exact Rust selector in %s',

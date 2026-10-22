@@ -15,9 +15,9 @@ path = "src/main.rs"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2.12.4", features = [] }
 tauri-plugin-dialog = "2"
-tauri-plugin-updater = "2"
+tauri-plugin-updater = "2.14.0"
 serde = { version = "1", features = ["derive"] }
 async-trait = "0.1"
 serde_json = "1"
