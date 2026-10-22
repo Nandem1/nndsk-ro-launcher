@@ -265,3 +265,29 @@ directa: `ro-sessiond` es obligatorio. La migración consiste en usar el supervi
 empaquetado; si no funciona, reinstalar la AppImage anterior. Los datos y
 selecciones de runners existentes no requieren migración. El dry-run de minor
 confirma 0.4.0. Se preparará un draft firmado; publicarlo queda a cargo del usuario.
+
+### Biblioteca nativa del entorno de CI
+
+Los logs del CI `39700599915` acreditan que Ubuntu 24.04 instala WebKitGTK y
+JavaScriptCore `2.52.6-0ubuntu0.24.04.1`. La consulta a la API del archivo oficial
+de Ubuntu para `noble/amd64` confirma esa misma versión como última publicada en
+Updates/Security; no ofrece 2.54 en esos repositorios. El paquete corresponde a
+[USN-8703-1](https://ubuntu.com/security/notices/USN-8703-1), anterior a
+[WSA-2026-0006](https://webkitgtk.org/security/WSA-2026-0006.html).
+La biblioteca local 2.54.1 no acredita que los bytes de CI lleven sus correcciones.
+
+Queda un pendiente nativo adicional: Ubuntu marca
+[CVE-2026-15109](https://ubuntu.com/security/CVE-2026-15109), actualizada el 16 de
+octubre, como vulnerable con corrección diferida para webkit2gtk de Noble.
+WSA-2026-0006 incluye este CVE y otros corregidos en 2.54.0. La explotación
+requiere contenido malicioso que alcance las funciones del motor afectadas;
+la UI empaquetada y su CSP restringen contenido remoto, pero no prueban ausencia
+de exposición. npm/RustSec no auditan esta biblioteca nativa.
+
+La AppImage exacta de release se debe inspeccionar después del build para
+distinguir bibliotecas empaquetadas y bibliotecas del host. No se sustituye la
+base de build ni se introducen paquetes de otra distribución para resolverlo:
+un backport/build nativo con WebKitGTK >=2.54 requiere un cambio de empaquetado
+y su matriz de compatibilidad. Este pendiente debe figurar en las notas de
+release; una auditoría npm/Cargo sin bloqueos no equivale a todos los runtimes
+corregidos.
