@@ -151,6 +151,12 @@ manifiesto por sí solo no está firmado. Solo después de que `Update::download
 devuelva bytes autenticados, el launcher activa el AppImage; no llama a
 `Update::install` ni añade otro verificador criptográfico.
 
+La dependencia del plugin desactiva sus features por defecto y conserva
+`rustls-tls` y `system-proxy` explícitamente. Su feature `zip` (también habilita
+tar/gzip) no se usa: la descarga y la verificación siguen en Tauri, y la
+activación local solo acepta el AppImage sin comprimir. Esto elimina el ZIP
+transitivo del instalador Windows del grafo sin sustituirlo mediante overrides.
+
 El destino viene de `packaged_appimage(app)`: el `APPIMAGE` capturado en `Env` del
 host por Tauri, la misma fuente que el plugin 2.12.0 usa para su `extract_path`
 privado. Ni el WebView ni el manifiesto eligen una ruta. Se exige una ruta absoluta

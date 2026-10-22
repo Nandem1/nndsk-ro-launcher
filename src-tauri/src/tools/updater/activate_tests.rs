@@ -137,6 +137,15 @@ fn tar_is_rejected_without_mutation() {
 }
 
 #[test]
+fn zip_is_rejected_without_mutation() {
+    let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    zip.start_file("new.AppImage", zip::write::SimpleFileOptions::default())
+        .unwrap();
+    zip.write_all(&appimage(2)).unwrap();
+    rejects_without_mutation(&zip.finish().unwrap().into_inner());
+}
+
+#[test]
 fn random_bytes_are_rejected_without_mutation() {
     rejects_without_mutation(b"not an appimage");
     rejects_without_mutation(&vec![0x73; 4096]);

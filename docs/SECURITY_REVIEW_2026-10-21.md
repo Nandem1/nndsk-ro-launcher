@@ -205,3 +205,63 @@ terminó en verde en ambos jobs, quality y release-cache. Confirma 324 pruebas
 frontend y 734 Rust, con los mismos 9 casos Rust ignorados. Sus logs prueban
 Node 22.23.4/npm 10.9.9 y que rustup se
 actualizó efectivamente de 1.29.1 a 1.29.2, además de los pins configurados.
+
+## Suplemento: migración ZIP autorizada y preparación de release
+
+Revisión adicional el mismo 21 de octubre local (22 de octubre UTC), sobre
+`12a3a3a`. Este suplemento conserva los resultados iniciales anteriores y
+resuelve el pendiente ZIP después de la autorización de migración del usuario.
+
+- La dependencia de pruebas pasa de `zip` 2.4.2 a
+  [9.0.5](https://github.com/zip-rs/zip2/releases/tag/v9.0.5), conservando solo
+  Deflate y el soporte Stored implícito. El archivo D7VK fijado usa esos dos
+  métodos; su tamaño, SHA-256, layout y DLL x86 pasan la prueba con el lector
+  nuevo. D7VK sigue siendo exclusivamente un spike de pruebas, fuera del catálogo.
+- Se cubren RUSTSEC-2026-0367/0368/0369 y
+  [GHSA-m665-v7pm-7grj](https://github.com/zip-rs/zip2/security/advisories/GHSA-m665-v7pm-7grj).
+  La prueba adversarial de cabeceras contradictorias falló inicialmente:
+  `ZipArchive::by_index` no activa por defecto la nueva comprobación. El harness
+  ahora llama a `validate_header_consistency` antes de extraer cualquier entrada;
+  la misma prueba pasa. Se mantienen los rechazos de traversal y symlinks.
+- El plugin updater conserva TLS Rustls, proxies y `Update::download`, que
+  autentica los bytes y su versión antes de devolverlos. Se deshabilita su
+  feature opcional `zip`, usada por sus instaladores de archivos comprimidos,
+  porque este producto activa únicamente AppImages sin comprimir mediante su
+  propio reemplazo atómico. Así desaparece `zip` 4.6.1 del lockfile sin imponer
+  una major bajo el contrato del plugin. Un ZIP real con una AppImage dentro
+  se rechaza sin modificar el destino ni un temporal preexistente.
+- `cargo tree --locked --target all --edges normal,build -i zip` no muestra
+  dependencias. El grafo con dependencias de desarrollo muestra únicamente
+  `zip` 9.0.5. No hay filtros de plataforma en la auditoría, overrides, ignores
+  ni downgrades; ambos lockfiles conservan su formato.
+- Auditorías repetidas: `npm audit` y `npm audit --omit=dev`, cero hallazgos;
+  política Cargo/RustSec, cero vulnerabilidades bloqueantes. Siguen reportados
+  GLib 0.18.5 (unsoundness) y proc-macro-error 1.0.4 (sin mantenimiento), además
+  del pendiente separado de la herramienta cargo-audit descrito arriba.
+- Pasan lint, formato frontend, 324 pruebas frontend, TypeScript/build, fmt,
+  clippy completo con `-D warnings` y 737 pruebas Rust; las mismas 9 pruebas
+  Rust permanecen ignoradas en la suite normal. Se ejecutó además la prueba
+  ignorada del ZIP D7VK y pasó. Pasan invariantes de release/toolchains y diseño.
+- `npm run tauri:dev` con HOME desechable renderiza el launcher y su información
+  de entorno por IPC; el cierre desde la UI termina con estado 0.
+- La AppImage local reconstruida pasa `smoke-release-artifact.sh`: AppRun,
+  protocolo ro-inputd y orphan_reparent contra ro-sessiond extraído, con Yama=1
+  y 100 ciclos. SHA-256 de estos bytes sin firmar:
+  `84274619126dbedbe4ece1a5833db04fee1db9088840c7d3fc31ad5e9bb1728c`.
+  También renderiza la UI con otro HOME desechable y cierra con estado 0.
+- Segunda pasada adversarial: revisión completa del diff y de la resolución
+  Cargo, compresión del artefacto real, prevalidación de cabeceras, conservación
+  de contenido/permisos fuera de staging, rechazo ZIP sin mutación del updater,
+  TLS/proxies y verificación de versión firmada sin feature de extracción.
+  No se sustituyó la AppImage instalada ni se ejecutaron clientes de juego;
+  no se afirma una actualización firmada N-1 → N ni validación de otros hosts.
+
+La release elegida es `v0.3.3 → 0.3.3 → minor → 0.4.0`, considerando todo el
+delta de main desde el último tag publicado. Además de los parches de seguridad,
+incluye activación atómica y coordinación del updater, recuperación transaccional
+de prefixes/artefactos, instancia única y correcciones del contrato IPC. El cambio
+decisivo de contrato en 0.x es retirar `RO_LAUNCHER_SESSION_SUPERVISOR=0` y su ruta
+directa: `ro-sessiond` es obligatorio. La migración consiste en usar el supervisor
+empaquetado; si no funciona, reinstalar la AppImage anterior. Los datos y
+selecciones de runners existentes no requieren migración. El dry-run de minor
+confirma 0.4.0. Se preparará un draft firmado; publicarlo queda a cargo del usuario.

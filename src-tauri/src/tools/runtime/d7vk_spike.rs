@@ -166,6 +166,10 @@ pub(crate) fn extract_zip_safe(zip_path: &Path, staging: &Path) -> Result<(), Sp
     let file = File::open(zip_path).map_err(|error| SpikeError::Io(error.to_string()))?;
     let mut archive =
         zip::ZipArchive::new(file).map_err(|error| SpikeError::Io(error.to_string()))?;
+    // ZIP 9 exposes this check separately; reject cloaked names before extracting any entry.
+    archive
+        .validate_header_consistency()
+        .map_err(|error| SpikeError::Io(error.to_string()))?;
 
     for index in 0..archive.len() {
         let mut entry = archive
@@ -667,7 +671,7 @@ mod tests {
         let file = std::fs::File::create(&zip_path).unwrap();
         let mut writer = ZipWriter::new(file);
         let options =
-            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
         for (name, bytes) in entries {
             writer.start_file(*name, options).unwrap();
             writer.write_all(bytes).unwrap();
@@ -776,9 +780,59 @@ mod tests {
         let zip_path = write_zip(&[(layout.x86_relative_source.as_str(), b"stub-ddraw")]);
         let staging = scratch_dir("staging-ok");
         extract_zip_safe(&zip_path, &staging).unwrap();
-        assert!(is_regular_file(&staging.join(&layout.x86_relative_source)));
+        assert_eq!(
+            std::fs::read(staging.join(&layout.x86_relative_source)).unwrap(),
+            b"stub-ddraw"
+        );
         let _ = std::fs::remove_dir_all(staging);
         let _ = std::fs::remove_file(zip_path);
+    }
+
+    #[test]
+    fn extract_zip_rejects_external_symlink_without_touching_target() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = scratch_dir("zip-symlink");
+        std::fs::create_dir_all(&root).unwrap();
+        let _guard = ScratchGuard::new(root.clone());
+        let outside = root.join("outside.dll");
+        std::fs::write(&outside, b"unchanged").unwrap();
+        std::fs::set_permissions(&outside, std::fs::Permissions::from_mode(0o640)).unwrap();
+        let zip_path = root.join("symlink.zip");
+        let mut writer = ZipWriter::new(std::fs::File::create(&zip_path).unwrap());
+        writer
+            .add_symlink("ddraw.dll", "../outside.dll", SimpleFileOptions::default())
+            .unwrap();
+        writer.finish().unwrap();
+
+        let staging = root.join("staging");
+        assert!(matches!(
+            extract_zip_safe(&zip_path, &staging),
+            Err(SpikeError::ZipUnsafeEntry)
+        ));
+        assert_eq!(std::fs::read(&outside).unwrap(), b"unchanged");
+        assert_eq!(
+            outside.metadata().unwrap().permissions().mode() & 0o7777,
+            0o640
+        );
+        assert_eq!(std::fs::read_dir(staging).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn extract_zip_rejects_conflicting_local_and_central_names() {
+        let zip_path = write_zip(&[("safe.dll", b"payload")]);
+        let _guard = ScratchGuard::new(zip_path.parent().unwrap().to_path_buf());
+        let mut bytes = std::fs::read(&zip_path).unwrap();
+        assert_eq!(&bytes[..4], b"PK\x03\x04");
+        // Local filename begins at byte 30. Keep the central name and lengths intact.
+        bytes[30..38].copy_from_slice(b"evil.dll");
+        std::fs::write(&zip_path, bytes).unwrap();
+        let staging = zip_path.parent().unwrap().join("staging");
+        assert!(matches!(
+            extract_zip_safe(&zip_path, &staging),
+            Err(SpikeError::Io(_))
+        ));
+        assert_eq!(std::fs::read_dir(staging).unwrap().count(), 0);
     }
 
     #[test]
