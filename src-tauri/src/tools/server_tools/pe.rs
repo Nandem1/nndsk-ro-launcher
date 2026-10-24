@@ -6,6 +6,7 @@ use crate::models::server::ServerConfig;
 use crate::models::server_tools::{ClientDiagnostics, ToolInfo};
 use crate::tools::runtime::{gepard_subject_warnings, runtime_compat_enabled};
 use crate::utils::find_file_case_insensitive;
+use crate::utils::pe::{pe_headers, read_u16, read_u32, read_u64};
 
 const MAX_PE_SIZE: u64 = 128 * 1024 * 1024;
 const MAX_DEPENDENCIES: usize = 96;
@@ -220,20 +221,13 @@ fn parse_pe(path: &Path) -> Option<PeInfo> {
 }
 
 fn parse_pe_bytes(bytes: &[u8]) -> Option<PeInfo> {
-    if bytes.get(0..2)? != b"MZ" {
-        return None;
-    }
-    let pe = read_u32(bytes, 0x3c)? as usize;
-    if bytes.get(pe..pe.checked_add(4)?)? != b"PE\0\0" {
-        return None;
-    }
-
-    let coff = pe.checked_add(4)?;
-    let machine = read_u16(bytes, coff)?;
+    let header = pe_headers(bytes)?;
+    let coff = header.coff;
+    let machine = header.machine;
     let section_count = read_u16(bytes, coff + 2)? as usize;
-    let optional_size = read_u16(bytes, coff + 16)? as usize;
-    let optional = coff.checked_add(20)?;
-    let magic = read_u16(bytes, optional)?;
+    let optional_size = header.optional_size;
+    let optional = header.optional;
+    let magic = header.magic;
     let (data_directory, fallback_arch, image_base) = match magic {
         0x10b => (
             optional.checked_add(96)?,
@@ -352,24 +346,6 @@ fn rva_to_offset(rva: u32, sections: &[Section]) -> Option<usize> {
     Some(rva as usize)
 }
 
-fn read_u16(bytes: &[u8], offset: usize) -> Option<u16> {
-    Some(u16::from_le_bytes(
-        bytes.get(offset..offset + 2)?.try_into().ok()?,
-    ))
-}
-
-fn read_u32(bytes: &[u8], offset: usize) -> Option<u32> {
-    Some(u32::from_le_bytes(
-        bytes.get(offset..offset + 4)?.try_into().ok()?,
-    ))
-}
-
-fn read_u64(bytes: &[u8], offset: usize) -> Option<u64> {
-    Some(u64::from_le_bytes(
-        bytes.get(offset..offset + 8)?.try_into().ok()?,
-    ))
-}
-
 fn read_c_string(bytes: &[u8], offset: usize) -> Option<String> {
     let tail = bytes.get(offset..)?;
     let end = tail.iter().position(|byte| *byte == 0)?;
@@ -443,6 +419,26 @@ mod tests {
     #[test]
     fn rejects_non_pe_data() {
         assert!(parse_pe_bytes(b"not a PE").is_none());
+    }
+
+    #[test]
+    fn shared_headers_preserve_diagnostic_architecture_fallback_and_imports() {
+        let original = minimal_pe_with_import("d3d9.dll", false);
+        for machine in [0x014cu16, 0xffff] {
+            let mut bytes = original.clone();
+            bytes[0x84..0x86].copy_from_slice(&machine.to_le_bytes());
+            let info = parse_pe_bytes(&bytes).unwrap();
+            assert_eq!(info.architecture, Some("x86"));
+            assert_eq!(info.imports, ["d3d9.dll"]);
+            assert!(!info.managed);
+        }
+        for machine in [0x8664u16, 0xffff] {
+            let bytes = crate::utils::pe::test_pe(machine, 0x020b);
+            let info = parse_pe_bytes(&bytes).unwrap();
+            assert_eq!(info.architecture, Some("x86_64"));
+            assert!(info.imports.is_empty());
+            assert!(!info.managed);
+        }
     }
 
     #[test]

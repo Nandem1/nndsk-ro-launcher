@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Component, Path};
 
+use crate::utils::pe::{pe_architecture, PeArchitecture};
 use serde::Deserialize;
 
 use super::descriptor::{
@@ -21,7 +22,9 @@ pub(crate) fn payload_ready(descriptor: &ArtifactDescriptor, root: &Path) -> boo
         PayloadValidatorId::UmuZipapp => umu_zipapp_ready(root),
         PayloadValidatorId::DxvkPrefixDlls => dxvk_prefix_dlls_ready(root),
         PayloadValidatorId::ProtonCachyosSlr => proton_cachyos_slr_ready(root),
-        PayloadValidatorId::WineTkg716 => wine716_modules_ready(root, &WINE716_MODULES),
+        PayloadValidatorId::WineTkg716 => {
+            wine716_modules_ready(root, &WINE716_MODULES, &WINE716_PE_MODULES)
+        }
         PayloadValidatorId::NndskRoProton => {
             proton_cachyos_slr_ready(root)
                 && ["proton", "files/bin/wine", "files/bin/wineserver"]
@@ -94,7 +97,39 @@ const WINE716_MODULES: [ModuleIdentity; 6] = [
     },
 ];
 
-fn wine716_modules_ready(root: &Path, modules: &[ModuleIdentity]) -> bool {
+#[derive(Clone, Copy)]
+struct PeModuleIdentity {
+    module: ModuleIdentity,
+    architecture: PeArchitecture,
+}
+
+// Inspected in the size/SHA256-verified original publisher archive, not inferred from paths.
+const WINE716_PE_MODULES: [PeModuleIdentity; 2] = [
+    PeModuleIdentity {
+        module: ModuleIdentity {
+            path: "lib/wine/i386-windows/ntdll.dll",
+            size: 878_795,
+            mode: 0o644,
+            sha256: "3a3886bf06e0f275ec24af33d580d4734e1aea61008a0a5188168e23cf0fd463",
+        },
+        architecture: PeArchitecture::I386,
+    },
+    PeModuleIdentity {
+        module: ModuleIdentity {
+            path: "lib/wine/x86_64-windows/ntdll.dll",
+            size: 834_838,
+            mode: 0o644,
+            sha256: "a97c91a3963c86f7e9cfc6bae90256ea2919aea8d8995aef816b1988fd6af43d",
+        },
+        architecture: PeArchitecture::Amd64,
+    },
+];
+
+fn wine716_modules_ready(
+    root: &Path,
+    modules: &[ModuleIdentity],
+    pe_modules: &[PeModuleIdentity],
+) -> bool {
     use std::os::unix::fs::PermissionsExt;
     modules.iter().all(|module| {
         let path = root.join(module.path);
@@ -105,7 +140,45 @@ fn wine716_modules_ready(root: &Path, modules: &[ModuleIdentity]) -> bool {
             })
             && super::fetch::digest_file(&path, ExpectedDigest::Sha256(module.sha256))
                 .is_ok_and(|hash| hash == module.sha256)
-    })
+    }) && pe_modules
+        .iter()
+        .all(|module| pe_module_ready(root, module))
+}
+
+fn pe_module_ready(root: &Path, expected: &PeModuleIdentity) -> bool {
+    use sha2::{Digest, Sha256};
+    use std::io::Read;
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+
+    let module = &expected.module;
+    let path = root.join(module.path);
+    if !regular_path_inside_root(root, &path) {
+        return false;
+    }
+    let Ok(file) = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(path)
+    else {
+        return false;
+    };
+    if !file.metadata().is_ok_and(|metadata| {
+        metadata.is_file()
+            && metadata.len() == module.size
+            && metadata.permissions().mode() & 0o7777 == module.mode
+    }) {
+        return false;
+    }
+    // Bounded to the pinned size, even if a file grows after the metadata check. Hash and
+    // architecture inspect the same bytes; neither a FIFO nor a final symlink can be opened.
+    let Some(limit) = module.size.checked_add(1) else {
+        return false;
+    };
+    let mut bytes = Vec::new();
+    file.take(limit).read_to_end(&mut bytes).is_ok()
+        && bytes.len() as u64 == module.size
+        && format!("{:x}", Sha256::digest(&bytes)) == module.sha256
+        && pe_architecture(&bytes) == Some(expected.architecture)
 }
 
 // These are the six source-built modules in the accepted, checksum-pinned archive.
@@ -741,8 +814,7 @@ mod tests {
         assert!(!ready(&fixture));
     }
 
-    #[test]
-    fn wine716_readiness_rejects_changed_modes_bytes_missing_architecture_and_symlinks() {
+    fn wine716_fixture() -> (ManifestFixture, Vec<ModuleIdentity>, Vec<PeModuleIdentity>) {
         use sha2::{Digest, Sha256};
         let fixture = ManifestFixture::new();
         let digest = Box::leak(format!("{:x}", Sha256::digest(b"wine")).into_boxed_str());
@@ -761,19 +833,152 @@ mod tests {
             std::fs::write(&path, b"wine").unwrap();
             std::fs::set_permissions(&path, std::fs::Permissions::from_mode(module.mode)).unwrap();
         }
-        assert!(wine716_modules_ready(&fixture.root, &modules));
+        let pe_modules = WINE716_PE_MODULES
+            .iter()
+            .map(|expected| {
+                let (machine, magic) = match expected.architecture {
+                    PeArchitecture::I386 => (0x014c, 0x010b),
+                    PeArchitecture::Amd64 => (0x8664, 0x020b),
+                };
+                write_pe_fixture(
+                    &fixture.root,
+                    *expected,
+                    &crate::utils::pe::test_pe(machine, magic),
+                )
+            })
+            .collect();
+        (fixture, modules, pe_modules)
+    }
+
+    fn write_pe_fixture(
+        root: &Path,
+        mut expected: PeModuleIdentity,
+        bytes: &[u8],
+    ) -> PeModuleIdentity {
+        use sha2::{Digest, Sha256};
+        let path = root.join(expected.module.path);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, bytes).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(expected.module.mode))
+            .unwrap();
+        expected.module.size = bytes.len() as u64;
+        expected.module.sha256 = Box::leak(format!("{:x}", Sha256::digest(bytes)).into_boxed_str());
+        expected
+    }
+
+    #[test]
+    fn wine716_readiness_rejects_changed_modes_bytes_missing_architecture_and_symlinks() {
+        let (fixture, modules, pe_modules) = wine716_fixture();
+        let ready = || wine716_modules_ready(&fixture.root, &modules, &pe_modules);
+        assert!(ready());
         let loader = fixture.root.join("bin/wine");
         std::fs::set_permissions(&loader, std::fs::Permissions::from_mode(0o644)).unwrap();
-        assert!(!wine716_modules_ready(&fixture.root, &modules));
+        assert!(!ready());
         std::fs::set_permissions(&loader, std::fs::Permissions::from_mode(0o755)).unwrap();
         std::fs::write(&loader, b"fake").unwrap();
-        assert!(!wine716_modules_ready(&fixture.root, &modules));
+        assert!(!ready());
         std::fs::write(&loader, b"wine").unwrap();
         let unix32 = fixture.root.join("lib/wine/i386-unix/ntdll.so");
         std::fs::remove_file(&unix32).unwrap();
-        assert!(!wine716_modules_ready(&fixture.root, &modules));
+        assert!(!ready());
         std::os::unix::fs::symlink(&loader, &unix32).unwrap();
-        assert!(!wine716_modules_ready(&fixture.root, &modules));
+        assert!(!ready());
+    }
+
+    #[test]
+    fn wine716_pe_gate_rejects_hash_consistent_wrong_machine_class_and_malformed_headers() {
+        use crate::utils::pe::test_pe;
+        for slot in 0..2 {
+            let (fixture, modules, pe_modules) = wine716_fixture();
+            assert!(wine716_modules_ready(&fixture.root, &modules, &pe_modules));
+            let valid = std::fs::read(fixture.root.join(pe_modules[slot].module.path)).unwrap();
+            let mut cases = vec![
+                test_pe(0xffff, 0x010b),
+                test_pe(0xffff, 0x020b),
+                test_pe(0x014c, 0x020b),
+                test_pe(0x8664, 0x010b),
+                if slot == 0 {
+                    test_pe(0x8664, 0x020b)
+                } else {
+                    test_pe(0x014c, 0x010b)
+                },
+            ];
+            for end in [0, 2, 0x3f, 0x84, 0x97, 0x99, valid.len() - 1] {
+                cases.push(valid[..end].to_vec());
+            }
+            for (offset, replacement) in [
+                (0, vec![0]),
+                (0x80, vec![0]),
+                (0x3c, u32::MAX.to_le_bytes().to_vec()),
+            ] {
+                let mut bytes = valid.clone();
+                bytes[offset..offset + replacement.len()].copy_from_slice(&replacement);
+                cases.push(bytes);
+            }
+            for bytes in cases {
+                let mut expected = pe_modules.clone();
+                // Keep path, size, mode AND hash consistent: only PE semantics can reject this.
+                expected[slot] = write_pe_fixture(&fixture.root, expected[slot], &bytes);
+                assert!(!wine716_modules_ready(&fixture.root, &modules, &expected));
+            }
+        }
+    }
+
+    #[test]
+    fn wine716_pe_gate_rejects_swapped_anchors_even_with_matching_hashes() {
+        let (fixture, modules, mut pe_modules) = wine716_fixture();
+        assert!(wine716_modules_ready(&fixture.root, &modules, &pe_modules));
+        let pe32 = std::fs::read(fixture.root.join(pe_modules[0].module.path)).unwrap();
+        let pe64 = std::fs::read(fixture.root.join(pe_modules[1].module.path)).unwrap();
+        pe_modules[0] = write_pe_fixture(&fixture.root, pe_modules[0], &pe64);
+        pe_modules[1] = write_pe_fixture(&fixture.root, pe_modules[1], &pe32);
+        assert!(!wine716_modules_ready(&fixture.root, &modules, &pe_modules));
+    }
+
+    #[test]
+    fn wine716_pe_gate_rejects_missing_special_symlinked_and_corrupt_anchors() {
+        use std::os::unix::{ffi::OsStrExt, fs::symlink};
+        for slot in 0..2 {
+            let (fixture, modules, pe_modules) = wine716_fixture();
+            let ready = || wine716_modules_ready(&fixture.root, &modules, &pe_modules);
+            assert!(ready());
+            let path = fixture.root.join(pe_modules[slot].module.path);
+            let original = std::fs::read(&path).unwrap();
+            std::fs::remove_file(&path).unwrap();
+            assert!(!ready());
+            std::fs::create_dir(&path).unwrap();
+            assert!(!ready());
+            std::fs::remove_dir(&path).unwrap();
+            let name = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
+            // SAFETY: a valid NUL-terminated path within this exclusively owned fixture.
+            assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o644) }, 0);
+            assert!(!ready());
+            std::fs::remove_file(&path).unwrap();
+            let external = fixture.root.with_extension(format!("outside-{slot}"));
+            std::fs::write(&external, &original).unwrap();
+            symlink(&external, &path).unwrap();
+            assert!(!ready());
+            std::fs::remove_file(&path).unwrap();
+            std::fs::remove_file(external).unwrap();
+            let mut corrupt = original.clone();
+            *corrupt.last_mut().unwrap() ^= 1; // Valid architecture, same size/mode, wrong hash.
+            std::fs::write(&path, corrupt).unwrap();
+            assert!(!ready());
+            std::fs::write(&path, &original).unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+            assert!(ready());
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o4644)).unwrap();
+            assert!(!ready());
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+            let directory = path.parent().unwrap();
+            let saved = directory.with_extension("saved");
+            std::fs::rename(directory, &saved).unwrap();
+            symlink(&saved, directory).unwrap();
+            assert!(!ready());
+            std::fs::remove_file(directory).unwrap();
+            std::fs::rename(saved, directory).unwrap();
+            assert!(ready());
+        }
     }
 
     fn unique_suffix() -> u128 {

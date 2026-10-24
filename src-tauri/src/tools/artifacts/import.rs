@@ -650,9 +650,10 @@ mod tests {
         result.expect("the exact accepted archive must pass the install pipeline");
     }
 
-    #[test]
-    #[ignore = "requires RO_LAUNCHER_TEST_WINE716_ARCHIVE and multilib, imports to an isolated directory; only executes --version"]
-    fn wine716_real_archive_is_reusable_and_keeps_legacy_sync_and_layout() {
+    #[tokio::test]
+    #[ignore = "requires RO_LAUNCHER_TEST_WINE716_ARCHIVE and multilib; real-runtime also requires RO_WINE716_TEST_PE32"]
+    async fn wine716_real_archive_is_reusable_and_keeps_legacy_sync_and_layout() {
+        use crate::utils::pe::{pe_architecture, pe_headers, PeArchitecture};
         use crate::utils::{resolve_runner, WineSyncMode};
         let fixture = Fixture::new();
         let source = PathBuf::from(
@@ -660,6 +661,12 @@ mod tests {
                 .expect("set exact Wine 7.16 TkG archive"),
         );
         let descriptor = catalog_descriptor(super::super::descriptor::MANAGED_WINE716_ID).unwrap();
+        fetch::verify_archive_file(&source, descriptor.expected_size, descriptor.digest).unwrap();
+        println!(
+            "archive bytes={} SHA256={}",
+            descriptor.expected_size,
+            super::super::expected_digest_hex(descriptor.digest)
+        );
         let installed = import_archive_at(descriptor, &source, &fixture.destination).unwrap();
         assert_eq!(
             artifact_cache_state_at(descriptor, &installed),
@@ -672,6 +679,7 @@ mod tests {
         );
         assert_eq!(std::fs::read(installed.join(MARKER_FILE)).unwrap(), marker);
         let runner = resolve_runner(installed.join("bin/wine").to_str().unwrap()).unwrap();
+        println!("Wine version: {}", runner.reported_version().unwrap());
         assert_eq!(
             runner.reported_version().as_deref(),
             Some("wine-7.16.r0.gaa2eb6ee ( TkG Staging Esync Fsync )")
@@ -681,5 +689,68 @@ mod tests {
         assert!(installed.join("lib/wine/i386-unix/ntdll.so").is_file());
         assert!(installed.join("lib/wine/x86_64-unix/ntdll.so").is_file());
         assert!(!installed.join("proton").exists());
+        let anchors = [
+            ("lib/wine/i386-windows/ntdll.dll", PeArchitecture::I386),
+            ("lib/wine/x86_64-windows/ntdll.dll", PeArchitecture::Amd64),
+        ];
+        let originals: Vec<_> = anchors
+            .iter()
+            .map(|(path, architecture)| {
+                let bytes = std::fs::read(installed.join(path)).unwrap();
+                assert_eq!(pe_architecture(&bytes), Some(*architecture));
+                let header = pe_headers(&bytes).unwrap();
+                println!(
+                    "{path}: machine={:#06x} class={:#05x}",
+                    header.machine, header.magic
+                );
+                bytes
+            })
+            .collect();
+        for slot in 0..2 {
+            let path = installed.join(anchors[slot].0);
+            let not_ready = || {
+                assert_eq!(
+                    artifact_cache_state_at(descriptor, &installed),
+                    ArtifactCacheState::IncompletePayload
+                );
+                // F-06 runners refuse even a receipted incomplete tree; no repair/adoption.
+                assert!(install::inspect_target(
+                    descriptor,
+                    &fixture.destination,
+                    install::policy(descriptor)
+                )
+                .is_err());
+                for unix in ["i386-unix", "x86_64-unix"] {
+                    assert!(installed
+                        .join(format!("lib/wine/{unix}/ntdll.so"))
+                        .is_file());
+                }
+            };
+            std::fs::remove_file(&path).unwrap();
+            not_ready();
+            // A good opposite-architecture DLL at the expected path must not qualify.
+            std::fs::write(&path, &originals[1 - slot]).unwrap();
+            not_ready();
+            let mut corrupted = originals[slot].clone();
+            corrupted[0] = 0;
+            std::fs::write(&path, corrupted).unwrap();
+            not_ready();
+            std::fs::remove_file(&path).unwrap();
+            std::os::unix::fs::symlink(&source, &path).unwrap();
+            not_ready();
+            std::fs::remove_file(&path).unwrap();
+            std::fs::write(&path, &originals[slot]).unwrap();
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+            assert_eq!(
+                artifact_cache_state_at(descriptor, &installed),
+                ArtifactCacheState::Ready
+            );
+        }
+        // The source archive was never mutated.
+        fetch::verify_archive_file(&source, descriptor.expected_size, descriptor.digest).unwrap();
+        assert_eq!(std::fs::read(installed.join(MARKER_FILE)).unwrap(), marker);
+        #[cfg(feature = "real-runtime")]
+        crate::tools::prefix::qualify_wine716_pe32(&installed).await;
     }
 }

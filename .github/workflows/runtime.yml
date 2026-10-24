@@ -1,0 +1,78 @@
+name: Wine runtime qualification
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 5 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wine-runtime-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  wine716:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Install repository Rust toolchain
+        run: rustup toolchain install --no-self-update
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          shared-key: ubuntu-24.04
+
+      - uses: ./.github/actions/linux-build-deps
+
+      - name: Install Wine host prerequisites and PE32 compiler
+        run: |
+          set -euo pipefail
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y gcc-mingw-w64-i686 xvfb xauth libc6:i386 libgcc-s1:i386
+
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .runtime-cache/wine-7.16-staging-tkg-amd64.tar.xz
+          key: wine716-6d9e960b93afa273c329a42116ffe7a4f0fc738f8b8b9c0242082ea3f58e971e
+
+      - name: Acquire and verify original publisher archive
+        run: |
+          set -euo pipefail
+          mkdir -p .runtime-cache
+          archive=.runtime-cache/wine-7.16-staging-tkg-amd64.tar.xz
+          if [ ! -f "$archive" ]; then
+            curl --fail --location --retry 3 --max-time 180 --output "$archive" \
+              https://github.com/Kron4ek/Wine-Builds/releases/download/7.16/wine-7.16-staging-tkg-amd64.tar.xz
+          fi
+          test "$(stat -c %s "$archive")" = 57117116
+          echo "6d9e960b93afa273c329a42116ffe7a4f0fc738f8b8b9c0242082ea3f58e971e  $archive" | sha256sum --check
+
+      - name: Build sidecar and PE32 fixture
+        run: |
+          set -euo pipefail
+          cargo build -p ro-sessiond --locked
+          i686-w64-mingw32-gcc -nostdlib -Wl,--entry,_mainCRTStartup -o "$RUNNER_TEMP/nonce.exe" tests/fixtures/pe/nonce.c -lkernel32
+
+      - name: Qualify archive, architectures, isolated PE32 initialization and reuse
+        env:
+          RO_LAUNCHER_TEST_WINE716_ARCHIVE: ${{ github.workspace }}/.runtime-cache/wine-7.16-staging-tkg-amd64.tar.xz
+          RO_WINE716_TEST_PE32: ${{ runner.temp }}/nonce.exe
+          RO_WINE716_EVIDENCE: ${{ runner.temp }}/wine716-evidence.json
+        run: |
+          xvfb-run -a cargo test -p ro-launcher --features real-runtime --locked \
+            wine716_real_archive_is_reusable_and_keeps_legacy_sync_and_layout -- --ignored --nocapture
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: wine716-evidence-${{ github.sha }}
+          path: ${{ runner.temp }}/wine716-evidence.json
+          if-no-files-found: error

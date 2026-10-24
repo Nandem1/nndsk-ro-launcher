@@ -12,6 +12,7 @@ mod instance;
 mod json;
 mod operation_lock;
 mod paths;
+pub(crate) mod pe;
 mod prefix;
 pub mod process;
 mod runner;
